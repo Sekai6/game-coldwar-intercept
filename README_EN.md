@@ -365,6 +365,8 @@ CG-57's forward and aft Mk 41 banks are independent launch resources that may wo
 - Adjacent cells are hard-inhibited while exhaust from the previous launch remains near the deck; allocation prefers cells farther from the previous launch.
 - Tasks alternate between banks and may transfer when one bank is damaged, busy, or has no safely available cell.
 - Runtime diagnostics record each bank's minimum ignition interval, launch-cell history, per-weapon ready/pending counts, spent cells, and cancellation returns for salvo-safety and ammunition-conservation checks.
+- Below 75% bank health, a local cluster around the damage center is isolated. Air-defense rounds in those cells become trapped and are removed from available ammunition. At or below 5%, every remaining unlaunched cell in that bank is disabled while the opposite bank may continue independently.
+- Scenario setup exposes separate initial health values for the forward and aft launch systems, allowing repeatable partial-damage, single-bank-failure, and asymmetric-ammunition tests.
 
 <a id="electronic-warfare"></a>
 ## 10. Electronic Warfare and Decoys
@@ -434,10 +436,11 @@ Each impact produces one primary casualty and a smaller fragmentation casualty. 
 
 | Subsystem | Actual Effect of Damage |
 |---|---|
-| AN/SPS-48E | Reduces 3D range and quality, increases revisit time; failure prevents altitude/fire-control updates |
+| AN/SPS-48E / AN/SPY-1B | Reduces 3D range and quality, increases revisit time; failure prevents altitude/fire-control updates |
 | AN/SPS-49 | Reduces 2D warning range and quality, increases revisit time |
-| AN/SPG-55 | Reduces illuminator slew speed and available channel count |
+| AN/SPG-55 / AN/SPG-62 | Reduces illuminator slew speed and available channel count |
 | Mk 10 AFT/FWD | Independently slows mount slew and reload; failure cancels and disables the mount |
+| Mk 41 AFT/FWD | Lengthens the bank ignition interval and isolates local cells; failure traps every remaining round in that bank |
 | CIWS | Reduces traverse, firing cadence, and PK; failure stops tracking and fire |
 | AN/SLQ-32 | Reduces ECM power and allows earlier seeker burn-through |
 | Mk 36 SRBOC | Increases cooldown and round flight time; failure blocks shipboard chaff |
