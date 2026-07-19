@@ -208,7 +208,21 @@ function scheduleIlluminators(candidates:Interceptor[],dt:number){
  for(const interceptor of active)if(capturedTargets.has(interceptor.target)){interceptor.illuminated=true;interceptor.illuminationBeam.visible=true;interceptor.illuminationBeam.geometry.dispose();interceptor.illuminationBeam.geometry=new THREE.BufferGeometry().setFromPoints([defender.position.clone().add(new THREE.Vector3(8,13,0)),interceptor.target.mesh.position.clone()]);}
  for(const interceptor of interceptors)if(!active.includes(interceptor)){interceptor.illuminated=false;interceptor.illuminationBeam.visible=false;}
 }
-function updateCiws(){if(!ciwsEnabled||ciwsRounds<=0||elapsed-lastCiwsShot<.55)return;const candidates=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15).sort((a,b)=>a.mesh.position.distanceTo(defender.position)-b.mesh.position.distanceTo(defender.position));const target=candidates[0];if(!target)return;lastCiwsShot=elapsed;ciwsRounds=Math.max(0,ciwsRounds-60);ciwsTracer(target.mesh.position);const saturation=Math.max(1,candidates.length),basePk=Math.max(.08,.46/saturation)-(target.kind==='P-500'?.1:target.kind==='P-700'?.16:.3),pk=target.kind==='Kh-22'?Math.min(.14,basePk):Math.max(.08,basePk),roll=Math.abs(Math.sin(elapsed*31.7+ciwsRounds*.013));if(roll<pk){target.phase='destroyed';target.mesh.visible=false;destroyMissileVisual(target,'intercept');log(`CIWS KILL / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);}else log(`CIWS MISS / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);}
+function updateCiws(){
+ if(!ciwsEnabled||ciwsRounds<=0||elapsed-lastCiwsShot<.55)return;
+ const mounts=[{name:'FORE',position:new THREE.Vector3(13,0,0),heading:Math.PI/2},{name:'AFT',position:new THREE.Vector3(-14,0,0),heading:-Math.PI/2}];
+ const candidates=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15).map(m=>{
+  const relative=m.mesh.position.clone().sub(defender.position),bearing=Math.atan2(relative.x,relative.z),mount=mounts.map(x=>({...x,delta:Math.abs(angleDifference(bearing,x.heading))})).sort((a,b)=>a.delta-b.delta)[0];
+  return {m,bearing,mount};
+ }).filter(x=>x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)-b.m.mesh.position.distanceTo(defender.position));
+ const target=candidates[0];
+ if(!target){if(missiles.some(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15))log('CIWS HOLD / BLIND SECTOR');return;}
+ const range=target.m.mesh.position.distanceTo(defender.position),speed=Math.max(1,target.m.velocity.length()),tti=range/speed,bursts=Math.max(1,Math.floor(tti/.55));
+ lastCiwsShot=elapsed;ciwsRounds=Math.max(0,ciwsRounds-60);ciwsTracer(target.m.mesh.position);
+ const saturation=Math.max(1,candidates.length),basePk=Math.max(.08,.46/saturation)-(target.m.kind==='P-500'?.1:target.m.kind==='P-700'?.16:.3),pk=target.m.kind==='Kh-22'?Math.min(.14,basePk):Math.max(.08,basePk),roll=Math.abs(Math.sin(elapsed*31.7+ciwsRounds*.013));
+ log(`CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / ${target.mount.name}`);
+ if(roll<pk){target.m.phase='destroyed';target.m.mesh.visible=false;destroyMissileVisual(target.m,'intercept');log(`CIWS KILL / ${target.mount.name} / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);}else log(`CIWS MISS / ${target.mount.name} / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);
+}
 setInterval(()=>interceptors.forEach(i=>{if(i.mesh.userData.seeker)i.mesh.userData.seeker.visible=i.weapon==='RIM-67'&&i.mesh.visible&&i.target.phase!=='destroyed'&&i.mesh.position.distanceTo(i.target.mesh.position)<weaponProfiles[i.weapon].terminalRange;}),50);
 setInterval(()=>{const live=missiles.filter(m=>m.phase!=='destroyed').length,engagedTargets=new Set(interceptors.filter(i=>i.mesh.visible).map(i=>i.target)).size,tracks=[...combatPicture.tracks.values()].filter(track=>missiles[track.sourceId-1]?.phase!=='destroyed').length;targetState.textContent=live>0?`${live} THREATS / ${tracks} TRACKS / ${engagedTargets} ENGAGED`:'AIRSPACE CLEAR';},120);
 setInterval(()=>{if(missiles[selectedTargetId-1]?.phase==='destroyed'){const next=missiles.findIndex(m=>m.phase!=='destroyed');if(next>=0){selectedTargetId=next+1;targetButton.textContent=`TARGET: ${selectedTargetId}`;}}missiles.forEach((m,i)=>m.mesh.userData.selection.visible=i+1===selectedTargetId&&m.phase!=='destroyed'&&!!combatPicture.trackForTarget(i+1));},120);
