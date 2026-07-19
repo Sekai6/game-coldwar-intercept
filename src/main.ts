@@ -217,7 +217,7 @@ function updateCiws(){
   return {m,bearing,closingSpeed,mount};
  }).filter(x=>x.closingSpeed>.5&&x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)/a.closingSpeed-b.m.mesh.position.distanceTo(defender.position)/b.closingSpeed);
  const target=candidates[0];
- if(!target){const nearby=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15),approaching=nearby.some(m=>{const relative=m.mesh.position.clone().sub(defender.position);return -m.velocity.dot(relative.normalize())>.5;});if(nearby.length)log(approaching?'CIWS HOLD / BLIND SECTOR':'CIWS HOLD / TARGET OPENING');return;}
+ if(!target){const nearby=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15),approaching=nearby.some(m=>{const relative=m.mesh.position.clone().sub(defender.position);return -m.velocity.dot(relative.normalize())>.5;});if(nearby.length){lastCiwsShot=elapsed;log(approaching?'CIWS HOLD / BLIND SECTOR':'CIWS HOLD / TARGET OPENING');}return;}
  const range=target.m.mesh.position.distanceTo(defender.position),tti=range/target.closingSpeed,bursts=Math.max(1,Math.floor(tti/.55));
  if(tti<.35){lastCiwsShot=elapsed;log(`CIWS HOLD / WINDOW CLOSED / ${target.m.kind} / ${tti.toFixed(2)}s / ${target.mount.name}`);return;}
  const mountModel=defender.getObjectByName(target.mount.name==='FORE'?'ciwsFore':'ciwsAft'),aim=target.m.mesh.position.clone().sub(defender.position),desiredTraverse=Math.atan2(-aim.z,aim.x),traverseError=mountModel?angleDifference(desiredTraverse,mountModel.rotation.y):0;
