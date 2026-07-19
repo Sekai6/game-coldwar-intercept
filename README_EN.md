@@ -161,6 +161,7 @@ Manual fire does not bypass fire-control rules. A request is rejected when there
 | `1` | Close ship view |
 | `2` | Default tactical view |
 | `3` | Wide ship-to-target view |
+| `4` | Follow an active interceptor, or the selected incoming missile when no interceptor is active |
 | `C` | Toggle cinematic orbit |
 | `Space` | Pause or resume |
 | `R` | Reload the page |
