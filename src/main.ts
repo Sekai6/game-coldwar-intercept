@@ -215,7 +215,7 @@ function updateCiws(){
  const candidates=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15).map(m=>{
   const relative=m.mesh.position.clone().sub(defender.position),bearing=Math.atan2(relative.x,relative.z),closingSpeed=-m.velocity.dot(relative.clone().normalize()),mount=mounts.map(x=>({...x,delta:Math.abs(angleDifference(bearing,x.heading))})).sort((a,b)=>a.delta-b.delta)[0];
   return {m,bearing,closingSpeed,mount};
- }).filter(x=>x.closingSpeed>.5&&x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)-b.m.mesh.position.distanceTo(defender.position));
+ }).filter(x=>x.closingSpeed>.5&&x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)/a.closingSpeed-b.m.mesh.position.distanceTo(defender.position)/b.closingSpeed);
  const target=candidates[0];
  if(!target){const nearby=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15),approaching=nearby.some(m=>{const relative=m.mesh.position.clone().sub(defender.position);return -m.velocity.dot(relative.normalize())>.5;});if(nearby.length)log(approaching?'CIWS HOLD / BLIND SECTOR':'CIWS HOLD / TARGET OPENING');return;}
  const range=target.m.mesh.position.distanceTo(defender.position),tti=range/target.closingSpeed,bursts=Math.max(1,Math.floor(tti/.55));
