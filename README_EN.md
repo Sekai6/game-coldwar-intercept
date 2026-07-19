@@ -521,7 +521,13 @@ Logical next steps include fleet track sharing, CEC network penalties, additiona
 <a id="license-and-security"></a>
 ## 19. License and Security
 
-No open-source license is currently included. Default copyright rules apply until a license is added.
+The source is available under the [PolyForm Noncommercial License 1.0.0](LICENSE), copyright `Sekai6`.
+
+Permitted purposes include personal research, experimentation, study, private entertainment, hobby projects, and noncommercial use by charities, educational institutions, public research organizations, public safety or health organizations, environmental organizations, and government institutions. Running, studying, modifying, and distributing the code for those noncommercial purposes is permitted, provided distributions retain the complete license terms, license URL, and `Required Notice` copyright line.
+
+**Commercial use, or use with an anticipated commercial application, is not permitted without separate written authorization.** Commercial licensing requires a separate grant from the licensor.
+
+Because it restricts commercial use, PolyForm Noncommercial does not meet the OSI Open Source Definition. The accurate description is noncommercial source-available software, not OSI-approved open-source software.
 
 Do not commit API keys, access tokens, or other credentials. `KEYS/` is intended for local credential storage and must remain outside version control. Real ship and weapon names are used for historical setting and game recognition; all implementation values should remain explicitly identified as game-scaled.
 
