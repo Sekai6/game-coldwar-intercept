@@ -1,64 +1,5 @@
 import * as THREE from "three";
-import type { SensorDefinition } from "./sim";
-import type { FixedSensorFaceConfig } from "./sensor-faces";
-
-export type ShipClass = string;
-export type ShipWeapon = "RIM-67" | "SM-2MR" | "SM-2ER";
-export type SubsystemId =
-  | "sps48"
-  | "sps49"
-  | "spg55"
-  | "mk10Aft"
-  | "mk10Forward"
-  | "ciws"
-  | "ecm"
-  | "srboc"
-  | "propulsion";
-
-export type LauncherConfig =
-  | {
-      kind: "mk10";
-      displayName: string;
-      compatibleWeapons: ShipWeapon[];
-      azimuthRateDeg: number;
-      elevationRateDeg: number;
-      reloadSeconds: number;
-    }
-  | {
-      kind: "mk41";
-      displayName: string;
-      compatibleWeapons: ShipWeapon[];
-      columns: number;
-      sequenceInterval: number;
-      exhaustClearance: number;
-      isolationStartsAt: number;
-      maximumIsolationFraction: number;
-      loadingPermutation: number;
-      gridSize: number;
-    };
-
-export interface ShipDefinition {
-  id: ShipClass;
-  name: string;
-  hullNumber: string;
-  era: string;
-  role: string;
-  launcher: LauncherConfig;
-  sensors: SensorDefinition[];
-  fixedSensorFaces?: FixedSensorFaceConfig;
-  subsystemLabels: Record<SubsystemId, string>;
-  subsystemPositions: Record<SubsystemId, THREE.Vector3>;
-  ammo: {
-    rim67: number;
-    sm2mr: number;
-    sm2er: number;
-    ciws: number;
-    channels: number;
-    illuminators: number;
-  };
-  hullColor: number;
-  build: () => THREE.Group;
-}
+import type { ShipDefinition } from "../ship-types";
 
 function slopedBox(
   length: number,
@@ -850,7 +791,7 @@ export function buildTiconderoga() {
     shipClass: "ticonderoga",
     vlsCells,
     radar,
-    sps49,
+    secondaryRadar: sps49,
     fireControl,
     directors,
     sensorFaceModels: arrays,
@@ -890,6 +831,7 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
   hullNumber: "CG-57",
   era: "1990s AEGIS",
   role: "AEGIS AIR DEFENSE CRUISER",
+  platform: { maxSpeedKnots: 32.5, turnRateDeg: 1.8, radarRcs: 10.5 },
   hullColor: 0x687678,
   launcher: {
     kind: "mk41",
@@ -905,7 +847,7 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
   },
   fixedSensorFaces: {
     sensorName: "AN/SPY-1B",
-    subsystemId: "sps48",
+    subsystemId: "primaryRadar",
     labels: ["BOW", "STARBOARD", "STERN", "PORT"],
     headings: [0, Math.PI / 2, Math.PI, -Math.PI / 2],
     damageMultiplier: 1.45,
@@ -934,26 +876,45 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
     },
   ],
   subsystemLabels: {
-    sps48: "AN/SPY-1B",
-    sps49: "AN/SPS-49",
-    spg55: "AN/SPG-62",
-    mk10Aft: "MK 41 AFT",
-    mk10Forward: "MK 41 FWD",
+    primaryRadar: "AN/SPY-1B",
+    secondaryRadar: "AN/SPS-49",
+    fireControl: "AN/SPG-62",
+    aftLauncher: "MK 41 AFT",
+    forwardLauncher: "MK 41 FWD",
     ciws: "PHALANX CIWS",
     ecm: "AN/SLQ-32",
     srboc: "MK 36 SRBOC",
     propulsion: "PROPULSION",
   },
   subsystemPositions: {
-    sps48: new THREE.Vector3(7, 13, 0),
-    sps49: new THREE.Vector3(4, 25, 0),
-    spg55: new THREE.Vector3(10, 14, 0),
-    mk10Aft: new THREE.Vector3(-25, 6, 0),
-    mk10Forward: new THREE.Vector3(22, 6, 0),
+    primaryRadar: new THREE.Vector3(7, 13, 0),
+    secondaryRadar: new THREE.Vector3(4, 25, 0),
+    fireControl: new THREE.Vector3(10, 14, 0),
+    aftLauncher: new THREE.Vector3(-25, 6, 0),
+    forwardLauncher: new THREE.Vector3(22, 6, 0),
     ciws: new THREE.Vector3(13, 10, 0),
     ecm: new THREE.Vector3(-2, 15, 4),
     srboc: new THREE.Vector3(-5, 8, 4),
     propulsion: new THREE.Vector3(-7, 5, 0),
+  },
+  damageModel: {
+    longitudinalLimit: 30,
+    zones: [
+      { minX: 18, systems: ["forwardLauncher", "ciws", "fireControl"] },
+      { minX: 6, systems: ["primaryRadar", "fireControl", "ecm", "ciws"] },
+      {
+        minX: -9,
+        systems: ["fireControl", "ecm", "propulsion", "primaryRadar"],
+      },
+      {
+        minX: -20,
+        systems: ["secondaryRadar", "srboc", "propulsion", "fireControl"],
+      },
+      {
+        minX: -Infinity,
+        systems: ["aftLauncher", "srboc", "ciws", "secondaryRadar"],
+      },
+    ],
   },
   ammo: {
     rim67: 0,

@@ -1,10 +1,8 @@
 import * as THREE from "three";
 import { DEFAULT_SENSORS } from "./sim";
-import {
-  buildTiconderoga,
-  TICONDEROGA_METADATA,
-  type ShipDefinition,
-} from "./ships";
+import { buildTiconderoga, TICONDEROGA_METADATA } from "./models/ticonderoga";
+import { buildLongBeach } from "./models/long-beach";
+import type { ShipDefinition } from "./ship-types";
 
 export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
   id: "long-beach",
@@ -12,6 +10,7 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
   hullNumber: "CGN-9",
   era: "NTU 1980s",
   role: "NUCLEAR GUIDED MISSILE CRUISER",
+  platform: { maxSpeedKnots: 30, turnRateDeg: 1.6, radarRcs: 12 },
   hullColor: 0x4b5a59,
   launcher: {
     kind: "mk10",
@@ -23,26 +22,45 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
   },
   sensors: DEFAULT_SENSORS,
   subsystemLabels: {
-    sps48: "AN/SPS-48E",
-    sps49: "AN/SPS-49",
-    spg55: "AN/SPG-55",
-    mk10Aft: "MK 10 AFT",
-    mk10Forward: "MK 10 FWD",
+    primaryRadar: "AN/SPS-48E",
+    secondaryRadar: "AN/SPS-49",
+    fireControl: "AN/SPG-55",
+    aftLauncher: "MK 10 AFT",
+    forwardLauncher: "MK 10 FWD",
     ciws: "CIWS",
     ecm: "AN/SLQ-32",
     srboc: "MK 36 SRBOC",
     propulsion: "PROPULSION",
   },
   subsystemPositions: {
-    sps48: new THREE.Vector3(1, 24, 0),
-    sps49: new THREE.Vector3(-7, 23, 0),
-    spg55: new THREE.Vector3(8, 13, 0),
-    mk10Aft: new THREE.Vector3(-23, 7, 0),
-    mk10Forward: new THREE.Vector3(23, 7, 0),
+    primaryRadar: new THREE.Vector3(1, 24, 0),
+    secondaryRadar: new THREE.Vector3(-7, 23, 0),
+    fireControl: new THREE.Vector3(8, 13, 0),
+    aftLauncher: new THREE.Vector3(-23, 7, 0),
+    forwardLauncher: new THREE.Vector3(23, 7, 0),
     ciws: new THREE.Vector3(13, 8, 0),
     ecm: new THREE.Vector3(2.5, 16, 3.2),
     srboc: new THREE.Vector3(0, 8, 4),
     propulsion: new THREE.Vector3(-4, 6, 0),
+  },
+  damageModel: {
+    longitudinalLimit: 24,
+    zones: [
+      { minX: 14, systems: ["forwardLauncher", "ciws", "fireControl"] },
+      { minX: 4, systems: ["primaryRadar", "fireControl", "ecm", "ciws"] },
+      {
+        minX: -7,
+        systems: ["fireControl", "ecm", "propulsion", "primaryRadar"],
+      },
+      {
+        minX: -16,
+        systems: ["secondaryRadar", "srboc", "propulsion", "fireControl"],
+      },
+      {
+        minX: -Infinity,
+        systems: ["aftLauncher", "srboc", "ciws", "secondaryRadar"],
+      },
+    ],
   },
   ammo: {
     rim67: 6,
@@ -54,10 +72,14 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
   },
 };
 
-export function createShipCatalog(buildLongBeach: () => THREE.Group) {
+export function createShipCatalog() {
   const ships: ShipDefinition[] = [
     { ...LONG_BEACH_METADATA, build: buildLongBeach },
     { ...TICONDEROGA_METADATA, build: buildTiconderoga },
   ];
-  return { ships, byId: new Map(ships.map((ship) => [ship.id, ship])) };
+  return {
+    ships,
+    byId: new Map(ships.map((ship) => [ship.id, ship])),
+    defaultShip: ships[0],
+  };
 }

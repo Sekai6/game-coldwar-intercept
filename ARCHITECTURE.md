@@ -6,7 +6,9 @@ The simulation is organized around capabilities rather than ship-name checks.
 
 - `src/main.ts`: scene orchestration, UI adapters, and the frame loop.
 - `src/ship-catalog.ts`: ship registration and per-class capability metadata.
-- `src/ships.ts`: ship definition contracts and the Ticonderoga model builder.
+- `src/ship-types.ts`: ship capability contracts shared by the catalog and runtime.
+- `src/models/long-beach.ts`: CGN-9 procedural model and Mk 10 visual components.
+- `src/models/ticonderoga.ts`: CG-47-class procedural model and Mk 41 visual components.
 - `src/combat-types.ts`: shared runtime domain types.
 - `src/missile-data.ts`: interceptor and threat flight profiles.
 - `src/sim.ts`: sensor scans, uncertain tracks, and fire-control solutions.
@@ -26,4 +28,4 @@ The simulation is organized around capabilities rather than ship-name checks.
 2. Add its physical/game-scaled flight profile to `missile-data.ts`.
 3. Keep rendering-specific geometry separate from guidance and engagement parameters.
 
-The current remaining extraction boundary is the CGN-9 procedural model builder in `main.ts`. It should move to a dedicated model module without changing the `ShipDefinition` contract.
+Model modules expose equipment anchors through `Object3D.userData`; combat behavior reads capabilities from `ShipDefinition` and must not infer them from a model or ship name.
