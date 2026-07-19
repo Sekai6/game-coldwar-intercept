@@ -224,8 +224,8 @@ function updateCiws(){
  if(mountModel)mountModel.rotation.y+=THREE.MathUtils.clamp(traverseError,-THREE.MathUtils.degToRad(70)*.55,THREE.MathUtils.degToRad(70)*.55);
  if(Math.abs(traverseError)>THREE.MathUtils.degToRad(12)){lastCiwsShot=elapsed;log(`CIWS SLEWING / ${target.mount.name} / ${Math.round(THREE.MathUtils.radToDeg(Math.abs(traverseError)))} DEG`);return;}
  lastCiwsShot=elapsed;ciwsRounds=Math.max(0,ciwsRounds-60);const mountOrigin=defender.position.clone().add(target.mount.position).add(new THREE.Vector3(0,8.7,0));ciwsTracer(target.m.mesh.position,mountOrigin);
- const saturation=Math.max(1,candidates.length),basePk=Math.max(.08,.46/saturation)-(target.m.kind==='P-500'?.1:target.m.kind==='P-700'?.16:.3),pk=target.m.kind==='Kh-22'?Math.min(.14,basePk):Math.max(.08,basePk),roll=Math.abs(Math.sin(elapsed*31.7+ciwsRounds*.013));
- log(`CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / ${target.mount.name}`);
+ const saturation=Math.max(1,candidates.length),basePk=Math.max(.08,.46/saturation)-(target.m.kind==='P-500'?.1:target.m.kind==='P-700'?.16:.3),singlePk=target.m.kind==='Kh-22'?Math.min(.14,basePk):Math.max(.08,basePk),windowFactor=Math.min(1.35,.75+bursts*.12),pk=Math.min(.72,singlePk*windowFactor),roll=Math.abs(Math.sin(elapsed*31.7+ciwsRounds*.013));
+ log(`CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / PK ${Math.round(pk*100)}% / ${target.mount.name}`);
  if(roll<pk){target.m.phase='destroyed';target.m.mesh.visible=false;destroyMissileVisual(target.m,'intercept');log(`CIWS KILL / ${target.mount.name} / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);}else log(`CIWS MISS / ${target.mount.name} / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);
 }
 setInterval(()=>interceptors.forEach(i=>{if(i.mesh.userData.seeker)i.mesh.userData.seeker.visible=i.weapon==='RIM-67'&&i.mesh.visible&&i.target.phase!=='destroyed'&&i.mesh.position.distanceTo(i.target.mesh.position)<weaponProfiles[i.weapon].terminalRange;}),50);
