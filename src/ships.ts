@@ -1,8 +1,15 @@
 import * as THREE from 'three';
 import type { SensorDefinition } from './sim';
+import type { FixedSensorFaceConfig } from './sensor-faces';
 
 export type ShipClass=string;
 export type LauncherKind='mk10'|'mk41';
+export type ShipWeapon='RIM-67'|'SM-2MR'|'SM-2ER';
+export type SubsystemId='sps48'|'sps49'|'spg55'|'mk10Aft'|'mk10Forward'|'ciws'|'ecm'|'srboc'|'propulsion';
+
+export type LauncherConfig=
+ | {kind:'mk10';displayName:string;compatibleWeapons:ShipWeapon[];azimuthRateDeg:number;elevationRateDeg:number;reloadSeconds:number}
+ | {kind:'mk41';displayName:string;compatibleWeapons:ShipWeapon[];columns:number;sequenceInterval:number;exhaustClearance:number;isolationStartsAt:number;maximumIsolationFraction:number;loadingPermutation:number;gridSize:number};
 
 export interface ShipDefinition {
  id:ShipClass;
@@ -10,11 +17,14 @@ export interface ShipDefinition {
  hullNumber:string;
  era:string;
  role:string;
- launcherKind:LauncherKind;
+ launcher:LauncherConfig;
+ readonly launcherKind:LauncherKind;
  sensors:SensorDefinition[];
- subsystemLabels:Record<string,string>;
- subsystemPositions:Record<string,THREE.Vector3>;
+ fixedSensorFaces?:FixedSensorFaceConfig;
+ subsystemLabels:Record<SubsystemId,string>;
+ subsystemPositions:Record<SubsystemId,THREE.Vector3>;
  ammo:{rim67:number;sm2mr:number;sm2er:number;ciws:number;channels:number;illuminators:number};
+ hullColor:number;
  build:()=>THREE.Group;
 }
 
@@ -27,7 +37,7 @@ function gun(material:THREE.Material,dark:THREE.Material){const group=new THREE.
 function ciws(material:THREE.Material,dark:THREE.Material,name:string){const group=new THREE.Group();group.name=name;const base=new THREE.Mesh(new THREE.CylinderGeometry(.7,.95,.7,12),dark),turret=new THREE.Mesh(new THREE.BoxGeometry(1,1.05,.9),material),pivot=new THREE.Group(),radome=new THREE.Mesh(new THREE.SphereGeometry(.38,10,7),material);turret.position.y=.88;pivot.position.set(0,1.08,0);for(let n=-1;n<=1;n++){const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,2.2,6),dark);barrel.rotation.z=Math.PI/2;barrel.position.set(1.3,0,n*.11);pivot.add(barrel);}radome.position.set(-.25,1.55,0);group.add(base,turret,pivot,radome);group.userData.elevationPivot=pivot;return group;}
 function director(material:THREE.Material,dark:THREE.Material,x:number,z:number,heading:number){const group=new THREE.Group();group.position.set(x,13.5,z);group.rotation.y=heading;group.userData.stowHeading=heading;const pedestal=new THREE.Mesh(new THREE.CylinderGeometry(.58,.82,1.05,12),dark),pivot=new THREE.Group(),dish=new THREE.Mesh(new THREE.SphereGeometry(1.05,16,8,0,Math.PI*2,0,Math.PI*.46),material),back=new THREE.Mesh(new THREE.CylinderGeometry(.88,.72,.28,14),dark),feed=new THREE.Mesh(new THREE.CylinderGeometry(.055,.11,1.45,7),dark),tip=new THREE.Object3D();pivot.position.y=.65;dish.rotation.z=-Math.PI/2;dish.position.x=.74;back.rotation.z=Math.PI/2;back.position.x=.55;feed.rotation.z=Math.PI/2;feed.position.x=1.35;tip.position.x=2.1;pivot.add(back,dish,feed,tip);group.add(pedestal,pivot);group.userData.elevationPivot=pivot;group.userData.feedTip=tip;return group;}
 function vlsBank(rows:number,columns:number,spacing:number,material:THREE.Material,dark:THREE.Material,omitted:number[]=[]){const group=new THREE.Group(),cells:{lid:THREE.Group;origin:THREE.Object3D;index:number}[]=[],width=(rows-1)*spacing+1.05,depth=(columns-1)*spacing+1.05,plinth=new THREE.Mesh(new THREE.BoxGeometry(width+.55,.28,depth+.55),dark);plinth.position.y=.05;group.add(plinth);for(let row=0;row<rows;row++)for(let column=0;column<columns;column++){const physicalIndex=row*columns+column,x=(row-(rows-1)/2)*spacing,z=(column-(columns-1)/2)*spacing;if(omitted.includes(physicalIndex)){const cranePlate=new THREE.Mesh(new THREE.BoxGeometry(.68,.1,.68),dark);cranePlate.position.set(x,.25,z);group.add(cranePlate);continue;}const frame=new THREE.Mesh(new THREE.BoxGeometry(.67,.1,.67),material),well=new THREE.Mesh(new THREE.BoxGeometry(.51,.04,.51),new THREE.MeshBasicMaterial({color:0x182326})),lid=new THREE.Group(),panel=new THREE.Mesh(new THREE.BoxGeometry(.53,.055,.53),material),hinge=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.5,6),dark),origin=new THREE.Object3D();frame.position.set(x,.22,z);well.position.set(x,.29,z);lid.position.set(x-.265,.34,z);panel.position.x=.265;hinge.rotation.x=Math.PI/2;hinge.position.z=-.265;origin.position.set(x,.42,z);lid.add(panel,hinge);group.add(frame,well,lid,origin);cells.push({lid,origin,index:physicalIndex});}group.userData.cells=cells;return group;}
-function fixedArray(material:THREE.Material,dark:THREE.Material,position:THREE.Vector3,rotation:THREE.Euler){const group=new THREE.Group();group.position.copy(position);group.rotation.copy(rotation);const border=new THREE.Mesh(new THREE.CylinderGeometry(2.45,2.45,.14,8),dark),panel=new THREE.Mesh(new THREE.CylinderGeometry(2.18,2.18,.18,8),material);border.rotation.x=Math.PI/2;panel.rotation.x=Math.PI/2;panel.position.z=.09;group.add(border,panel);for(let x=-1.2;x<=1.2;x+=.6)for(let y=-1.2;y<=1.2;y+=.6){if(Math.hypot(x,y)>1.65)continue;const module=new THREE.Mesh(new THREE.CircleGeometry(.055,8),new THREE.MeshBasicMaterial({color:0xdfe3d9}));module.position.set(x,y,.2);group.add(module);}return group;}
+function fixedArray(material:THREE.Material,dark:THREE.Material,position:THREE.Vector3,rotation:THREE.Euler){const group=new THREE.Group();group.position.copy(position);group.rotation.copy(rotation);const border=new THREE.Mesh(new THREE.CylinderGeometry(2.45,2.45,.14,8),dark),panelMaterial=material.clone(),panel=new THREE.Mesh(new THREE.CylinderGeometry(2.18,2.18,.18,8),panelMaterial);border.rotation.x=Math.PI/2;panel.rotation.x=Math.PI/2;panel.position.z=.09;group.add(border,panel);for(let x=-1.2;x<=1.2;x+=.6)for(let y=-1.2;y<=1.2;y+=.6){if(Math.hypot(x,y)>1.65)continue;const module=new THREE.Mesh(new THREE.CircleGeometry(.055,8),new THREE.MeshBasicMaterial({color:0xdfe3d9}));module.position.set(x,y,.2);group.add(module);}group.userData.panel=panel;return group;}
 
 export function buildTiconderoga(){
  const ship=new THREE.Group(),hullMat=new THREE.MeshStandardMaterial({color:0x687678,metalness:.58,roughness:.42}),deckMat=new THREE.MeshStandardMaterial({color:0x5d6867,metalness:.32,roughness:.66}),superMat=new THREE.MeshStandardMaterial({color:0x8d9998,metalness:.38,roughness:.52}),dark=new THREE.MeshStandardMaterial({color:0x263235,metalness:.52,roughness:.46}),arrayMat=new THREE.MeshStandardMaterial({color:0xcbd0c8,metalness:.24,roughness:.58}),windowMat=new THREE.MeshStandardMaterial({color:0x4ca8ad,emissive:0x123f43,emissiveIntensity:1.5}),highDetail=new THREE.Group(),mediumDetail=new THREE.Group(),lowDetail=new THREE.Group();
@@ -50,12 +60,14 @@ export function buildTiconderoga(){
  const navigationLights:THREE.PointLight[]=[],lightBulbs:THREE.Mesh[]=[];for(const side of [-1,1]){const color=side>0?0x42ff74:0xff493e,light=new THREE.PointLight(color,3,18),bulb=new THREE.Mesh(new THREE.SphereGeometry(.14,8,6),new THREE.MeshBasicMaterial({color}));light.position.set(10.5,17,side*3.7);bulb.position.copy(light.position);navigationLights.push(light);lightBulbs.push(bulb);ship.add(light,bulb);}const mastLight=new THREE.PointLight(0xf5fff0,2.5,24),mastBulb=new THREE.Mesh(new THREE.SphereGeometry(.14,8,6),new THREE.MeshBasicMaterial({color:0xf5fff0}));mastLight.position.set(4.2,31,0);mastBulb.position.copy(mastLight.position);navigationLights.push(mastLight);lightBulbs.push(mastBulb);ship.add(mastLight,mastBulb);
  const radar=new THREE.Group();radar.userData.static=true;const searchBeam=new THREE.Mesh(new THREE.RingGeometry(25,105,64,1,0,Math.PI*.13),new THREE.MeshBasicMaterial({color:0x5ee9df,transparent:true,opacity:.025,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));searchBeam.rotation.x=-Math.PI/2;searchBeam.position.set(4,18,0);radar.add(searchBeam);radar.userData.searchBeam=searchBeam;ship.add(radar);const fireControl=new THREE.Group();fireControl.userData.static=true;ship.add(fireControl);
  const ewPulse=new THREE.Group();for(let n=0;n<3;n++){const ring=new THREE.Mesh(new THREE.TorusGeometry(12+n*8,.08,6,72),new THREE.MeshBasicMaterial({color:0x66e5dc,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending}));ring.rotation.x=Math.PI/2;ring.position.y=18;ewPulse.add(ring);}ewPulse.visible=false;ship.add(ewPulse);
- ship.userData={shipClass:'ticonderoga',launcherKind:'mk41',vlsCells,radar,sps49,fireControl,directors,highDetail,mediumDetail,lowDetail,smokePuffs,flag,hullMat,ewPulse,navigationLights,lightBulbs,detail:[forwardHouse,bridge,aftHouse,hangar,foreMast,aftMast,forwardVls,aftVls,foreGun,aftGun,foreCiws,aftCiws,...directors,...arrays]};
+ ship.userData={shipClass:'ticonderoga',launcherKind:'mk41',vlsCells,radar,sps49,fireControl,directors,sensorFaceModels:arrays,fixedSensorFaceHealth:[1,1,1,1],highDetail,mediumDetail,lowDetail,smokePuffs,flag,hullMat,ewPulse,navigationLights,lightBulbs,detail:[forwardHouse,bridge,aftHouse,hangar,foreMast,aftMast,forwardVls,aftVls,foreGun,aftGun,foreCiws,aftCiws,...directors,...arrays]};
  return ship;
 }
 
 export const TICONDEROGA_METADATA:Omit<ShipDefinition,'build'>={
- id:'ticonderoga',name:'USS LAKE CHAMPLAIN',hullNumber:'CG-57',era:'1990s AEGIS',role:'AEGIS AIR DEFENSE CRUISER',launcherKind:'mk41',
+ id:'ticonderoga',name:'USS LAKE CHAMPLAIN',hullNumber:'CG-57',era:'1990s AEGIS',role:'AEGIS AIR DEFENSE CRUISER',launcherKind:'mk41',hullColor:0x687678,
+ launcher:{kind:'mk41',displayName:'MK 41 VLS',compatibleWeapons:['SM-2MR','SM-2ER'],columns:8,sequenceInterval:.5,exhaustClearance:1.6,isolationStartsAt:.75,maximumIsolationFraction:.48,loadingPermutation:17,gridSize:64},
+ fixedSensorFaces:{sensorName:'AN/SPY-1B',subsystemId:'sps48',labels:['BOW','STARBOARD','STERN','PORT'],headings:[0,Math.PI/2,Math.PI,-Math.PI/2],damageMultiplier:1.45,healthyColor:0xcbd0c8,damagedColor:0x4a302c,criticalEmissive:0x45120c},
  sensors:[{name:'AN/SPY-1B',threeDimensional:true,baseInterval:.42,maxRange:820,radarHeight:32,precision:1.12,scanMode:'phased-array'},{name:'AN/SPS-49',threeDimensional:false,baseInterval:1.05,maxRange:1100,radarHeight:38,precision:.75,scanMode:'mechanical'}],
  subsystemLabels:{sps48:'AN/SPY-1B',sps49:'AN/SPS-49',spg55:'AN/SPG-62',mk10Aft:'MK 41 AFT',mk10Forward:'MK 41 FWD',ciws:'PHALANX CIWS',ecm:'AN/SLQ-32',srboc:'MK 36 SRBOC',propulsion:'PROPULSION'},
  subsystemPositions:{sps48:new THREE.Vector3(7,13,0),sps49:new THREE.Vector3(4,25,0),spg55:new THREE.Vector3(10,14,0),mk10Aft:new THREE.Vector3(-25,6,0),mk10Forward:new THREE.Vector3(22,6,0),ciws:new THREE.Vector3(13,10,0),ecm:new THREE.Vector3(-2,15,4),srboc:new THREE.Vector3(-5,8,4),propulsion:new THREE.Vector3(-7,5,0)},

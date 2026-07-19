@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export type TrackQuality = 'unknown' | 'suspect' | 'classified';
 export type SensorName = string;
 export type SensorHealth = Partial<Record<SensorName,number>>;
+export type SensorAspectHealth = Partial<Record<SensorName,(bearing:number)=>number>>;
 export interface Track {
   id:number;
   sourceId:number;
@@ -54,7 +55,7 @@ export class CombatPicture {
   getSearchState():SearchState{return{width:this.searchWidth,bearing:this.searchBearing,focused:this.searchWidth<360,revisitMultiplier:this.searchWidth/360};}
   reset(){this.tracks.clear();this.nextScan=new Map(this.sensors.map(sensor=>[sensor.name,0]));this.nextBackgroundScan=new Map(this.sensors.map(sensor=>[sensor.name,0]));this.nextTrackId=1;this.events=[];this.lastTrackForSource.clear();this.rng=0x41c64e6d;}
   drainEvents(){return this.events.splice(0);}
-  update(now:number,dt:number,targets:TargetReturn[],radarHealth:number|SensorHealth=1,sensorPosition=new THREE.Vector3()){
+  update(now:number,dt:number,targets:TargetReturn[],radarHealth:number|SensorHealth=1,sensorPosition=new THREE.Vector3(),aspectHealth:SensorAspectHealth={}){
     for(const track of this.tracks.values()){track.age+=dt;track.quality=Math.max(0,track.quality-dt*.008);track.uncertainty+=dt*95;track.altitudeUncertainty+=dt*18;if(now-track.lastAltitudeUpdate>4)track.altitudeKnown=false;if(track.altitudeKnown&&track.age<1.5){track.solutionTime+=dt;track.solutionQuality=THREE.MathUtils.clamp(track.solutionQuality+dt*(.16+track.quality*.3),0,1);}else{track.solutionTime=0;track.solutionQuality=Math.max(0,track.solutionQuality-dt*.16);}}
     for(const sensor of this.sensors){
       const health=typeof radarHealth==='number'?radarHealth:radarHealth[sensor.name]??1;if(health<=.04)continue;
@@ -70,13 +71,13 @@ export class CombatPicture {
         const inFocus=!focused||Math.abs(this.angleDelta(bearing,this.searchBearing))<=THREE.MathUtils.degToRad(this.searchWidth/2);
         if(focused&&!inFocus&&(!phasedArray||!backgroundDue))continue;
         if(inFocus&&!focusDue)continue;
-        const revisit=inFocus?focusRevisit:backgroundRevisit,focusGain=focused&&inFocus?1.5:1;
-        const range=target.position.distanceTo(sensorPosition),effective=sensor.maxRange*Math.pow(Math.max(.05,target.rcs/.5),.25)*health;if(range>effective*1.05)continue;
+        const revisit=inFocus?focusRevisit:backgroundRevisit,focusGain=focused&&inFocus?1.5:1,targetHealth=health*THREE.MathUtils.clamp(aspectHealth[sensor.name]?.(bearing)??1,.04,1);
+        const range=target.position.distanceTo(sensorPosition),effective=sensor.maxRange*Math.pow(Math.max(.05,target.rcs/.5),.25)*targetHealth;if(range>effective*1.05)continue;
         const horizon=this.radarHorizon(sensor.radarHeight,target.altitude),horizonFactor=range>horizon?Math.max(.06,1-(range-horizon)/effective):1;
         const ratio=Math.min(1,range/effective),highAltitudeGain=!sensor.threeDimensional&&target.altitude>3000?1.18:1;
         const probability=Math.min(.98,Math.max(0,.96-ratio*ratio*.74)*horizonFactor*highAltitudeGain+(!sensor.threeDimensional&&target.altitude>3000?.12:0));
         if(this.rand()>=probability)continue;
-        const measuredQuality=THREE.MathUtils.clamp((1-ratio)*horizonFactor*health*sensor.precision*focusGain,.03,.96);
+        const measuredQuality=THREE.MathUtils.clamp((1-ratio)*horizonFactor*targetHealth*sensor.precision*focusGain,.03,.96);
         const errorMeters=(Math.pow(1-measuredQuality,1.65)*4200+this.rand()*500)/sensor.precision,errorWorld=errorMeters/100;
         const measuredPosition=target.position.clone().add(new THREE.Vector3((this.rand()-.5)*errorWorld,0,(this.rand()-.5)*errorWorld));
         const altitudeError=sensor.threeDimensional?Math.max(80,errorMeters*.16):Math.max(5000,target.altitude*.8);
