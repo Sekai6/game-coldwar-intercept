@@ -1,1 +1,37 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NTU Intercept Exercise</title><link rel="icon" href="data:,"></head><body><div id="app"><canvas id="scene"></canvas><canvas id="radar" width="260" height="260"></canvas><section class="hud"><div class="brand">CODEWAR // NORTH ATLANTIC</div><div class="title">NTU INTERCEPT EXERCISE</div><div class="status"><span class="dot"></span><span id="phase">TRACKING</span><span class="sep">|</span><span id="clock">00:00</span></div><div class="cards"><div class="card"><b>USS LONG BEACH</b><small>CGN-9 / NTU FIRE CONTROL</small><strong id="shipState">RADAR ONLINE</strong></div><div class="card"><b>TARGET GROUP</b><small id="targetCount">3 TRACKS / 0.0 km</small><strong id="targetState">INBOUND</strong></div><div class="card"><b>INTERCEPTORS</b><small>RIM-67 STANDARD ER</small><strong id="ammo">6 READY</strong></div></div><div class="help">DRAG TO ORBIT / WHEEL TO ZOOM / SPACE PAUSE / R RESET</div></section><div class="reticle" id="reticle"></div><div class="feed" id="feed"></div></div><script type="module" src="/src/main.ts"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#061116">
+  <title>NTU Intercept Exercise</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div id="app">
+    <canvas id="scene"></canvas>
+    <div class="cinema-bars" aria-hidden="true"></div>
+    <div class="sensor-noise" aria-hidden="true"></div>
+    <section class="hud">
+      <header class="masthead">
+        <div><div class="brand">FLEETEX 83-4 <span>//</span> NORTH ATLANTIC</div><div class="title">NTU INTERCEPT</div></div>
+        <div class="status"><span class="dot"></span><span id="phase">TRACKING</span><span class="sep">/</span><span id="clock">00:00</span></div>
+      </header>
+      <aside class="threat-panel">
+        <div class="panel-kicker">THREAT EVALUATION</div><div class="threat-name" id="threatName">TRACK 01 / PENDING ID</div>
+        <div class="threat-grid"><span>RANGE<b id="threatRange">--.- km</b></span><span>TRACK<b id="trackQuality">NO DATA</b></span><span>TTI<b id="threatTti">-- s</b></span></div>
+        <div class="quality-bar"><i id="qualityFill"></i></div>
+      </aside>
+      <div class="cards">
+        <article class="card"><div class="card-index">CGN-9</div><b>USS LONG BEACH</b><small>NTU COMBAT DIRECTION</small><strong id="shipState">RADAR ONLINE</strong></article>
+        <article class="card"><div class="card-index danger">AIR</div><b>RAID STATUS</b><small id="targetCount">3 TRACKS / 0.0 km</small><strong id="targetState">INBOUND</strong></article>
+        <article class="card"><div class="card-index weapon">SAM</div><b>GUIDED WEAPONS</b><small>RIM-67 / SM-2MR</small><strong id="ammo">6 READY</strong></article>
+      </div>
+      <div class="help">LMB ORBIT&nbsp;&nbsp; WHEEL RANGE&nbsp;&nbsp; 1-3 VIEW&nbsp;&nbsp; C CINEMATIC&nbsp;&nbsp; SPACE PAUSE</div>
+    </section>
+    <div class="reticle" id="reticle"><i></i></div><div class="feed" id="feed"></div>
+    <div class="radar-shell"><div class="radar-heading"><span>AN/SPS-48E</span><b>TACTICAL PICTURE</b></div><canvas id="radar" width="260" height="260"></canvas><div class="radar-scale">RINGS 50 km</div></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
