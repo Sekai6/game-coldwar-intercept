@@ -270,7 +270,7 @@ The missile leaves from the selected Mk 10 rail’s actual position and orientat
 
 1. The ship sends delayed datalink updates based on track quality.
 2. Update spacing varies with quality; missing data causes inertial extrapolation.
-3. Long-range shots use a lofted trajectory before descending toward the target.
+3. Trajectory selection follows the threat profile: P-500/P-700 use a low-altitude forward-intercept corridor, while high-altitude targets such as Kh-22 retain a lofted trajectory. Against sea skimmers, Mk 41 rounds hold vertical only long enough to clear the ship before a rapid programmed turn.
 4. Inside terminal range, control transfers to an active seeker or SPG-55 illumination.
 
 <a id="rim67-terminal"></a>
