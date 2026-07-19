@@ -431,6 +431,8 @@ The `DAMAGE CONTROL` panel shows continuous health for all nine entries. Below 6
 
 Scenario setup now selects between two procedural ships. CG-57 follows the supplied reference photograph with a slender Spruance-derived hull, forward and aft 61-cell Mk 41 banks, four octagonal SPY-1 faces, separated superstructure blocks, twin mast/exhaust groups, hangar, flight deck, and fore/aft Mk 45 guns. Mk 41 cells have independent hatches and one-shot state; launch sequencing opens the hatch, performs a hot vertical departure, delays the programmed turn, closes the hatch, and marks the cell spent.
 
+The ship selector is generated from `SHIP_CATALOG`. Each definition supplies its model builder, sensors, ammunition, launcher family, and subsystem positions. Stack smoke and CIWS effects read model attachment points, so another ship in an existing launcher family does not require ship-name branches in UI or firing code.
+
 USS Long Beach is represented by a procedural model built around recognizable features:
 
 - A faceted hull with narrowing bow and stern sections.
