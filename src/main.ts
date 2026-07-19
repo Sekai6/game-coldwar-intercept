@@ -218,6 +218,7 @@ function updateCiws(){
  const target=candidates[0];
  if(!target){if(missiles.some(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15))log('CIWS HOLD / BLIND SECTOR');return;}
  const range=target.m.mesh.position.distanceTo(defender.position),speed=Math.max(1,target.m.velocity.length()),tti=range/speed,bursts=Math.max(1,Math.floor(tti/.55));
+ if(tti<.35){lastCiwsShot=elapsed;log(`CIWS HOLD / WINDOW CLOSED / ${target.m.kind} / ${tti.toFixed(2)}s / ${target.mount.name}`);return;}
  lastCiwsShot=elapsed;ciwsRounds=Math.max(0,ciwsRounds-60);const mountOrigin=defender.position.clone().add(target.mount.position).add(new THREE.Vector3(0,8.7,0));ciwsTracer(target.m.mesh.position,mountOrigin);
  const saturation=Math.max(1,candidates.length),basePk=Math.max(.08,.46/saturation)-(target.m.kind==='P-500'?.1:target.m.kind==='P-700'?.16:.3),pk=target.m.kind==='Kh-22'?Math.min(.14,basePk):Math.max(.08,basePk),roll=Math.abs(Math.sin(elapsed*31.7+ciwsRounds*.013));
  log(`CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / ${target.mount.name}`);
