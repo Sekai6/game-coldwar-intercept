@@ -4,6 +4,7 @@ export type TrackQuality = 'unknown' | 'suspect' | 'classified';
 export type SensorName = 'AN/SPS-48E' | 'AN/SPS-49';
 export interface Track {
   id:number;
+  sourceId:number;
   position:THREE.Vector3;
   velocity:THREE.Vector3;
   quality:number;
@@ -30,6 +31,9 @@ const SENSORS:SensorDefinition[]=[
 export class CombatPicture {
   readonly tracks=new Map<number,Track>();
   private rng=0x41c64e6d;
+  private nextTrackId=1;
+  private events:string[]=[];
+  private lastTrackForSource=new Map<number,number>();
   private nextScan=new Map<SensorName,number>(SENSORS.map(sensor=>[sensor.name,0]));
   private searchWidth=360;
   private searchBearing=0;
@@ -37,9 +41,11 @@ export class CombatPicture {
   private radarHorizon(aMeters:number,bMeters:number){return 41.2*(Math.sqrt(Math.max(0,aMeters))+Math.sqrt(Math.max(0,bMeters)));}
   private angleDelta(a:number,b:number){return Math.atan2(Math.sin(a-b),Math.cos(a-b));}
   private targetBearing(target:THREE.Vector3,sensor:THREE.Vector3){return Math.atan2(target.x-sensor.x,target.z-sensor.z);}
+  private associate(position:THREE.Vector3,velocity:THREE.Vector3,revisit:number,claimed:Set<number>){let best:Track|undefined,bestScore=1;for(const track of this.tracks.values()){if(claimed.has(track.id))continue;const predicted=track.position.clone().addScaledVector(track.velocity,track.age),dx=predicted.x-position.x,dz=predicted.z-position.z,deviation=Math.hypot(dx,dz),gate=Math.max(8,track.uncertainty/100*1.6+velocity.length()*revisit*1.8),score=deviation/gate;if(score<bestScore){best=track;bestScore=score;}}return best;}
   setSearch(width:number,bearing=this.searchBearing){this.searchWidth=THREE.MathUtils.clamp(width,60,360);this.searchBearing=Math.atan2(Math.sin(bearing),Math.cos(bearing));}
   getSearchState():SearchState{return{width:this.searchWidth,bearing:this.searchBearing,focused:this.searchWidth<360,revisitMultiplier:this.searchWidth/360};}
-  reset(){this.tracks.clear();this.nextScan=new Map(SENSORS.map(sensor=>[sensor.name,0]));this.rng=0x41c64e6d;}
+  reset(){this.tracks.clear();this.nextScan=new Map(SENSORS.map(sensor=>[sensor.name,0]));this.nextTrackId=1;this.events=[];this.lastTrackForSource.clear();this.rng=0x41c64e6d;}
+  drainEvents(){return this.events.splice(0);}
   update(now:number,dt:number,targets:TargetReturn[],radarHealth=1,sensorPosition=new THREE.Vector3()){
     for(const track of this.tracks.values()){track.age+=dt;track.quality=Math.max(0,track.quality-dt*.008);track.uncertainty+=dt*95;track.altitudeUncertainty+=dt*18;if(now-track.lastAltitudeUpdate>4)track.altitudeKnown=false;}
     const focusGain=this.searchWidth<360?1.5:1;
@@ -47,6 +53,7 @@ export class CombatPicture {
       if(now<(this.nextScan.get(sensor.name)??0))continue;
       const revisit=Math.max(.14,sensor.baseInterval*this.searchWidth/360);
       this.nextScan.set(sensor.name,now+revisit);
+      const claimed=new Set<number>();
       for(const target of targets){
         const bearing=this.targetBearing(target.position,sensorPosition);
         if(this.searchWidth<360&&Math.abs(this.angleDelta(bearing,this.searchBearing))>THREE.MathUtils.degToRad(this.searchWidth/2))continue;
@@ -57,20 +64,22 @@ export class CombatPicture {
         if(this.rand()>=probability)continue;
         const measuredQuality=THREE.MathUtils.clamp((1-ratio)*horizonFactor*radarHealth*sensor.precision*focusGain,.03,.96);
         const errorMeters=(Math.pow(1-measuredQuality,1.65)*4200+this.rand()*500)/sensor.precision,errorWorld=errorMeters/100;
-        const existing=this.tracks.get(target.id),measuredPosition=target.position.clone().add(new THREE.Vector3((this.rand()-.5)*errorWorld,0,(this.rand()-.5)*errorWorld));
+        const measuredPosition=target.position.clone().add(new THREE.Vector3((this.rand()-.5)*errorWorld,0,(this.rand()-.5)*errorWorld));
         const altitudeError=sensor.threeDimensional?Math.max(80,errorMeters*.16):Math.max(5000,target.altitude*.8);
-        measuredPosition.y=sensor.threeDimensional?target.position.y+(this.rand()-.5)*altitudeError/50:existing?.altitudeKnown?existing.position.y:.6;
+        measuredPosition.y=sensor.threeDimensional?target.position.y+(this.rand()-.5)*altitudeError/50:.6;
+        const existing=this.associate(measuredPosition,target.velocity,revisit,claimed);if(existing?.altitudeKnown&&!sensor.threeDimensional)measuredPosition.y=existing.position.y;
         if(existing){
-          const gain=.24+measuredQuality*.42;existing.position.lerp(measuredPosition,gain);existing.velocity.lerp(target.velocity,sensor.threeDimensional?.58:.38);existing.quality=THREE.MathUtils.lerp(existing.quality,measuredQuality,.58);existing.uncertainty=THREE.MathUtils.lerp(existing.uncertainty,errorMeters,.52);existing.age=0;existing.lastSeen=now;
+          claimed.add(existing.id);this.lastTrackForSource.set(target.id,existing.id);const gain=.24+measuredQuality*.42;existing.sourceId=target.id;existing.position.lerp(measuredPosition,gain);existing.velocity.lerp(target.velocity,sensor.threeDimensional?.58:.38);existing.quality=THREE.MathUtils.lerp(existing.quality,measuredQuality,.58);existing.uncertainty=THREE.MathUtils.lerp(existing.uncertainty,errorMeters,.52);existing.age=0;existing.lastSeen=now;
           if(sensor.threeDimensional){existing.altitudeEstimate=measuredPosition.y*50;existing.altitudeUncertainty=altitudeError;existing.altitudeKnown=true;existing.lastAltitudeUpdate=now;}
           if(!existing.sensorContributors.includes(sensor.name))existing.sensorContributors.push(sensor.name);
           existing.classification=existing.quality>.7?'classified':existing.quality>.25?'suspect':'unknown';
         }else{
-          this.tracks.set(target.id,{id:target.id,position:measuredPosition,velocity:target.velocity.clone(),quality:measuredQuality,uncertainty:errorMeters,altitudeEstimate:sensor.threeDimensional?measuredPosition.y*50:0,altitudeUncertainty:altitudeError,altitudeKnown:sensor.threeDimensional,lastAltitudeUpdate:sensor.threeDimensional?now:-Infinity,sensorContributors:[sensor.name],age:0,classification:measuredQuality>.7?'classified':measuredQuality>.25?'suspect':'unknown',lastSeen:now});
+          const priorId=this.lastTrackForSource.get(target.id),id=this.nextTrackId++;if(priorId!==undefined&&priorId!==id)this.events.push(`CORRELATION BREAK / TRACK ${priorId} -> ${id}`);this.lastTrackForSource.set(target.id,id);claimed.add(id);this.tracks.set(id,{id,sourceId:target.id,position:measuredPosition,velocity:target.velocity.clone(),quality:measuredQuality,uncertainty:errorMeters,altitudeEstimate:sensor.threeDimensional?measuredPosition.y*50:0,altitudeUncertainty:altitudeError,altitudeKnown:sensor.threeDimensional,lastAltitudeUpdate:sensor.threeDimensional?now:-Infinity,sensorContributors:[sensor.name],age:0,classification:measuredQuality>.7?'classified':measuredQuality>.25?'suspect':'unknown',lastSeen:now});
         }
       }
     }
     for(const [id,track] of this.tracks)if(track.quality<.03||track.age>160)this.tracks.delete(id);
   }
+  trackForTarget(sourceId:number){return[...this.tracks.values()].filter(track=>track.sourceId===sourceId).sort((a,b)=>(Number(b.altitudeKnown)-Number(a.altitudeKnown))||b.quality-a.quality||a.age-b.age)[0];}
   bestTrack(){return[...this.tracks.values()].sort((a,b)=>b.quality-a.quality)[0];}
 }
