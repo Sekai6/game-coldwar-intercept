@@ -13,6 +13,9 @@ export interface Track {
   altitudeUncertainty:number;
   altitudeKnown:boolean;
   lastAltitudeUpdate:number;
+  solutionQuality:number;
+  solutionTime:number;
+  lastSolutionReset:number;
   sensorContributors:SensorName[];
   age:number;
   classification:TrackQuality;
@@ -47,7 +50,7 @@ export class CombatPicture {
   reset(){this.tracks.clear();this.nextScan=new Map(SENSORS.map(sensor=>[sensor.name,0]));this.nextTrackId=1;this.events=[];this.lastTrackForSource.clear();this.rng=0x41c64e6d;}
   drainEvents(){return this.events.splice(0);}
   update(now:number,dt:number,targets:TargetReturn[],radarHealth=1,sensorPosition=new THREE.Vector3()){
-    for(const track of this.tracks.values()){track.age+=dt;track.quality=Math.max(0,track.quality-dt*.008);track.uncertainty+=dt*95;track.altitudeUncertainty+=dt*18;if(now-track.lastAltitudeUpdate>4)track.altitudeKnown=false;}
+    for(const track of this.tracks.values()){track.age+=dt;track.quality=Math.max(0,track.quality-dt*.008);track.uncertainty+=dt*95;track.altitudeUncertainty+=dt*18;if(now-track.lastAltitudeUpdate>4)track.altitudeKnown=false;if(track.altitudeKnown&&track.age<1.5){track.solutionTime+=dt;track.solutionQuality=THREE.MathUtils.clamp(track.solutionQuality+dt*(.16+track.quality*.3),0,1);}else{track.solutionTime=0;track.solutionQuality=Math.max(0,track.solutionQuality-dt*.16);}}
     const focusGain=this.searchWidth<360?1.5:1;
     for(const sensor of SENSORS){
       if(now<(this.nextScan.get(sensor.name)??0))continue;
@@ -69,17 +72,18 @@ export class CombatPicture {
         measuredPosition.y=sensor.threeDimensional?target.position.y+(this.rand()-.5)*altitudeError/50:.6;
         const existing=this.associate(measuredPosition,target.velocity,revisit,claimed);if(existing?.altitudeKnown&&!sensor.threeDimensional)measuredPosition.y=existing.position.y;
         if(existing){
+          const maneuverAngle=existing.velocity.lengthSq()>.01?existing.velocity.angleTo(target.velocity):0;if(maneuverAngle>THREE.MathUtils.degToRad(3.5)){existing.solutionQuality=Math.min(.12,existing.solutionQuality*.28);existing.solutionTime=0;if(now-existing.lastSolutionReset>1.5){this.events.push(`FIRE CONTROL RESET / TRACK ${existing.id} / MANEUVER ${THREE.MathUtils.radToDeg(maneuverAngle).toFixed(1)} DEG`);existing.lastSolutionReset=now;}}
           claimed.add(existing.id);this.lastTrackForSource.set(target.id,existing.id);const gain=.24+measuredQuality*.42;existing.sourceId=target.id;existing.position.lerp(measuredPosition,gain);existing.velocity.lerp(target.velocity,sensor.threeDimensional?.58:.38);existing.quality=THREE.MathUtils.lerp(existing.quality,measuredQuality,.58);existing.uncertainty=THREE.MathUtils.lerp(existing.uncertainty,errorMeters,.52);existing.age=0;existing.lastSeen=now;
           if(sensor.threeDimensional){existing.altitudeEstimate=measuredPosition.y*50;existing.altitudeUncertainty=altitudeError;existing.altitudeKnown=true;existing.lastAltitudeUpdate=now;}
           if(!existing.sensorContributors.includes(sensor.name))existing.sensorContributors.push(sensor.name);
           existing.classification=existing.quality>.7?'classified':existing.quality>.25?'suspect':'unknown';
         }else{
-          const priorId=this.lastTrackForSource.get(target.id),id=this.nextTrackId++;if(priorId!==undefined&&priorId!==id)this.events.push(`CORRELATION BREAK / TRACK ${priorId} -> ${id}`);this.lastTrackForSource.set(target.id,id);claimed.add(id);this.tracks.set(id,{id,sourceId:target.id,position:measuredPosition,velocity:target.velocity.clone(),quality:measuredQuality,uncertainty:errorMeters,altitudeEstimate:sensor.threeDimensional?measuredPosition.y*50:0,altitudeUncertainty:altitudeError,altitudeKnown:sensor.threeDimensional,lastAltitudeUpdate:sensor.threeDimensional?now:-Infinity,sensorContributors:[sensor.name],age:0,classification:measuredQuality>.7?'classified':measuredQuality>.25?'suspect':'unknown',lastSeen:now});
+          const priorId=this.lastTrackForSource.get(target.id),id=this.nextTrackId++;if(priorId!==undefined&&priorId!==id)this.events.push(`CORRELATION BREAK / TRACK ${priorId} -> ${id}`);this.lastTrackForSource.set(target.id,id);claimed.add(id);this.tracks.set(id,{id,sourceId:target.id,position:measuredPosition,velocity:target.velocity.clone(),quality:measuredQuality,uncertainty:errorMeters,altitudeEstimate:sensor.threeDimensional?measuredPosition.y*50:0,altitudeUncertainty:altitudeError,altitudeKnown:sensor.threeDimensional,lastAltitudeUpdate:sensor.threeDimensional?now:-Infinity,solutionQuality:0,solutionTime:0,lastSolutionReset:-Infinity,sensorContributors:[sensor.name],age:0,classification:measuredQuality>.7?'classified':measuredQuality>.25?'suspect':'unknown',lastSeen:now});
         }
       }
     }
     for(const [id,track] of this.tracks)if(track.quality<.03||track.age>160)this.tracks.delete(id);
   }
-  trackForTarget(sourceId:number){return[...this.tracks.values()].filter(track=>track.sourceId===sourceId).sort((a,b)=>(Number(b.altitudeKnown)-Number(a.altitudeKnown))||b.quality-a.quality||a.age-b.age)[0];}
+  trackForTarget(sourceId:number){return[...this.tracks.values()].filter(track=>track.sourceId===sourceId).sort((a,b)=>(Number(b.altitudeKnown)-Number(a.altitudeKnown))||b.solutionQuality-a.solutionQuality||b.quality-a.quality||a.age-b.age)[0];}
   bestTrack(){return[...this.tracks.values()].sort((a,b)=>b.quality-a.quality)[0];}
 }
