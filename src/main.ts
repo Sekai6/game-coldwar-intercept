@@ -1,495 +1,6403 @@
-import * as THREE from 'three';
-import './style.css';
-import { CombatPicture, DEFAULT_SENSORS } from './sim';
-import { buildTiconderoga, TICONDEROGA_METADATA, type ShipClass, type ShipDefinition, type SubsystemId } from './ships';
-import { createFaceHealth, damageSensorFace, sensorFaceAspectHealth, worldBearingToLocal } from './sensor-faces';
-import { allocateVlsLoadout, desiredDisabledCells, vlsCellDistance as calculateVlsCellDistance, vlsLoadOrder } from './vls';
+import * as THREE from "three";
+import "./style.css";
+import { CombatPicture } from "./sim";
+import { type ShipClass, type SubsystemId } from "./ships";
+import { createShipCatalog } from "./ship-catalog";
+import {
+  createFaceHealth,
+  damageSensorFace,
+  sensorFaceAspectHealth,
+  worldBearingToLocal,
+} from "./sensor-faces";
+import {
+  allocateVlsLoadout,
+  desiredDisabledCells,
+  vlsCellDistance as calculateVlsCellDistance,
+  vlsLoadOrder,
+} from "./vls";
+import {
+  THREAT_PROFILES as incomingProfiles,
+  WEAPON_PROFILES as weaponProfiles,
+} from "./missile-data";
+import type {
+  AarCategory,
+  AarEvent,
+  AarSnapshot,
+  BoosterDebris,
+  ChaffCloud,
+  EnemyType,
+  EngagementDoctrine,
+  EngagementState,
+  Explosion,
+  IlluminatorState,
+  Interceptor,
+  LauncherRequest,
+  Missile,
+  Mk10LauncherState,
+  ShipDamageEffect,
+  SrbocRound,
+  VlsBankState,
+  VlsCellState,
+  VlsLaunchEffect,
+  WeaponType,
+} from "./combat-types";
 
-type EnemyType='P-500'|'P-700'|'Kh-22';
-type WeaponType='RIM-67'|'SM-2MR'|'SM-2ER';
-type Missile={mesh:THREE.Group; velocity:THREE.Vector3; phase:'inbound'|'boost'|'midcourse'|'terminal'|'destroyed'; age:number; history:THREE.Vector3[]; path:THREE.Line; kind:EnemyType; speedFactor:number; rcs:number; launchAt:number; aimOffset:THREE.Vector3;bank:number;};
-type Interceptor={mesh:THREE.Group; target:Missile; age:number; weapon:WeaponType; velocity:THREE.Vector3; distanceTraveled:number; history:THREE.Vector3[]; guidancePath:THREE.Line; commandPoint:THREE.Vector3; commandVelocity:THREE.Vector3; nextDatalink:number; datalinkValid:boolean; illuminated:boolean; illuminationBeam:THREE.Line;};
-type Explosion={core:THREE.Mesh; ring:THREE.Mesh; light:THREE.PointLight; age:number;};
-type ShipDamageEffect={group:THREE.Group;fire:THREE.Mesh;smoke:THREE.Mesh[];light:THREE.PointLight;seed:number;};
-type BoosterDebris={mesh:THREE.Group;velocity:THREE.Vector3;spin:THREE.Vector3;light:THREE.PointLight;age:number;};
-type ChaffCloud={mesh:THREE.Group;position:THREE.Vector3;velocity:THREE.Vector3;age:number;rcs:number;initialRcs:number;source:Missile|null;side:'threat'|'ship';serial:number;};
-type SrbocRound={mesh:THREE.Group;trail:THREE.Line;start:THREE.Vector3;control:THREE.Vector3;burst:THREE.Vector3;burstVelocity:THREE.Vector3;age:number;flightTime:number;};
-type EngagementDoctrine='SINGLE'|'DOUBLE'|'SSLS';
-type EngagementState={shots:number;pending:number;misses:number;lastResolution:number;};
-type IlluminatorState={id:number;azimuth:number;target:Interceptor|null;lastTargetId:number;};
-type LauncherRequest={target:Missile;weapon:WeaponType;};
-type Mk10Phase='ready'|'slewing'|'firing'|'returning'|'loading';
-type Mk10LauncherState={name:'AFT'|'FORWARD';model:THREE.Group;stowAzimuth:number;phase:Mk10Phase;phaseSince:number;pending:LauncherRequest|null;azimuth:number;elevation:number;railIndex:number;reloadRail:number;rounds:THREE.Group[];};
-type VlsLoadout='SM-2MR'|'SM-2ER'|'OTHER';
-type VlsCellState={lid:THREE.Group;origin:THREE.Object3D;index:number;bank:'FWD'|'AFT';phase:'ready'|'opening'|'launching'|'closing'|'spent'|'disabled';closeTo:'ready'|'spent'|'disabled';phaseSince:number;pending:LauncherRequest|null;loadout:VlsLoadout;};
-type VlsBankState={lastLaunchAt:number;lastCellIndex:number;minimumObservedGap:number;launchHistory:number[];damageCenters:number[];trappedRounds:number;};
-type VlsLaunchEffect={group:THREE.Group;flame:THREE.Mesh;smoke:THREE.Mesh[];light:THREE.PointLight;age:number;};
-type SubsystemState={id:SubsystemId;label:string;health:number;position:THREE.Vector3;};
-type AarCategory='sensor'|'fire'|'guidance'|'effect'|'maneuver'|'system';
-type AarEvent={time:number;text:string;category:AarCategory;};
-type AarSnapshot={time:number;ship:{x:number;z:number;heading:number;hull:number};missiles:{id:number;x:number;z:number;phase:Missile['phase'];kind:EnemyType}[];interceptors:{id:number;x:number;z:number;weapon:WeaponType;targetId:number}[];chaff:{x:number;z:number;side:'threat'|'ship'}[];};
-const canvas=document.querySelector('#scene') as HTMLCanvasElement;
-const scene=new THREE.Scene(); scene.fog=new THREE.Fog(0x06111b,180,900); scene.background=new THREE.Color(0x06111b);
-const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,2000); camera.position.set(120,95,150); camera.lookAt(0,0,0);
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
-scene.add(new THREE.HemisphereLight(0x9cc7dd,0x10212b,1.55)); const sun=new THREE.DirectionalLight(0xffe3ad,2.5); sun.position.set(-120,200,100);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-250;sun.shadow.camera.right=250;sun.shadow.camera.top=250;sun.shadow.camera.bottom=-250;scene.add(sun);
-const seaGeometry=new THREE.PlaneGeometry(1800,1800,64,64);const sea=new THREE.Mesh(seaGeometry,new THREE.MeshStandardMaterial({color:0x0a3340,roughness:.68,metalness:.18,flatShading:false})); sea.rotation.x=-Math.PI/2; scene.add(sea);const seaPositions=seaGeometry.attributes.position as THREE.BufferAttribute;const seaBase=Float32Array.from(seaPositions.array as ArrayLike<number>);
-const grid=new THREE.GridHelper(1200,48,0x1d6570,0x123f4b); grid.position.y=.15; (grid.material as THREE.Material).opacity=.25; (grid.material as THREE.Material).transparent=true; scene.add(grid);
-function createHullGeometry(){
- const sections=[[-29,3.15],[-27,3.9],[-22,4.35],[-14,4.55],[8,4.65],[17,4.2],[23,3.15],[27,1.65],[29.5,.18]] as const;
- const vertices:number[]=[],indices:number[]=[];
- for(const [x,w] of sections)vertices.push(x,6,-w,x,6,w,x,.4,-w*.58,x,.4,w*.58);
- for(let i=0;i<sections.length-1;i++){const a=i*4,b=(i+1)*4;indices.push(a,a+1,b+1,a,b+1,b,a+2,b+2,b+3,a+2,b+3,a+3,a,a+2,b+2,a,b+2,b,a+1,b+1,b+3,a+1,b+3,a+3);}
- indices.push(0,4,5,0,5,1,(sections.length-1)*4,(sections.length-1)*4+1,(sections.length-1)*4+3,(sections.length-1)*4,(sections.length-1)*4+3,(sections.length-1)*4+2);
- const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
-}
-function createSlopedBoxGeometry(length:number,height:number,depth:number,slope:number){const geometry=new THREE.BoxGeometry(length,height,depth,1,1,1),position=geometry.attributes.position as THREE.BufferAttribute;for(let i=0;i<position.count;i++)if(position.getX(i)>0&&position.getY(i)>0)position.setX(i,position.getX(i)-slope);position.needsUpdate=true;geometry.computeVertexNormals();return geometry;}
-function createSectorGeometry(radius:number,halfAngle:number,segments=24){const vertices=[0,0,0],indices:number[]=[];for(let i=0;i<=segments;i++){const angle=-halfAngle+(halfAngle*2*i)/segments;vertices.push(Math.cos(angle)*radius,0,-Math.sin(angle)*radius);}for(let i=1;i<=segments;i++)indices.push(0,i,i+1);const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;}
-function addStrut(group:THREE.Group,start:THREE.Vector3,end:THREE.Vector3,radius:number,material:THREE.Material){const direction=end.clone().sub(start),strut=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,direction.length(),7),material);strut.position.copy(start).add(end).multiplyScalar(.5);strut.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),direction.normalize());group.add(strut);return strut;}
-function createHullNumberTexture(){const c=document.createElement('canvas');c.width=128;c.height=64;const ctx=c.getContext('2d')!;ctx.clearRect(0,0,128,64);ctx.fillStyle='#e8ece5';ctx.font='bold 46px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('9',64,34);const texture=new THREE.CanvasTexture(c);texture.colorSpace=THREE.SRGBColorSpace;return texture;}
-function createUSFlagTexture(){const canvas=document.createElement('canvas');canvas.width=247;canvas.height=130;const ctx=canvas.getContext('2d')!;for(let stripe=0;stripe<13;stripe++){ctx.fillStyle=stripe%2===0?'#b22234':'#f5f4ed';ctx.fillRect(0,stripe*10,247,10);}ctx.fillStyle='#3c3b6e';ctx.fillRect(0,0,99,70);ctx.fillStyle='#fff';for(let row=0;row<5;row++)for(let column=0;column<6;column++){ctx.beginPath();ctx.arc(9+column*16+(row%2)*8,8+row*14,1.8,0,Math.PI*2);ctx.fill();}const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;return texture;}
-function createMk10Launcher(deckMat:THREE.Material,darkMat:THREE.Material){
- const launcher=new THREE.Group();launcher.userData.arms=[];
- const launcherMat=new THREE.MeshStandardMaterial({color:0x929c98,metalness:.48,roughness:.48}),roundMat=new THREE.MeshStandardMaterial({color:0xd9ddd5,metalness:.42,roughness:.34});
- const turntable=new THREE.Mesh(new THREE.CylinderGeometry(2.75,3.15,.55,20),darkMat);turntable.position.y=.28;launcher.add(turntable);
- const race=new THREE.Mesh(new THREE.TorusGeometry(2.48,.12,7,32),launcherMat);race.rotation.x=Math.PI/2;race.position.y=.6;launcher.add(race);
- const housing=new THREE.Mesh(createSlopedBoxGeometry(4.6,1.35,4.35,.45),launcherMat);housing.position.set(-.25,1.15,0);launcher.add(housing);
- const rearCab=new THREE.Mesh(new THREE.BoxGeometry(1.45,1.2,3.7),darkMat);rearCab.position.set(-2,1.2,0);launcher.add(rearCab);
- const crossShaft=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,4.15,14),darkMat);crossShaft.rotation.x=Math.PI/2;crossShaft.position.set(-.15,2,0);launcher.add(crossShaft);
- for(const z of [-1.72,1.72]){const trunnion=new THREE.Mesh(new THREE.CylinderGeometry(.58,.58,.48,14),darkMat);trunnion.rotation.x=Math.PI/2;trunnion.position.set(-.15,2,z);launcher.add(trunnion);const arm=new THREE.Group();arm.name='launcherArm';arm.position.set(-.15,2,z);launcher.userData.arms.push(arm);const spine=new THREE.Mesh(new THREE.BoxGeometry(7.7,.34,.42),launcherMat);spine.position.set(2.4,0,0);arm.add(spine);for(const railOffset of [-.23,.23]){const guide=new THREE.Mesh(new THREE.BoxGeometry(7.4,.13,.1),darkMat);guide.position.set(2.5,.28,railOffset);arm.add(guide);}const shoe=new THREE.Mesh(new THREE.BoxGeometry(1.1,.48,.75),darkMat);shoe.position.set(.3,.15,0);arm.add(shoe);const readyRound=new THREE.Group();readyRound.name='readyRound';const body=new THREE.Mesh(new THREE.CylinderGeometry(.22,.26,5.5,10),roundMat);body.rotation.z=Math.PI/2;readyRound.add(body);const nose=new THREE.Mesh(new THREE.ConeGeometry(.22,.72,10),roundMat);nose.rotation.z=-Math.PI/2;nose.position.x=3.1;readyRound.add(nose);for(const finZ of [-1,1]){const fin=new THREE.Mesh(new THREE.BoxGeometry(.55,.06,.42),darkMat);fin.position.set(-2.45,0,finZ*.3);readyRound.add(fin);}readyRound.position.set(3.15,.42,0);arm.add(readyRound);launcher.add(arm);}
- for(const side of [-1,1]){const serviceRail=new THREE.Mesh(new THREE.BoxGeometry(5.2,.12,.12),deckMat);serviceRail.position.set(-.2,.72,side*2.35);launcher.add(serviceRail);const loaderGuide=new THREE.Mesh(new THREE.BoxGeometry(2.4,.16,.34),darkMat);loaderGuide.position.set(-2.65,.7,side*1.72);launcher.add(loaderGuide);const hydraulic=new THREE.Mesh(new THREE.CylinderGeometry(.11,.15,2.25,8),launcherMat);hydraulic.rotation.z=Math.PI/2;hydraulic.position.set(.55,1.45,side*1.72);launcher.add(hydraulic);}
- const loaderDoor=new THREE.Mesh(new THREE.BoxGeometry(1.7,.1,3.65),darkMat);loaderDoor.position.set(-3.12,.67,0);launcher.add(loaderDoor);
- return launcher;
-}
-function buildLongBeach(color=0x4b5a59,scale=1){
- const g=new THREE.Group(); g.scale.setScalar(scale);
- const hullMat=new THREE.MeshStandardMaterial({color,metalness:.72,roughness:.32});
- const deckMat=new THREE.MeshStandardMaterial({color:0x707d7c,metalness:.35,roughness:.6});
- const darkMat=new THREE.MeshStandardMaterial({color:0x263538,metalness:.5,roughness:.45});
- const hull=new THREE.Mesh(createHullGeometry(),hullMat);g.add(hull);
- const deckShape=new THREE.Shape(); deckShape.moveTo(-28,-3.15);deckShape.lineTo(-22,-4.25);deckShape.lineTo(16,-4.25);deckShape.lineTo(23,-3.15);deckShape.lineTo(29,0);deckShape.lineTo(23,3.15);deckShape.lineTo(16,4.25);deckShape.lineTo(-22,4.25);deckShape.lineTo(-28,3.15);deckShape.closePath(); const mainDeck=new THREE.Mesh(new THREE.ShapeGeometry(deckShape),deckMat); mainDeck.rotation.x=-Math.PI/2;mainDeck.position.y=6.05;g.add(mainDeck);
- const waterline=new THREE.Mesh(createHullGeometry(),new THREE.MeshStandardMaterial({color:0x151d20,roughness:.75}));waterline.scale.set(1.002,.28,1.002);waterline.position.y=-.1;g.add(waterline);
- const keel=new THREE.Mesh(new THREE.BoxGeometry(24,.7,2.8),darkMat); keel.position.set(-1,.15,0); g.add(keel);
- const aftDeck=new THREE.Mesh(new THREE.BoxGeometry(13,.7,8),deckMat); aftDeck.position.set(-10,6,0); g.add(aftDeck);
- const bridge=new THREE.Mesh(createSlopedBoxGeometry(11,5.5,6.5,1.35),deckMat); bridge.position.set(5,8,0); g.add(bridge);
- const bridgeRoof=new THREE.Mesh(new THREE.BoxGeometry(13,.8,7.2),darkMat); bridgeRoof.position.set(5,11,0); g.add(bridgeRoof);
- const mast=new THREE.Group();const mastFeet=[new THREE.Vector3(-1.4,14.1,-2.25),new THREE.Vector3(-1.4,14.1,2.25),new THREE.Vector3(3.2,14.1,0)],mastCrown=[new THREE.Vector3(.45,22,-.62),new THREE.Vector3(.45,22,.62),new THREE.Vector3(1.55,22,0)];mastFeet.forEach((foot,index)=>addStrut(mast,foot,mastCrown[index],.19,darkMat));for(let y=15.5;y<21.5;y+=1.65){const fraction=(y-14.1)/7.9,port=new THREE.Vector3(THREE.MathUtils.lerp(-1.4,.45,fraction),y,THREE.MathUtils.lerp(-2.25,-.62,fraction)),starboard=new THREE.Vector3(port.x,y,-port.z);addStrut(mast,port,starboard,.075,darkMat);if(Math.round((y-15.5)/1.65)%2===0)addStrut(mast,port,new THREE.Vector3(THREE.MathUtils.lerp(3.2,1.55,fraction),y+.8,0),.07,darkMat);}const mastPlatform=new THREE.Mesh(new THREE.CylinderGeometry(2.25,2.6,.34,12),darkMat);mastPlatform.position.set(1,22,0);mast.add(mastPlatform);const upperMast=new THREE.Mesh(new THREE.CylinderGeometry(.2,.3,7.2,8),darkMat);upperMast.position.set(1,25.5,0);mast.add(upperMast);g.add(mast);
- const yard=new THREE.Mesh(new THREE.BoxGeometry(9,.24,.24),darkMat); yard.position.set(1,27.1,0); g.add(yard);
- const radar=new THREE.Group(); radar.position.set(1,24,0); const dish=new THREE.Mesh(new THREE.BoxGeometry(5.8,4.3,.45),new THREE.MeshStandardMaterial({color:0x9caaa6,metalness:.35,roughness:.52})); dish.rotation.z=.08; radar.add(dish); const backing=new THREE.Mesh(new THREE.BoxGeometry(3.8,3.1,1.1),darkMat);backing.position.z=-.65;radar.add(backing);for(let x=-2;x<=2;x++)for(let y=-1;y<=1;y++){const cell=new THREE.Mesh(new THREE.BoxGeometry(.65,.65,.12),new THREE.MeshStandardMaterial({color:0xc1cbc5,metalness:.3,roughness:.5}));cell.position.set(x,y*1.05,.3);radar.add(cell);} const feed=new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,2.8,8),darkMat);feed.rotation.x=Math.PI/2;feed.position.z=1.6;radar.add(feed);for(const side of [-1,1]){addStrut(radar,new THREE.Vector3(side*2.45,-1.75,-.35),new THREE.Vector3(side*.85,-1.1,-1.45),.11,darkMat);addStrut(radar,new THREE.Vector3(side*2.45,1.75,-.35),new THREE.Vector3(side*.85,1.1,-1.45),.11,darkMat);}const radarGearbox=new THREE.Mesh(new THREE.CylinderGeometry(.48,.62,1.4,10),darkMat);radarGearbox.position.set(0,-2.55,-.45);radar.add(radarGearbox);const searchBeam=new THREE.Mesh(createSectorGeometry(105,THREE.MathUtils.degToRad(8)),new THREE.MeshBasicMaterial({color:0x5ee9df,transparent:true,opacity:.035,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));searchBeam.position.y=.15;radar.add(searchBeam);radar.userData.searchBeam=searchBeam;g.add(radar);
- const fireControl=new THREE.Group(); fireControl.position.set(8,12,0); fireControl.add(new THREE.Mesh(new THREE.SphereGeometry(1.6,12,8),new THREE.MeshStandardMaterial({color:0x9ba9a6,metalness:.5,roughness:.45}))); g.add(fireControl);
- // Keep the aft Mk 10 clear of the aft-house/bridge visual envelope.
- const launcher=createMk10Launcher(deckMat,darkMat);launcher.position.set(-23,6.18,0);launcher.rotation.y=Math.PI;g.add(launcher);
- const windowMat=new THREE.MeshStandardMaterial({color:0x75d8d4,emissive:0x164b4a,emissiveIntensity:1.8}); const windows=new THREE.Group();for(let z=-2.3;z<=2.3;z+=1.15){const pane=new THREE.Mesh(new THREE.BoxGeometry(.18,.5,.72),windowMat);pane.position.set(10.58,9.6,z);windows.add(pane);const frame=new THREE.Mesh(new THREE.BoxGeometry(.22,.72,.07),darkMat);frame.position.set(10.7,9.6,z+.52);windows.add(frame);}for(const side of [-1,1])for(let x=1.5;x<=8.5;x+=1.4){const pane=new THREE.Mesh(new THREE.BoxGeometry(.72,.5,.18),windowMat);pane.position.set(x,9.6,side*3.33);windows.add(pane);const frame=new THREE.Mesh(new THREE.BoxGeometry(.08,.72,.22),darkMat);frame.position.set(x+.62,9.6,side*3.38);windows.add(frame);}const brow=new THREE.Mesh(new THREE.BoxGeometry(.35,.18,6.3),darkMat);brow.position.set(10.72,10.08,0);windows.add(brow);g.add(windows);
- const upperBridge=new THREE.Mesh(createSlopedBoxGeometry(7,2.4,5.2,.8),deckMat); upperBridge.position.set(4,13,0); g.add(upperBridge);
- const bridgeDetails=new THREE.Group();for(const side of [-1,1]){const wing=new THREE.Mesh(new THREE.BoxGeometry(4.8,.24,2.25),deckMat);wing.position.set(6,12.05,side*4.15);bridgeDetails.add(wing);const bulwark=new THREE.Mesh(new THREE.BoxGeometry(4.8,.62,.12),darkMat);bulwark.position.set(6,12.4,side*5.22);bridgeDetails.add(bulwark);for(let x=4.1;x<=7.9;x+=.95){const post=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.62,5),darkMat);post.position.set(x,12.7,side*5.18);bridgeDetails.add(post);}addStrut(bridgeDetails,new THREE.Vector3(4.2,11.65,side*3.55),new THREE.Vector3(4.2,12,side*5),.07,darkMat);addStrut(bridgeDetails,new THREE.Vector3(7.8,11.65,side*3.55),new THREE.Vector3(7.8,12,side*5),.07,darkMat);const pelorus=new THREE.Mesh(new THREE.CylinderGeometry(.22,.3,.55,8),darkMat);pelorus.position.set(7,12.45,side*4.45);bridgeDetails.add(pelorus);}for(const side of [-1,1])for(let x=1.5;x<=6.5;x+=1.25){const vent=new THREE.Mesh(new THREE.BoxGeometry(.72,.55,.08),darkMat);vent.position.set(x,7.8,side*3.29);bridgeDetails.add(vent);}g.add(bridgeDetails);
- const aftHouse=new THREE.Mesh(createSlopedBoxGeometry(8,3.2,6,.45),deckMat); aftHouse.position.set(-7,8.2,0); g.add(aftHouse);for(const side of [-1,1]){const shoulder=new THREE.Mesh(createSlopedBoxGeometry(5.4,1.6,1.25,.7),deckMat);shoulder.position.set(-10.5,7.2,side*3.2);shoulder.rotation.y=side*.04;g.add(shoulder);}
- const stack=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.35,5,10),darkMat); stack.position.set(-4,12.3,0); g.add(stack);
- const gunMount=new THREE.Group(); gunMount.position.set(13,7,-4.55);gunMount.rotation.y=-.08; const turret=new THREE.Mesh(new THREE.CylinderGeometry(1.45,1.8,1.25,10),deckMat); gunMount.add(turret); const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.18,.25,6,8),darkMat); barrel.rotation.z=Math.PI/2; barrel.position.set(3,1,0); gunMount.add(barrel);const portGun=gunMount.clone(true);portGun.position.z=4.55;portGun.rotation.y=.08;g.add(gunMount,portGun);
- const aftDirector=new THREE.Group(); aftDirector.position.set(-7,12,0); aftDirector.add(new THREE.Mesh(new THREE.SphereGeometry(1.3,12,8),new THREE.MeshStandardMaterial({color:0x9ba9a6,metalness:.5,roughness:.45}))); g.add(aftDirector);
- for(const side of [-1,1]){const rail=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,42,6),new THREE.MeshStandardMaterial({color:0xa5afaa,metalness:.5,roughness:.5}));rail.rotation.z=Math.PI/2;rail.position.set(-1,7,side*4.15);g.add(rail);for(let x=-19;x<=18;x+=4){const post=new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,1.2,6),darkMat);post.position.set(x,6.5,side*4.15);g.add(post);}}
- for(const side of [-1,1])for(const x of [-5,-1]){const raft=new THREE.Mesh(new THREE.CylinderGeometry(.45,.45,2.2,10),new THREE.MeshStandardMaterial({color:0xe6ded0,roughness:.65}));raft.rotation.x=Math.PI/2;raft.position.set(x,8.1,side*3.8);g.add(raft);}
- for(const x of [-5,5]){const antenna=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,7,6),darkMat);antenna.position.set(x,17,0);antenna.rotation.z=x<0?-.18:.18;g.add(antenna);}
- const navigationLights:THREE.PointLight[]=[],lightBulbs:THREE.Mesh[]=[];const numberMat=new THREE.MeshBasicMaterial({map:createHullNumberTexture(),transparent:true,side:THREE.DoubleSide,depthWrite:false});for(const side of [-1,1]){const number=new THREE.Mesh(new THREE.PlaneGeometry(3.2,1.6),numberMat);number.position.set(17.5,3.7,side*4.02);number.rotation.y=side>0?0:Math.PI;g.add(number);const lampColor=side>0?0x36ff78:0xff3a32,nav=new THREE.PointLight(lampColor,3,18),bulb=new THREE.Mesh(new THREE.SphereGeometry(.16,8,6),new THREE.MeshBasicMaterial({color:lampColor}));nav.position.set(6,14,side*3.7);bulb.position.copy(nav.position);navigationLights.push(nav);lightBulbs.push(bulb);g.add(nav,bulb);for(const x of [-17,-9,1,12]){const port=new THREE.Mesh(new THREE.SphereGeometry(.09,7,5),new THREE.MeshBasicMaterial({color:0xffd99a}));port.position.set(x,7.05,side*4.05);lightBulbs.push(port);g.add(port);}}for(const [x,y,color] of [[1,29,0xf4fff1],[-7,24,0xf4fff1],[-27,8,0xf4fff1]] as const){const light=new THREE.PointLight(color,2.2,22),bulb=new THREE.Mesh(new THREE.SphereGeometry(.14,8,6),new THREE.MeshBasicMaterial({color}));light.position.set(x,y,0);bulb.position.copy(light.position);navigationLights.push(light);lightBulbs.push(bulb);g.add(light,bulb);}
- for(const side of [-1,1]){const anchor=new THREE.Mesh(new THREE.TorusGeometry(.45,.12,8,16),darkMat);anchor.position.set(21,3.2,side*3.1);anchor.rotation.x=Math.PI/2;g.add(anchor);}
- for(const x of [-15,-10,10]){const hatch=new THREE.Mesh(new THREE.BoxGeometry(2.2,.16,1.4),darkMat);hatch.position.set(x,6.3,0);g.add(hatch);}
- for(const x of [-14,-8,0,8,14]){const bollard=new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,.8,8),darkMat); bollard.position.set(x,6.5,4); g.add(bollard);}
- // The forward Mk 10 stows facing aft; the loading housing remains on the bow side.
- const forwardLauncher=launcher.clone(true);forwardLauncher.position.set(23,6.18,0);forwardLauncher.rotation.y=Math.PI;forwardLauncher.scale.setScalar(.88);forwardLauncher.userData.arms=[];forwardLauncher.traverse(o=>{if(o.name==='launcherArm')forwardLauncher.userData.arms.push(o);});g.add(forwardLauncher);
- const safetyMat=new THREE.MeshStandardMaterial({color:0xd5b64e,metalness:.2,roughness:.65});for(const [x,length] of [[-17.4,3.8],[17.7,3.35]] as const){const hatch=new THREE.Mesh(new THREE.BoxGeometry(length,.09,3.9),darkMat);hatch.position.set(x,6.16,0);g.add(hatch);for(const side of [-1,1]){const stripe=new THREE.Mesh(new THREE.BoxGeometry(length+.45,.035,.09),safetyMat);stripe.position.set(x,6.23,side*2.18);g.add(stripe);}for(const end of [-1,1]){const stripe=new THREE.Mesh(new THREE.BoxGeometry(.09,.035,4.45),safetyMat);stripe.position.set(x+end*(length+.45)/2,6.23,0);g.add(stripe);}}
- const aftMast=new THREE.Group();aftMast.position.set(-7,12,0);for(const side of [-1,1]){const leg=new THREE.Mesh(new THREE.CylinderGeometry(.14,.22,12,7),darkMat);leg.position.set(0,5,side*1.55);leg.rotation.x=side*.18;aftMast.add(leg);}for(let y=1;y<=10;y+=2){const brace=new THREE.Mesh(new THREE.BoxGeometry(.18,.18,3.2),darkMat);brace.position.y=y;aftMast.add(brace);}const sps49=new THREE.Group(),antennaMat=new THREE.MeshStandardMaterial({color:0xaab8b3,metalness:.62,roughness:.32});sps49.position.y=11;const antennaFrame=new THREE.Mesh(new THREE.BoxGeometry(9,.18,.18),antennaMat);sps49.add(antennaFrame);for(let x=-4;x<=4;x+=1){const vertical=new THREE.Mesh(new THREE.BoxGeometry(.06,3,.08),antennaMat);vertical.position.set(x,0,0);sps49.add(vertical);}for(const y of [-1.5,0,1.5]){const horizontal=new THREE.Mesh(new THREE.BoxGeometry(9,.06,.08),antennaMat);horizontal.position.y=y;sps49.add(horizontal);}const antennaFeed=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,2.6,6),darkMat);antennaFeed.rotation.x=Math.PI/2;antennaFeed.position.z=1.4;sps49.add(antennaFeed);aftMast.add(sps49);g.add(aftMast);
- const directors:THREE.Group[]=[];for(const [x,z,heading] of [[9,-3.4,-.38],[-8,3.4,2.72]] as const){const director=new THREE.Group();director.position.set(x,13,z);director.rotation.y=heading;director.userData.stowHeading=heading;const pedestal=new THREE.Mesh(new THREE.CylinderGeometry(.75,1.05,1.4,12),darkMat);director.add(pedestal);const yoke=new THREE.Mesh(new THREE.BoxGeometry(.55,1.45,2.15),darkMat);yoke.position.y=.78;director.add(yoke);const elevationPivot=new THREE.Group();elevationPivot.position.set(0,.82,0);director.add(elevationPivot);const dishBack=new THREE.Mesh(new THREE.CylinderGeometry(1.48,1.22,.34,18),darkMat);dishBack.rotation.z=Math.PI/2;dishBack.position.x=.82;elevationPivot.add(dishBack);const dish=new THREE.Mesh(new THREE.SphereGeometry(1.55,18,10,0,Math.PI*2,0,Math.PI*.48),new THREE.MeshStandardMaterial({color:0xaab7b2,metalness:.45,roughness:.38,side:THREE.DoubleSide}));dish.rotation.z=-Math.PI/2;dish.position.x=1.05;elevationPivot.add(dish);const horn=new THREE.Mesh(new THREE.CylinderGeometry(.08,.16,1.9,8),darkMat);horn.rotation.z=Math.PI/2;horn.position.x=2;elevationPivot.add(horn);const feedTip=new THREE.Object3D();feedTip.position.x=3;elevationPivot.add(feedTip);director.userData.elevationPivot=elevationPivot;director.userData.feedTip=feedTip;directors.push(director);g.add(director);}
- const highDetail=new THREE.Group();for(const [x,z] of [[-1,-3.7],[-1,3.7],[6,-3.7],[6,3.7]] as const){const canister=new THREE.Mesh(new THREE.BoxGeometry(4.6,.85,1.05),new THREE.MeshStandardMaterial({color:0x6d7774,metalness:.52,roughness:.48}));canister.position.set(x,7.15,z);canister.rotation.y=z>0?.12:-.12;highDetail.add(canister);}for(const [x,z] of [[-10,-4.1],[-10,4.1]] as const){const boat=new THREE.Mesh(new THREE.CapsuleGeometry(.62,3.4,4,10),new THREE.MeshStandardMaterial({color:0xc4c1ac,roughness:.68}));boat.rotation.z=Math.PI/2;boat.position.set(x,9,z);highDetail.add(boat);}for(const [x,z] of [[-14,0],[13,0]] as const){const ciws=new THREE.Group();ciws.position.set(x,7.4,z);const base=new THREE.Mesh(new THREE.CylinderGeometry(.8,1.05,.8,12),deckMat);ciws.add(base);const turret=new THREE.Mesh(new THREE.BoxGeometry(1.15,1.2,1),new THREE.MeshStandardMaterial({color:0xd2d7cf,metalness:.35,roughness:.48}));turret.position.y=1;ciws.add(turret);const elevationPivot=new THREE.Group();elevationPivot.position.set(0,1.18,0);for(let barrelIndex=-1;barrelIndex<=1;barrelIndex++){const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,2.4,6),darkMat);barrel.rotation.z=Math.PI/2;barrel.position.set(1.45,0,barrelIndex*.13);elevationPivot.add(barrel);}const radome=new THREE.Mesh(new THREE.SphereGeometry(.42,10,7),new THREE.MeshStandardMaterial({color:0xe0e3dc,roughness:.4}));radome.position.set(-.2,.6,0);ciws.add(radome);ciws.add(elevationPivot);ciws.userData.elevationPivot=elevationPivot;highDetail.add(ciws);}for(const side of [-1,1])for(let x=-20;x<=22;x+=3){const stanchion=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.7,5),darkMat);stanchion.position.set(x,6.75,side*4.18);highDetail.add(stanchion);}const breakwater=new THREE.Mesh(createSlopedBoxGeometry(.7,1.2,7.2,.18),darkMat);breakwater.position.set(18.5,6.75,0);breakwater.rotation.z=-.18;highDetail.add(breakwater);for(const side of [-1,1])for(const x of [-18,-11,2,11]){const reel=new THREE.Mesh(new THREE.TorusGeometry(.48,.1,7,14),darkMat);reel.rotation.y=Math.PI/2;reel.position.set(x,6.65,side*2.8);highDetail.add(reel);}for(const x of [-16,-6,4,14]){const vent=new THREE.Mesh(new THREE.CylinderGeometry(.24,.3,.6,8),darkMat);vent.position.set(x,6.55,-2.4);highDetail.add(vent);}const smokePuffs:THREE.Mesh[]=[];for(let i=0;i<9;i++){const puff=new THREE.Mesh(new THREE.SphereGeometry(.7,7,5),new THREE.MeshBasicMaterial({color:0x526064,transparent:true,opacity:.12,depthWrite:false}));smokePuffs.push(puff);highDetail.add(puff);}g.add(highDetail);
- const srbocLaunchers=new THREE.Group();for(const side of [-1,1]){const station=new THREE.Group();station.position.set(0,7.25,side*4.05);station.rotation.x=side*.42;const base=new THREE.Mesh(new THREE.BoxGeometry(2.2,.5,1.25),darkMat);station.add(base);for(let row=0;row<2;row++)for(let column=0;column<3;column++){const tube=new THREE.Mesh(new THREE.CylinderGeometry(.16,.19,1.8,8),new THREE.MeshStandardMaterial({color:0x687473,metalness:.62,roughness:.4}));tube.rotation.z=Math.PI/2;tube.position.set(.35,row*.42-.2,column*.38-.38);station.add(tube);}srbocLaunchers.add(station);}highDetail.add(srbocLaunchers);
- const ewPulse=new THREE.Group();for(let i=0;i<3;i++){const ring=new THREE.Mesh(new THREE.TorusGeometry(12+i*8,.08,6,72),new THREE.MeshBasicMaterial({color:0x66e5dc,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending}));ring.rotation.x=Math.PI/2;ring.position.y=18;ewPulse.add(ring);}for(const side of [-1,1]){const ewAntenna=new THREE.Mesh(new THREE.CylinderGeometry(.1,.18,2.8,8),darkMat);ewAntenna.position.set(2.5,16.2,side*3.25);ewAntenna.rotation.x=side*.28;g.add(ewAntenna);}ewPulse.visible=false;g.add(ewPulse);
- highDetail.children.filter(o=>Math.abs(o.position.y-7.4)<.01&&Math.abs(o.position.z)<.01).forEach(o=>{o.name=o.position.x>0?'ciwsFore':'ciwsAft';o.rotation.y=o.position.x>0?0:Math.PI;});
- const flagGeometry=new THREE.PlaneGeometry(3.8,2,12,4);flagGeometry.translate(-1.9,0,0);const flag=new THREE.Mesh(flagGeometry,new THREE.MeshStandardMaterial({map:createUSFlagTexture(),side:THREE.DoubleSide,roughness:.72}));flag.position.set(-7,22,0);highDetail.add(flag);for(const x of [-21,21]){const safetyRing=new THREE.Mesh(new THREE.TorusGeometry(3.55,.055,5,64),new THREE.MeshBasicMaterial({color:0xe1c46d,transparent:true,opacity:.28,depthWrite:false}));safetyRing.rotation.x=Math.PI/2;safetyRing.position.set(x,6.24,0);highDetail.add(safetyRing);}
- const mediumDetail=new THREE.Group();for(const side of [-1,1]){const rail=new THREE.Mesh(new THREE.BoxGeometry(42,.08,.08),new THREE.MeshBasicMaterial({color:0x81908d}));rail.position.set(-1,6.9,side*4.18);mediumDetail.add(rail);}for(const x of [-18,-8,3,14]){const deckBox=new THREE.Mesh(new THREE.BoxGeometry(1.5,.45,1.1),darkMat);deckBox.position.set(x,6.45,2.7);mediumDetail.add(deckBox);}g.add(mediumDetail);
- const lowDetail=new THREE.Group();const lowMast=new THREE.Mesh(new THREE.CylinderGeometry(.22,.5,15,6),darkMat);lowMast.position.set(0,18,0);const lowArray=new THREE.Mesh(new THREE.BoxGeometry(5.5,3.6,.28),new THREE.MeshBasicMaterial({color:0x82928f}));lowArray.position.set(0,25,0);const lowStack=new THREE.Mesh(new THREE.CylinderGeometry(.9,1.2,5,7),darkMat);lowStack.position.set(-4,12,0);lowDetail.add(lowMast,lowArray,lowStack);lowDetail.visible=false;g.add(lowDetail);
- g.userData={radar,sps49,fireControl,launcher,forwardLauncher,directors,highDetail,mediumDetail,lowDetail,smokePuffs,flag,hullMat,ewPulse,navigationLights,lightBulbs,detail:[mast,radar,fireControl,launcher,forwardLauncher,windows,aftMast,gunMount,portGun,aftDirector,...directors]};
- return g;
-}
-const LONG_BEACH_METADATA:Omit<ShipDefinition,'build'>={id:'long-beach',name:'USS LONG BEACH',hullNumber:'CGN-9',era:'NTU 1980s',role:'NUCLEAR GUIDED MISSILE CRUISER',launcherKind:'mk10',hullColor:0x4b5a59,launcher:{kind:'mk10',displayName:'MK 10',compatibleWeapons:['RIM-67','SM-2MR','SM-2ER'],azimuthRateDeg:55,elevationRateDeg:25,reloadSeconds:1.8},sensors:DEFAULT_SENSORS,subsystemLabels:{sps48:'AN/SPS-48E',sps49:'AN/SPS-49',spg55:'AN/SPG-55',mk10Aft:'MK 10 AFT',mk10Forward:'MK 10 FWD',ciws:'CIWS',ecm:'AN/SLQ-32',srboc:'MK 36 SRBOC',propulsion:'PROPULSION'},subsystemPositions:{sps48:new THREE.Vector3(1,24,0),sps49:new THREE.Vector3(-7,23,0),spg55:new THREE.Vector3(8,13,0),mk10Aft:new THREE.Vector3(-23,7,0),mk10Forward:new THREE.Vector3(23,7,0),ciws:new THREE.Vector3(13,8,0),ecm:new THREE.Vector3(2.5,16,3.2),srboc:new THREE.Vector3(0,8,4),propulsion:new THREE.Vector3(-4,6,0)},ammo:{rim67:6,sm2mr:12,sm2er:8,ciws:1200,channels:3,illuminators:2}};
-const SHIP_CATALOG:ShipDefinition[]=[{...LONG_BEACH_METADATA,build:()=>buildLongBeach()},{...TICONDEROGA_METADATA,build:buildTiconderoga}],SHIP_DEFINITIONS=new Map(SHIP_CATALOG.map(ship=>[ship.id,ship]));
-let activeShip=SHIP_DEFINITIONS.get('long-beach')!,defender=activeShip.build();if(activeShip.fixedSensorFaces)defender.userData.fixedSensorFaceHealth=createFaceHealth(activeShip.fixedSensorFaces);defender.position.set(0,0,40);defender.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true;}});scene.add(defender);
-function makeMk10State(name:'AFT'|'FORWARD',model:THREE.Group,stowAzimuth:number):Mk10LauncherState{const rounds=(model.userData.arms as THREE.Group[]).map(arm=>arm.getObjectByName('readyRound') as THREE.Group);rounds.forEach(round=>{round.userData.homePosition=round.position.clone();round.userData.homeScale=round.scale.clone();});return{name,model,stowAzimuth,phase:'ready',phaseSince:0,pending:null,azimuth:stowAzimuth,elevation:0,railIndex:0,reloadRail:0,rounds};}
-let mk10Launchers:Mk10LauncherState[]=[makeMk10State('AFT',defender.userData.launcher,Math.PI),makeMk10State('FORWARD',defender.userData.forwardLauncher,Math.PI)],vlsCells:VlsCellState[]=[];
-const vlsBanks:Record<'FWD'|'AFT',VlsBankState>={FWD:{lastLaunchAt:-Infinity,lastCellIndex:-1,minimumObservedGap:Infinity,launchHistory:[],damageCenters:[],trappedRounds:0},AFT:{lastLaunchAt:-Infinity,lastCellIndex:-1,minimumObservedGap:Infinity,launchHistory:[],damageCenters:[],trappedRounds:0}};
-const subsystemList:SubsystemState[]=[
- {id:'sps48',label:activeShip.subsystemLabels.sps48,health:100,position:activeShip.subsystemPositions.sps48.clone()},
- {id:'sps49',label:activeShip.subsystemLabels.sps49,health:100,position:activeShip.subsystemPositions.sps49.clone()},
- {id:'spg55',label:activeShip.subsystemLabels.spg55,health:100,position:activeShip.subsystemPositions.spg55.clone()},
- {id:'mk10Aft',label:activeShip.subsystemLabels.mk10Aft,health:100,position:activeShip.subsystemPositions.mk10Aft.clone()},
- {id:'mk10Forward',label:activeShip.subsystemLabels.mk10Forward,health:100,position:activeShip.subsystemPositions.mk10Forward.clone()},
- {id:'ciws',label:activeShip.subsystemLabels.ciws,health:100,position:activeShip.subsystemPositions.ciws.clone()},
- {id:'ecm',label:activeShip.subsystemLabels.ecm,health:100,position:activeShip.subsystemPositions.ecm.clone()},
- {id:'srboc',label:activeShip.subsystemLabels.srboc,health:100,position:activeShip.subsystemPositions.srboc.clone()},
- {id:'propulsion',label:activeShip.subsystemLabels.propulsion,health:100,position:activeShip.subsystemPositions.propulsion.clone()}
-];
-const subsystems=Object.fromEntries(subsystemList.map(system=>[system.id,system])) as Record<SubsystemId,SubsystemState>;
-function subsystemHealth(id:SubsystemId){return subsystems[id].health/100;}
-function fixedSensorFaceHealth(){return defender.userData.fixedSensorFaceHealth as number[]|undefined;}
-function fixedSensorAspectHealth(worldBearing:number){const config=activeShip.fixedSensorFaces,health=fixedSensorFaceHealth();if(!config||!health)return 1;return sensorFaceAspectHealth(config,health,worldBearingToLocal(worldBearing,defender.getWorldQuaternion(new THREE.Quaternion())));}
-function damageFixedSensorFace(localBearing:number,amount:number){const config=activeShip.fixedSensorFaces,health=fixedSensorFaceHealth();if(!config||!health)return-1;const result=damageSensorFace(config,health,localBearing,amount);log(`${config.sensorName} ${result.label} FACE DAMAGE / ${Math.round(result.before*100)} -> ${Math.round(result.after*100)}`);return result.index;}
-const wake=new THREE.Group(),wakeLineMat=new THREE.LineBasicMaterial({color:0xc5eff0,transparent:true,opacity:.3,depthWrite:false,blending:THREE.AdditiveBlending});for(const side of [-1,1])for(const offset of [0,1.2]){const points=[new THREE.Vector3(0,0,side*(2.8+offset*.25)),new THREE.Vector3(-14,0,side*(4.4+offset)),new THREE.Vector3(-34,0,side*(8+offset*1.6)),new THREE.Vector3(-58,0,side*(14+offset*2))];wake.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),wakeLineMat));}wake.position.set(-28,.22,40);scene.add(wake);
-const missiles:Missile[]=[]; const interceptors:Interceptor[]=[]; const engagements=new Map<Missile,EngagementState>();const illuminators:IlluminatorState[]=[{id:1,azimuth:0,target:null,lastTargetId:0},{id:2,azimuth:0,target:null,lastTargetId:0},{id:3,azimuth:Math.PI,target:null,lastTargetId:0},{id:4,azimuth:Math.PI,target:null,lastTargetId:0}];const combatPicture=new CombatPicture(); const radarCanvas=document.querySelector('#radar') as HTMLCanvasElement; const radarCtx=radarCanvas?.getContext('2d');let launcherCycle=0;
-const lastTrackClasses=new Map<number,string>(),lastAltitudeState=new Map<number,boolean>();
-const explosions:Explosion[]=[];
-const explodedTargets=new Set<Missile>();
-const shipDamageEffects:ShipDamageEffect[]=[];
-const boosterDebris:BoosterDebris[]=[];
-const chaffClouds:ChaffCloud[]=[];
-const srbocRoundsInFlight:SrbocRound[]=[];
-const vlsLaunchEffects:VlsLaunchEffect[]=[];
-let chaffSerial=0;
-const WORLD_UNITS_PER_KM=10,RADAR_PIXELS_PER_WORLD_UNIT=.14;
-const SHIP_RADAR_RCS=12;
-const weaponProfiles={
- 'RIM-67':{minRange:20,maxRange:750,maxSpeed:12.5,boost:5.2,acceleration:3.1,turnRate:THREE.MathUtils.degToRad(18),terminalRange:180},
- 'SM-2MR':{minRange:15,maxRange:450,maxSpeed:13.5,boost:4.4,acceleration:3.6,turnRate:THREE.MathUtils.degToRad(22),terminalRange:100},
- 'SM-2ER':{minRange:22,maxRange:900,maxSpeed:14.2,boost:6.2,acceleration:3.3,turnRate:THREE.MathUtils.degToRad(16),terminalRange:190}
-} as const;
-const incomingProfiles={
- 'P-500':{cruiseAltitude:1.2,terminalAltitude:.3,terminalAt:180,cruiseSpeed:8.8,terminalSpeed:9.6,turnRate:8,damage:28,defaultRange:600,burnThroughRange:30},
- 'P-700':{cruiseAltitude:2.6,terminalAltitude:.4,terminalAt:220,cruiseSpeed:9.8,terminalSpeed:10.8,turnRate:6.5,damage:38,defaultRange:750,burnThroughRange:36},
- 'Kh-22':{cruiseAltitude:360,terminalAltitude:2.2,terminalAt:450,cruiseSpeed:13.2,terminalSpeed:15.2,turnRate:4.5,damage:46,defaultRange:1000,burnThroughRange:26}
-} as const;
-function defensiveShotRequirement(missile:Missile,_quality:number){const state=engagements.get(missile);if(!state)return doctrine==='SINGLE'?1:2;if(doctrine==='SSLS'){if(state.shots<2)return 2;if(state.pending>0)return state.pending;if(elapsed-state.lastResolution<1.2||state.shots>=4)return 0;return 1;}if(doctrine==='SINGLE'&&state.pending===0&&elapsed-state.lastResolution<.65)return 0;return doctrine==='SINGLE'?1:2;}
-function recordEngagementLaunch(target:Missile){const state=engagements.get(target)??{shots:0,pending:0,misses:0,lastResolution:-Infinity};state.shots++;state.pending++;engagements.set(target,state);}
-function settleEngagement(interceptor:Interceptor,result:'hit'|'miss'|'cancel'){if(interceptor.mesh.userData.engagementSettled)return;interceptor.mesh.userData.engagementSettled=true;const state=engagements.get(interceptor.target);if(!state)return;state.pending=Math.max(0,state.pending-1);if(result==='miss')state.misses++;state.lastResolution=elapsed;if(doctrine==='SSLS'&&result==='miss'&&state.shots>=2&&state.pending===0&&interceptor.target.phase!=='destroyed')log(`DOCTRINE LOOK / TARGET ${missiles.indexOf(interceptor.target)+1} / ${state.misses} MISS`);}
-function missileThreatScore(missile:Missile,quality:number){const range=missile.mesh.position.distanceTo(defender.position),tti=range/Math.max(1,missile.velocity.length());return Math.max(0,120-tti)*2+(missile.phase==='terminal'?90:missile.phase==='midcourse'?35:0)+(missile.kind==='Kh-22'?45:missile.kind==='P-700'?18:0)+quality*12;}
-function createEnemyMissile(kind:EnemyType){
- const g=new THREE.Group(),isGranite=kind==='P-700',isKh22=kind==='Kh-22',length=isKh22?11:isGranite?9.6:8.8,radius=isGranite?1.05:isKh22?.72:.86;
- const skin=new THREE.MeshStandardMaterial({color:isKh22?0xb7b9ad:isGranite?0xa9553d:0xb96245,metalness:.58,roughness:.4});
- const dark=new THREE.MeshStandardMaterial({color:0x242b2c,metalness:.55,roughness:.5});
- const body=new THREE.Mesh(new THREE.CylinderGeometry(radius*.9,radius,length,14),skin);body.rotation.x=Math.PI/2;g.add(body);
- const forwardBand=new THREE.Mesh(new THREE.CylinderGeometry(radius*.94,radius*.94,.42,14),new THREE.MeshStandardMaterial({color:isKh22?0xd8d9cf:0x373f40,metalness:.65,roughness:.35}));forwardBand.rotation.x=Math.PI/2;forwardBand.position.z=-length*.28;g.add(forwardBand);
- const nose=new THREE.Mesh(new THREE.ConeGeometry(radius*.9,isKh22?2.8:2.1,14),skin);nose.rotation.x=-Math.PI/2;nose.position.z=-length*.5-1;g.add(nose);
- const tail=new THREE.Mesh(new THREE.CylinderGeometry(radius*.72,radius,1.6,14),dark);tail.rotation.x=Math.PI/2;tail.position.z=length*.5+.6;g.add(tail);
- const wingSpan=isKh22?4.8:isGranite?5.6:5.1,wingChord=isKh22?3.4:2.8;
- const wingShape=new THREE.Shape();wingShape.moveTo(0,0);wingShape.lineTo(wingSpan,wingChord*.7);wingShape.lineTo(wingSpan*.78,-wingChord*.45);wingShape.lineTo(0,-wingChord*.7);wingShape.closePath();
- for(const side of [-1,1]){const wing=new THREE.Mesh(new THREE.ShapeGeometry(wingShape),skin);wing.rotation.x=Math.PI/2;wing.rotation.z=side<0?Math.PI:0;wing.position.set(side*radius*.45,0,isKh22?.5:1);g.add(wing);}
- for(const side of [-1,1]){const fin=new THREE.Mesh(new THREE.BoxGeometry(isKh22?.13:.18,isKh22?2.2:1.7,2.5),dark);fin.position.set(side*(radius+.35),0,length*.35);fin.rotation.z=side*.18;g.add(fin);}
- if(isGranite){const intake=new THREE.Mesh(new THREE.CylinderGeometry(.42,.58,3,10),dark);intake.rotation.x=Math.PI/2;intake.position.set(0,-radius*.85,1);g.add(intake);}
- if(kind==='P-500'){for(const side of [-1,1]){const intakeLip=new THREE.Mesh(new THREE.BoxGeometry(1.2,.55,2.6),dark);intakeLip.position.set(side*.78,-.68,.9);intakeLip.rotation.z=side*.16;g.add(intakeLip);}}
- if(isKh22){const dorsal=new THREE.Mesh(new THREE.BoxGeometry(.16,2.8,4.5),skin);dorsal.position.set(0,1.15,1.5);dorsal.rotation.x=.08;g.add(dorsal);const belly=new THREE.Mesh(new THREE.BoxGeometry(1.1,.35,3.8),dark);belly.position.set(0,-.78,1.1);g.add(belly);}
- const exhaust=new THREE.Mesh(new THREE.ConeGeometry(radius*.5,isKh22?6:5,12,1,true),new THREE.MeshBasicMaterial({color:isKh22?0xffd37a:0xff7138,transparent:true,opacity:.72,blending:THREE.AdditiveBlending,depthWrite:false}));exhaust.rotation.x=-Math.PI/2;exhaust.position.z=length*.5+3.4;g.add(exhaust);
- const hotCore=new THREE.Mesh(new THREE.ConeGeometry(radius*.18,3.2,10,1,true),new THREE.MeshBasicMaterial({color:0xfff2c0,transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthWrite:false}));hotCore.rotation.x=-Math.PI/2;hotCore.position.z=length*.5+2.4;g.add(hotCore);
- const glow=new THREE.PointLight(0xff642d,isKh22?7:5,isKh22?35:28);glow.position.z=length*.5+2;g.add(glow);const seaMist=new THREE.Mesh(new THREE.ConeGeometry(isGranite?1.8:1.45,isGranite?11:9,12,1,true),new THREE.MeshBasicMaterial({color:0xbce8ec,transparent:true,opacity:.16,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));seaMist.rotation.x=-Math.PI/2;seaMist.position.z=length*.5+7;seaMist.visible=false;g.add(seaMist);const shockCone=new THREE.Mesh(new THREE.ConeGeometry(2.1,7,18,1,true),new THREE.MeshBasicMaterial({color:0xe7f4f2,transparent:true,opacity:.12,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));shockCone.rotation.x=-Math.PI/2;shockCone.position.z=-length*.16;shockCone.visible=false;g.add(shockCone);const seekerFov=new THREE.Mesh(new THREE.ConeGeometry(isKh22?8:10,isKh22?30:36,24,1,true),new THREE.MeshBasicMaterial({color:0xff6554,transparent:true,opacity:.07,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));seekerFov.rotation.x=-Math.PI/2;seekerFov.position.z=-length*.5-(isKh22?16:19);seekerFov.visible=false;g.add(seekerFov);g.userData.exhaust=exhaust;g.userData.hotCore=hotCore;g.userData.seaMist=seaMist;g.userData.shockCone=shockCone;g.userData.seekerFov=seekerFov;return g;
-}
-function addMissile(pos:THREE.Vector3,kind:EnemyType='P-500',launchAt=0){
- const visual=kind==='P-700'?{rcs:.7,scale:1.05}:{rcs:kind==='Kh-22'?1.1:.42,scale:kind==='Kh-22'?.92:.96},profile=incomingProfiles[kind],ordinal=missiles.length,aimOffset=new THREE.Vector3(Math.sin((ordinal+1)*2.399)*2.8,0,Math.cos((ordinal+1)*1.73)*1.2),g=createEnemyMissile(kind);g.position.copy(pos);g.scale.setScalar(visual.scale);g.visible=launchAt<=0;
- const selection=new THREE.Mesh(new THREE.TorusGeometry(kind==='P-700'?4.8:4.2,.12,8,32),new THREE.MeshBasicMaterial({color:0xffd45a,transparent:true,opacity:.9}));selection.rotation.x=Math.PI/2;selection.visible=false;g.add(selection);g.userData.selection=selection;
- const history=[pos.clone()],path=new THREE.Line(new THREE.BufferGeometry().setFromPoints(history),new THREE.LineBasicMaterial({color:kind==='Kh-22'?0xffb05a:0xe25a43,transparent:true,opacity:.34,blending:THREE.AdditiveBlending})),seekerLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints([pos,pos]),new THREE.LineBasicMaterial({color:0xff6a55,transparent:true,opacity:.46,blending:THREE.AdditiveBlending}));path.visible=g.visible;seekerLine.visible=false;g.userData.seekerLine=seekerLine;scene.add(g,path,seekerLine);const initialDirection=defender.position.clone().sub(pos).setY(0).normalize();missiles.push({mesh:g,velocity:initialDirection.multiplyScalar(profile.cruiseSpeed),phase:'inbound',age:0,history,path,kind,speedFactor:profile.cruiseSpeed,rcs:visual.rcs,launchAt,aimOffset,bank:0});
-}
-function launchInterceptor(target:Missile,weapon:WeaponType,launcherLabel:string,launchPoint:string,origin:THREE.Vector3,railDirection:THREE.Vector3){
- const g=new THREE.Group(),visual=new THREE.Group(),er=weapon==='SM-2ER',sm2=weapon==='SM-2MR'||er,missileMat=new THREE.MeshStandardMaterial({color:sm2?0xf0eee4:0xd9d7c7,metalness:.7,roughness:.3});g.add(visual);visual.rotation.x=Math.PI/2;visual.scale.setScalar(.58);
- const body=new THREE.Mesh(new THREE.CylinderGeometry(sm2?.42:.55,sm2?.48:.62,sm2?5.6:6.4,12),missileMat);body.rotation.x=Math.PI/2;visual.add(body);
- const nose=new THREE.Mesh(new THREE.ConeGeometry(sm2?.42:.55,sm2?1.7:2.1,12),missileMat);nose.rotation.x=-Math.PI/2;nose.position.z=-(sm2?3.65:4.25);visual.add(nose);
- const booster=new THREE.Group(),boosterBody=new THREE.Mesh(new THREE.CylinderGeometry(sm2?.48:.62,sm2?.55:.7,sm2?2.2:2.8,12),new THREE.MeshStandardMaterial({color:0xb9bcb4,metalness:.55,roughness:.42}));boosterBody.rotation.x=Math.PI/2;boosterBody.position.z=sm2?3.7:4.5;booster.add(boosterBody);for(const side of [-1,1])for(const axis of ['x','y'] as const){const fin=new THREE.Mesh(new THREE.BoxGeometry(axis==='x'?1.8:.12,axis==='y'?1.8:.12,1.25),missileMat);fin.position[axis]=side*(sm2?.82:1.05);fin.position.z=sm2?4.1:4.9;booster.add(fin);}g.add(booster);g.userData.booster=booster;
- const flame=new THREE.PointLight(sm2?0x8fdfff:0x6cdcff,7,28);flame.position.z=sm2?5.1:6;g.add(flame);const trail=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,4),new THREE.Vector3(0,0,16)]),new THREE.LineBasicMaterial({color:0x8fe9ff,transparent:true,opacity:.8}));g.add(trail);
- const seeker=new THREE.Mesh(new THREE.ConeGeometry(sm2?5:7,sm2?22:30,20,1,true),new THREE.MeshBasicMaterial({color:0x65e4ff,transparent:true,opacity:.08,depthWrite:false,side:THREE.DoubleSide}));seeker.rotation.x=-Math.PI/2;seeker.position.z=-15;seeker.visible=false;g.add(seeker);g.userData.seeker=seeker;
- visual.add(booster,flame,trail,seeker);
- if(er){visual.scale.set(.63,.63,.72);const erBand=new THREE.Mesh(new THREE.CylinderGeometry(.51,.51,.42,12),new THREE.MeshStandardMaterial({color:0xd39a43,metalness:.52,roughness:.38}));erBand.rotation.x=Math.PI/2;erBand.position.z=1.6;visual.add(erBand);}
- g.position.copy(origin);setMissileAttitude(g,railDirection,'+Y',0);
- const illuminationBeam=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineBasicMaterial({color:0xffd66b,transparent:true,opacity:.42,blending:THREE.AdditiveBlending,depthWrite:false}));illuminationBeam.visible=false;
- const history=[g.position.clone()],guidancePath=new THREE.Line(new THREE.BufferGeometry().setFromPoints(history),new THREE.LineBasicMaterial({color:sm2?0x9deaff:0x71d6ff,transparent:true,opacity:.5,blending:THREE.AdditiveBlending})),track=combatPicture.trackForTarget(missiles.indexOf(target)+1),salvoLeader=interceptors.find(i=>i.mesh.visible&&i.target===target),commandPoint=(salvoLeader?.commandPoint??track?.position??target.mesh.position).clone(),commandVelocity=(salvoLeader?.commandVelocity??track?.velocity??target.velocity).clone(),nextDatalink=salvoLeader?.nextDatalink??elapsed+.35;scene.add(g,illuminationBeam,guidancePath);const interceptor={mesh:g,target,age:0,weapon,velocity:railDirection.clone().multiplyScalar(9),distanceTraveled:0,history,guidancePath,commandPoint,commandVelocity,nextDatalink,datalinkValid:salvoLeader?.datalinkValid??!!track,illuminated:false,illuminationBeam} as Interceptor;interceptors.push(interceptor);recordEngagementLaunch(target);const launchRange=target.mesh.position.distanceTo(defender.position)/WORLD_UNITS_PER_KM;log(`${weapon} ${launcherLabel} LAUNCH / ${launchPoint} / ${launchRange.toFixed(1)} km / TRACK ${Math.round((track?.quality??0)*100)}% / ${doctrine}`);return interceptor;
-}
-function changeAmmo(weapon:WeaponType,amount:number){if(weapon==='RIM-67')ammo+=amount;else if(weapon==='SM-2MR')sm2Ammo+=amount;else sm2erAmmo+=amount;ammoEl.textContent=`RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;}
-function pendingLauncherRequests(){return activeShip.launcherKind==='mk10'?mk10Launchers.filter(launcher=>launcher.pending).map(launcher=>launcher.pending!):vlsCells.filter(cell=>cell.pending).map(cell=>cell.pending!);}
-function launcherHealth(launcher:Mk10LauncherState){return subsystemHealth(launcher.name==='AFT'?'mk10Aft':'mk10Forward');}
-function vlsCellDistance(a:number,b:number){return activeShip.launcher.kind==='mk41'?calculateVlsCellDistance(a,b,activeShip.launcher.columns):Number.POSITIVE_INFINITY;}
-function changeVlsCellAmmo(cell:VlsCellState,amount:number){if(cell.loadout==='SM-2MR')changeAmmo('SM-2MR',amount);else if(cell.loadout==='SM-2ER')changeAmmo('SM-2ER',amount);}
-function disableVlsCell(cell:VlsCellState){if(cell.phase==='disabled'||cell.phase==='spent'||cell.phase==='launching'||(cell.phase==='closing'&&cell.closeTo==='spent'))return false;const bank=vlsBanks[cell.bank],roundLoaded=cell.loadout!=='OTHER';if(cell.phase==='ready')changeVlsCellAmmo(cell,-1);else if(cell.phase==='closing'&&cell.closeTo==='ready')changeVlsCellAmmo(cell,-1);if(cell.pending){cell.pending=null;}if(roundLoaded)bank.trappedRounds++;if(cell.phase==='opening'||cell.phase==='closing'){cell.closeTo='disabled';cell.phase='closing';cell.phaseSince=elapsed;}else cell.phase='disabled';return true;}
-function applyVlsBankDamage(bankName:VlsCellState['bank'],health:number){if(activeShip.launcher.kind!=='mk41')return;const cells=vlsCells.filter(cell=>cell.bank===bankName),bank=vlsBanks[bankName],current=cells.filter(cell=>cell.phase==='disabled'||(cell.phase==='closing'&&cell.closeTo==='disabled')).length,target=desiredDisabledCells(cells.length,health,activeShip.launcher);if(target<=current)return;if(bank.damageCenters.length===0||health>.05){const candidates=cells.filter(cell=>cell.phase!=='spent'&&cell.phase!=='launching');if(candidates.length)bank.damageCenters.push(candidates[(bank.damageCenters.length*23+(bankName==='FWD'?7:31))%candidates.length].index);}let disabled=current;while(disabled<target){const candidate=cells.filter(cell=>cell.phase!=='disabled'&&cell.phase!=='spent'&&cell.phase!=='launching'&&!(cell.phase==='closing'&&cell.closeTo==='spent')).sort((a,b)=>Math.min(...bank.damageCenters.map(center=>vlsCellDistance(a.index,center)))-Math.min(...bank.damageCenters.map(center=>vlsCellDistance(b.index,center)))||a.index-b.index)[0];if(!candidate||!disableVlsCell(candidate))break;disabled++;}log(`MK 41 ${bankName} DAMAGE ISOLATION / ${disabled} CELLS DISABLED / ${bank.trappedRounds} ROUNDS TRAPPED`);}
-function queueInterceptorLaunch(target:Missile,weapon:WeaponType){
- const launcherConfig=activeShip.launcher;
- if(!launcherConfig.compatibleWeapons.includes(weapon)){log(`LAUNCH INHIBIT / ${weapon} NOT ${launcherConfig.displayName} COMPATIBLE`);return false;}
- if(launcherConfig.kind==='mk41'){
-  const desiredBank:VlsCellState['bank']=launcherCycle%2?'AFT':'FWD',activeCells=vlsCells.filter(cell=>cell.phase==='opening'||cell.phase==='launching');
-  const eligible=(bank:VlsCellState['bank'])=>vlsCells.filter(cell=>cell.bank===bank&&cell.loadout===weapon&&cell.phase==='ready'&&subsystemHealth(bank==='FWD'?'mk10Forward':'mk10Aft')>.05&&activeCells.filter(active=>active.bank===bank).every(active=>vlsCellDistance(active.index,cell.index)>1)&&(elapsed-vlsBanks[bank].lastLaunchAt>=launcherConfig.exhaustClearance||vlsCellDistance(vlsBanks[bank].lastCellIndex,cell.index)>1)).sort((a,b)=>vlsCellDistance(b.index,vlsBanks[bank].lastCellIndex)-vlsCellDistance(a.index,vlsBanks[bank].lastCellIndex));
-  const preferred=eligible(desiredBank)[0]??eligible(desiredBank==='FWD'?'AFT':'FWD')[0];if(!preferred){const loadedReady=vlsCells.some(cell=>cell.loadout===weapon&&cell.phase==='ready');log(loadedReady?'LAUNCH INHIBIT / MK 41 DECK SAFETY SEPARATION':`LAUNCH INHIBIT / MK 41 NO READY ${weapon} CELL`);return false;}
-  launcherCycle++;preferred.pending={target,weapon};preferred.closeTo='ready';preferred.phase='opening';preferred.phaseSince=elapsed;log(`MK 41 ${preferred.bank} CELL ${String(preferred.index+1).padStart(2,'0')} / ${preferred.loadout} TASK / TRACK ${missiles.indexOf(target)+1} / HATCH OPENING`);return true;
- }
- const available=mk10Launchers.filter(state=>state.phase==='ready'&&launcherHealth(state)>.05),preferred=launcherCycle%mk10Launchers.length,launcher=available.includes(mk10Launchers[preferred])?mk10Launchers[preferred]:available[0];if(!launcher){log('LAUNCH INHIBIT / MK 10 UNAVAILABLE OR CYCLING');return false;}launcherCycle=(mk10Launchers.indexOf(launcher)+1)%mk10Launchers.length;launcher.pending={target,weapon};launcher.reloadRail=-1;launcher.phase='slewing';launcher.phaseSince=elapsed;const trackId=missiles.indexOf(target)+1;log(`MK 10 ${launcher.name} TASK / TRACK ${trackId} / SLEWING / HEALTH ${Math.round(launcherHealth(launcher)*100)}%`);return true;
-}
-function moveAngle(current:number,target:number,maxStep:number){return current+THREE.MathUtils.clamp(angleDifference(target,current),-maxStep,maxStep);}
-function moveToward(current:number,target:number,maxStep:number){return current+Math.sign(target-current)*Math.min(Math.abs(target-current),maxStep);}
-function setLauncherElevation(launcher:Mk10LauncherState,elevation:number){launcher.elevation=elevation;(launcher.model.userData.arms as THREE.Group[]).forEach(arm=>arm.rotation.z=elevation);}
-function updateMk10Launchers(dt:number){const tolerance=THREE.MathUtils.degToRad(2);for(const launcher of mk10Launchers){const health=launcherHealth(launcher),azimuthRate=THREE.MathUtils.degToRad(55)*(.25+.75*health),elevationRate=THREE.MathUtils.degToRad(25)*(.25+.75*health),request=launcher.pending;if(request&&health<=.05){changeAmmo(request.weapon,1);launcher.pending=null;launcher.reloadRail=-1;launcher.phase='returning';launcher.phaseSince=elapsed;log(`MK 10 ${launcher.name} CASUALTY / LAUNCH ABORT / AMMO RETURNED`);}if(launcher.pending&&launcher.pending.target.phase==='destroyed'&&launcher.phase==='slewing'){changeAmmo(launcher.pending.weapon,1);launcher.pending=null;launcher.phase='returning';launcher.phaseSince=elapsed;log(`MK 10 ${launcher.name} TASK CANCEL / TARGET DESTROYED / AMMO RETURNED`);}
-  if(launcher.phase==='slewing'&&launcher.pending){const trackId=missiles.indexOf(launcher.pending.target)+1,track=combatPicture.trackForTarget(trackId);if(!track){if(elapsed-launcher.phaseSince>4.5){changeAmmo(launcher.pending.weapon,1);launcher.pending=null;launcher.phase='returning';launcher.phaseSince=elapsed;log(`MK 10 ${launcher.name} TASK CANCEL / TRACK LOST / AMMO RETURNED`);}continue;}const localTarget=defender.worldToLocal(track.position.clone()),relative=localTarget.sub(launcher.model.position),desiredAzimuth=Math.atan2(-relative.z,relative.x),desiredElevation=THREE.MathUtils.clamp(Math.atan2(relative.y,Math.hypot(relative.x,relative.z)),THREE.MathUtils.degToRad(5),THREE.MathUtils.degToRad(70));launcher.azimuth=moveAngle(launcher.azimuth,desiredAzimuth,azimuthRate*dt);setLauncherElevation(launcher,moveToward(launcher.elevation,desiredElevation,elevationRate*dt));launcher.model.rotation.y=launcher.azimuth;if(Math.abs(angleDifference(desiredAzimuth,launcher.azimuth))<tolerance&&Math.abs(desiredElevation-launcher.elevation)<tolerance){const railIndex=launcher.railIndex,round=launcher.rounds[railIndex],origin=new THREE.Vector3(),quaternion=new THREE.Quaternion();round.getWorldPosition(origin);round.getWorldQuaternion(quaternion);const railDirection=new THREE.Vector3(1,0,0).applyQuaternion(quaternion).normalize();launcher.reloadRail=railIndex;round.visible=false;log(`MK 10 ${launcher.name} ON BEARING / AZ ${Math.round(THREE.MathUtils.radToDeg(launcher.azimuth))} / EL ${Math.round(THREE.MathUtils.radToDeg(launcher.elevation))}`);launchInterceptor(launcher.pending.target,launcher.pending.weapon,`MK 10 ${launcher.name}`,`RAIL ${railIndex+1}`,origin,railDirection);launcher.pending=null;launcher.phase='firing';launcher.phaseSince=elapsed;}}
-  else if(launcher.phase==='firing'&&elapsed-launcher.phaseSince>=.38){launcher.phase='returning';launcher.phaseSince=elapsed;log(`MK 10 ${launcher.name} RETURN TO LOAD`);}
-  else if(launcher.phase==='returning'){launcher.azimuth=moveAngle(launcher.azimuth,launcher.stowAzimuth,azimuthRate*dt);launcher.model.rotation.y=launcher.azimuth;setLauncherElevation(launcher,moveToward(launcher.elevation,0,elevationRate*dt));if(Math.abs(angleDifference(launcher.stowAzimuth,launcher.azimuth))<tolerance&&launcher.elevation<tolerance){launcher.azimuth=launcher.stowAzimuth;launcher.model.rotation.y=launcher.stowAzimuth;setLauncherElevation(launcher,0);launcher.phaseSince=elapsed;if(launcher.reloadRail<0){launcher.phase='ready';log(`MK 10 ${launcher.name} READY / TASK CANCELLED`);continue;}launcher.phase='loading';const round=launcher.rounds[launcher.reloadRail],home=round.userData.homePosition as THREE.Vector3;round.position.copy(home).add(new THREE.Vector3(-5.2,-.12,0));round.scale.copy(round.userData.homeScale as THREE.Vector3).multiplyScalar(.72);round.visible=true;log(`MK 10 ${launcher.name} LOADING / RAIL ${launcher.reloadRail+1}`);}}
-  else if(launcher.phase==='loading'){if(health<=.05)continue;const round=launcher.rounds[launcher.reloadRail],home=round.userData.homePosition as THREE.Vector3,reloadTime=1.8/(.3+.7*health),t=THREE.MathUtils.smoothstep((elapsed-launcher.phaseSince)/reloadTime,0,1);round.position.lerpVectors(home.clone().add(new THREE.Vector3(-5.2,-.12,0)),home,t);round.scale.copy(round.userData.homeScale as THREE.Vector3).multiplyScalar(THREE.MathUtils.lerp(.72,1,t));if(t>=1){round.position.copy(home);round.scale.copy(round.userData.homeScale as THREE.Vector3);launcher.railIndex=(launcher.reloadRail+1)%launcher.rounds.length;launcher.phase='ready';launcher.phaseSince=elapsed;log(`MK 10 ${launcher.name} READY / RAIL ${launcher.reloadRail+1}`);}}
- }}
-function resetMk10Launchers(){for(const launcher of mk10Launchers){launcher.pending=null;launcher.phase='ready';launcher.phaseSince=0;launcher.azimuth=launcher.stowAzimuth;launcher.elevation=0;launcher.railIndex=0;launcher.reloadRail=0;launcher.model.rotation.y=launcher.stowAzimuth;(launcher.model.userData.arms as THREE.Group[]).forEach(arm=>arm.rotation.z=0);launcher.rounds.forEach(round=>{round.visible=true;round.position.copy(round.userData.homePosition as THREE.Vector3);round.scale.copy(round.userData.homeScale as THREE.Vector3);});}}
-function configureVlsLoadout(requestedMr:number,requestedEr:number){if(activeShip.launcher.kind!=='mk41')return{mr:0,er:0,other:0};const capacity=vlsCells.length,allocation=allocateVlsLoadout(capacity,requestedMr,requestedEr),order=vlsLoadOrder(vlsCells,activeShip.launcher);vlsCells.forEach(cell=>cell.loadout='OTHER');let mrAssigned=0,erAssigned=0;for(const cell of order){const assignMr=mrAssigned<allocation.mr&&(erAssigned>=allocation.er||mrAssigned/Math.max(1,allocation.mr)<=erAssigned/Math.max(1,allocation.er));if(assignMr){cell.loadout='SM-2MR';mrAssigned++;}else if(erAssigned<allocation.er){cell.loadout='SM-2ER';erAssigned++;}if(mrAssigned>=allocation.mr&&erAssigned>=allocation.er)break;}return{mr:mrAssigned,er:erAssigned,other:capacity-mrAssigned-erAssigned};}
-function resetVlsCells(){for(const bank of ['FWD','AFT'] as const){vlsBanks[bank].lastLaunchAt=-Infinity;vlsBanks[bank].lastCellIndex=-1;vlsBanks[bank].minimumObservedGap=Infinity;vlsBanks[bank].launchHistory.length=0;vlsBanks[bank].damageCenters.length=0;vlsBanks[bank].trappedRounds=0;}for(const cell of vlsCells){cell.pending=null;cell.phase='ready';cell.closeTo='ready';cell.phaseSince=0;cell.lid.rotation.z=0;}}
-function createVlsLaunchEffect(origin:THREE.Vector3){const group=new THREE.Group(),flame=new THREE.Mesh(new THREE.ConeGeometry(.55,4.8,12,1,true),new THREE.MeshBasicMaterial({color:0xffd36a,transparent:true,opacity:.9,depthWrite:false,blending:THREE.AdditiveBlending})),light=new THREE.PointLight(0xff9b45,13,55),smoke:THREE.Mesh[]=[];flame.rotation.z=Math.PI;flame.position.y=2.15;light.position.y=1.2;group.add(flame,light);for(let n=0;n<12;n++){const puff=new THREE.Mesh(new THREE.SphereGeometry(.5,7,5),new THREE.MeshBasicMaterial({color:0xb7c0bd,transparent:true,opacity:.3,depthWrite:false}));puff.position.set(Math.sin(n*2.4)*.35,.1+n*.08,Math.cos(n*1.7)*.35);smoke.push(puff);group.add(puff);}group.position.copy(origin);scene.add(group);vlsLaunchEffects.push({group,flame,smoke,light,age:0});}
-function updateVlsLaunchEffects(dt:number){for(let index=vlsLaunchEffects.length-1;index>=0;index--){const effect=vlsLaunchEffects[index];effect.age+=dt;const age=effect.age;effect.flame.scale.set(.8+Math.sin(age*35)*.12,Math.max(.15,1-age*1.7),.8+Math.sin(age*31)*.12);(effect.flame.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.9-age*1.7);effect.light.intensity=Math.max(0,13-age*20);effect.smoke.forEach((puff,n)=>{const spread=age*(1.1+n*.045);puff.position.x=Math.sin(n*2.4)*spread;puff.position.z=Math.cos(n*1.7)*spread;puff.position.y=.2+age*(1.3+n*.08);puff.scale.setScalar(.45+age*(1.6+n*.04));(puff.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.28-age*.16);});if(age>2.1){scene.remove(effect.group);vlsLaunchEffects.splice(index,1);}}}
-function updateVlsCells(dt:number){for(const cell of vlsCells){const health=subsystemHealth(cell.bank==='FWD'?'mk10Forward':'mk10Aft'),bank=vlsBanks[cell.bank],sequenceInterval=.5/(.35+.65*health);if(cell.pending&&cell.pending.target.phase==='destroyed'){changeAmmo(cell.pending.weapon,1);cell.pending=null;cell.closeTo='ready';cell.phase='closing';cell.phaseSince=elapsed;log(`MK 41 ${cell.bank} CELL ${cell.index+1} TASK CANCEL / TARGET DESTROYED / ROUND RETAINED`);}if(cell.pending&&health<=.05){cell.pending=null;cell.closeTo='disabled';cell.phase='closing';cell.phaseSince=elapsed;if(cell.loadout!=='OTHER')bank.trappedRounds++;log(`MK 41 ${cell.bank} CASUALTY / CELL ${cell.index+1} ABORT / ROUND TRAPPED`);}if(cell.phase==='opening'){cell.lid.rotation.z=moveToward(cell.lid.rotation.z,Math.PI*.52,dt*4.8);if(cell.lid.rotation.z>=Math.PI*.5&&cell.pending&&elapsed-bank.lastLaunchAt>=sequenceInterval){const origin=new THREE.Vector3(),up=new THREE.Vector3(0,1,0),gap=elapsed-bank.lastLaunchAt;if(Number.isFinite(gap))bank.minimumObservedGap=Math.min(bank.minimumObservedGap,gap);bank.lastLaunchAt=elapsed;bank.lastCellIndex=cell.index;bank.launchHistory.push(cell.index+1);cell.origin.getWorldPosition(origin);up.applyQuaternion(defender.getWorldQuaternion(new THREE.Quaternion())).normalize();const interceptor=launchInterceptor(cell.pending.target,cell.pending.weapon,`MK 41 ${cell.bank}`,`CELL ${String(cell.index+1).padStart(2,'0')}`,origin,up);interceptor.mesh.userData.vlsLaunch=true;interceptor.mesh.userData.verticalDirection=up.clone();createVlsLaunchEffect(origin);cell.pending=null;cell.closeTo='spent';cell.phase='launching';cell.phaseSince=elapsed;log(`MK 41 ${cell.bank} CELL ${cell.index+1} / ${cell.loadout} HOT LAUNCH / VERTICAL BOOST / SEQUENCE ${(sequenceInterval).toFixed(2)}s`);}}else if(cell.phase==='launching'&&elapsed-cell.phaseSince>.6){cell.phase='closing';cell.phaseSince=elapsed;}else if(cell.phase==='closing'){cell.lid.rotation.z=moveToward(cell.lid.rotation.z,0,dt*3.6);if(cell.lid.rotation.z<=.01){cell.lid.rotation.z=0;cell.phase=cell.closeTo;}}}const readyMr=vlsCells.filter(cell=>cell.loadout==='SM-2MR'&&cell.phase==='ready').length,readyEr=vlsCells.filter(cell=>cell.loadout==='SM-2ER'&&cell.phase==='ready').length,pendingMr=vlsCells.filter(cell=>cell.loadout==='SM-2MR'&&!!cell.pending).length,pendingEr=vlsCells.filter(cell=>cell.loadout==='SM-2ER'&&!!cell.pending).length;canvas.dataset.vlsFwdMinLaunchGap=Number.isFinite(vlsBanks.FWD.minimumObservedGap)?vlsBanks.FWD.minimumObservedGap.toFixed(2):'';canvas.dataset.vlsAftMinLaunchGap=Number.isFinite(vlsBanks.AFT.minimumObservedGap)?vlsBanks.AFT.minimumObservedGap.toFixed(2):'';canvas.dataset.vlsFwdLastCell=String(vlsBanks.FWD.lastCellIndex+1||'');canvas.dataset.vlsAftLastCell=String(vlsBanks.AFT.lastCellIndex+1||'');canvas.dataset.vlsFwdLaunchHistory=vlsBanks.FWD.launchHistory.join(',');canvas.dataset.vlsAftLaunchHistory=vlsBanks.AFT.launchHistory.join(',');canvas.dataset.vlsMrReady=String(readyMr);canvas.dataset.vlsErReady=String(readyEr);canvas.dataset.vlsMrPending=String(pendingMr);canvas.dataset.vlsErPending=String(pendingEr);canvas.dataset.vlsMrAvailable=String(sm2Ammo);canvas.dataset.vlsErAvailable=String(sm2erAmmo);canvas.dataset.vlsOtherLoaded=String(vlsCells.filter(cell=>cell.loadout==='OTHER').length);canvas.dataset.vlsSpent=String(vlsCells.filter(cell=>cell.phase==='spent').length);canvas.dataset.vlsDisabledFwd=String(vlsCells.filter(cell=>cell.bank==='FWD'&&cell.phase==='disabled').length);canvas.dataset.vlsDisabledAft=String(vlsCells.filter(cell=>cell.bank==='AFT'&&cell.phase==='disabled').length);canvas.dataset.vlsTrappedFwd=String(vlsBanks.FWD.trappedRounds);canvas.dataset.vlsTrappedAft=String(vlsBanks.AFT.trappedRounds);canvas.dataset.vlsReturning=String(vlsCells.filter(cell=>cell.phase==='closing'&&cell.closeTo==='ready').length);}
-function separateBooster(interceptor:Interceptor){const booster=interceptor.mesh.userData.booster as THREE.Group|undefined;if(!booster||interceptor.mesh.userData.boosterSeparated)return;interceptor.mesh.userData.boosterSeparated=true;scene.attach(booster);const light=new THREE.PointLight(0xffb45b,5,18);light.position.copy(booster.position);scene.add(light);boosterDebris.push({mesh:booster,velocity:interceptor.velocity.clone().multiplyScalar(.62).add(new THREE.Vector3(0,-1.4,0)),spin:new THREE.Vector3(.8,.35,.55),light,age:0});log(`${interceptor.weapon} BOOSTER SEPARATION`);}
-function updateBoosterDebris(dt:number){for(let index=boosterDebris.length-1;index>=0;index--){const debris=boosterDebris[index];debris.age+=dt;debris.velocity.y-=1.8*dt;debris.mesh.position.addScaledVector(debris.velocity,dt);debris.mesh.rotation.x+=debris.spin.x*dt;debris.mesh.rotation.y+=debris.spin.y*dt;debris.mesh.rotation.z+=debris.spin.z*dt;debris.light.position.copy(debris.mesh.position);debris.light.intensity=Math.max(0,5-debris.age*4);if(debris.age>5||debris.mesh.position.y<-.5){scene.remove(debris.mesh,debris.light);boosterDebris.splice(index,1);}}}
-function createChaffVisual(color:number){const group=new THREE.Group(),material=new THREE.MeshBasicMaterial({color,transparent:true,opacity:.42,depthWrite:false,blending:THREE.AdditiveBlending});for(let n=0;n<28;n++){const flake=new THREE.Mesh(new THREE.BoxGeometry(.08,.025,.42),material);const seed=n*2.399;flake.position.set(Math.sin(seed)*1.8,Math.cos(seed*1.37)*.8,Math.sin(seed*.73)*1.8);flake.rotation.set(seed,seed*.7,seed*1.3);group.add(flake);}return group;}
-function deployChaff(source:Missile){const group=createChaffVisual(0xffe8a8);group.position.copy(source.mesh.position);scene.add(group);const position=group.position,velocity=source.velocity.clone().multiplyScalar(.22).add(new THREE.Vector3(.18,.05,-.12));chaffClouds.push({mesh:group,position,velocity,age:0,rcs:2.8,initialRcs:2.8,source,side:'threat',serial:++chaffSerial});source.mesh.userData.chaffDeployed=true;log(`${source.kind} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`);}
-function deployShipChaff(threat:Missile){
- const health=subsystemHealth('srboc');if(!srbocEnabled||health<=.05||srbocRounds<=0||elapsed-lastSrboc<4/Math.max(.3,health))return false;
- const relative=threat.mesh.position.clone().sub(defender.position).setY(0).normalize(),offset=new THREE.Vector3(-relative.z,0,relative.x).multiplyScalar(22),side=srbocRounds%2===0?1:-1,start=defender.localToWorld(new THREE.Vector3(0,8,side*4.8)),burst=defender.position.clone().add(offset).add(new THREE.Vector3(0,8,0)),control=start.clone().lerp(burst,.5).add(new THREE.Vector3(0,15,0)),mesh=new THREE.Group();
- const body=new THREE.Mesh(new THREE.CylinderGeometry(.2,.25,1.6,8),new THREE.MeshStandardMaterial({color:0xdce4dc,emissive:0x5b7f78,emissiveIntensity:.8,metalness:.48,roughness:.35})),flare=new THREE.Mesh(new THREE.ConeGeometry(.38,2.2,10,1,true),new THREE.MeshBasicMaterial({color:0x8ffff0,transparent:true,opacity:.78,depthWrite:false,blending:THREE.AdditiveBlending})),core=new THREE.Mesh(new THREE.SphereGeometry(.42,8,6),new THREE.MeshBasicMaterial({color:0xe5fff8,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending})),glow=new THREE.PointLight(0x9fffe8,8,28);flare.position.y=-1.65;core.position.y=-.75;mesh.add(body,flare,core,glow);mesh.position.copy(start);
- const trail=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start]),new THREE.LineBasicMaterial({color:0xa8fff0,transparent:true,opacity:.9,blending:THREE.AdditiveBlending}));trail.userData.history=[start.clone()];scene.add(mesh,trail);srbocRoundsInFlight.push({mesh,trail,start,control,burst,burstVelocity:offset.clone().normalize().multiplyScalar(1.5).add(new THREE.Vector3(-.18,.03,.12)),age:0,flightTime:1.15/Math.max(.55,health)});srbocRounds--;lastSrboc=elapsed;log(`MK 36 SRBOC LAUNCH / ${srbocRounds} ROUNDS / HEALTH ${Math.round(health*100)}%`);return true;
-}
-function updateCountermeasures(dt:number){for(let index=srbocRoundsInFlight.length-1;index>=0;index--){const round=srbocRoundsInFlight[index];round.age+=dt;const t=Math.min(1,round.age/round.flightTime),u=1-t,position=round.start.clone().multiplyScalar(u*u).add(round.control.clone().multiplyScalar(2*u*t)).add(round.burst.clone().multiplyScalar(t*t)),tangent=round.control.clone().sub(round.start).multiplyScalar(2*u).add(round.burst.clone().sub(round.control).multiplyScalar(2*t)).normalize();round.mesh.position.copy(position);round.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),tangent);const history=round.trail.userData.history as THREE.Vector3[];if(!history.length||history[history.length-1].distanceTo(position)>.6){history.push(position.clone());if(history.length>22)history.shift();round.trail.geometry.dispose();round.trail.geometry=new THREE.BufferGeometry().setFromPoints(history);}if(t>=1){scene.remove(round.mesh,round.trail);const group=createChaffVisual(0x9feaff);group.position.copy(round.burst);scene.add(group);chaffClouds.push({mesh:group,position:group.position,velocity:round.burstVelocity,age:0,rcs:7.5,initialRcs:7.5,source:null,side:'ship',serial:++chaffSerial});srbocRoundsInFlight.splice(index,1);log(`MK 36 SRBOC AIRBURST / CHAFF RCS 7.5`);}}
- for(let index=chaffClouds.length-1;index>=0;index--){const cloud=chaffClouds[index];cloud.age+=dt;cloud.position.addScaledVector(cloud.velocity,dt);cloud.velocity.multiplyScalar(Math.pow(.96,dt));cloud.mesh.rotation.y+=dt*.18;cloud.mesh.scale.setScalar(1+cloud.age*.22);cloud.rcs=Math.max(.1,cloud.initialRcs*(1-cloud.age/14));cloud.mesh.children.forEach(o=>{if(o instanceof THREE.Mesh)(o.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.42-cloud.age/30);});if(cloud.age>14){scene.remove(cloud.mesh);chaffClouds.splice(index,1);}}}
-function createExplosion(position:THREE.Vector3){const core=new THREE.Mesh(new THREE.IcosahedronGeometry(2.2,2),new THREE.MeshBasicMaterial({color:0xffc45e,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending}));core.position.copy(position);const ring=new THREE.Mesh(new THREE.TorusGeometry(3.2,.22,10,48),new THREE.MeshBasicMaterial({color:0xff7138,transparent:true,opacity:.78,depthWrite:false,blending:THREE.AdditiveBlending}));ring.position.copy(position);ring.quaternion.copy(camera.quaternion);const light=new THREE.PointLight(0xff6a22,18,95);light.position.copy(position);scene.add(core,ring,light);explosions.push({core,ring,light,age:0});}
-function createShipDamage(worldPosition:THREE.Vector3,severity:number,localOverride?:THREE.Vector3){const local=localOverride?.clone()??defender.worldToLocal(worldPosition.clone()),side=local.z>=0?1:-1,group=new THREE.Group();local.x=THREE.MathUtils.clamp(local.x,-24,24);local.y=Math.max(6.3,local.y);local.z=side*Math.max(3.75,Math.abs(local.z));group.position.copy(local);group.rotation.y=side<0?Math.PI:0;const scorch=new THREE.Mesh(new THREE.CircleGeometry(2.2,18),new THREE.MeshBasicMaterial({color:0x120d0b,transparent:true,opacity:.9,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));group.add(scorch);const fire=new THREE.Mesh(new THREE.IcosahedronGeometry(1.15,1),new THREE.MeshBasicMaterial({color:0xff6b24,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending}));fire.position.set(0,1,.2);group.add(fire);const smoke:THREE.Mesh[]=[];for(let i=0;i<6;i++){const puff=new THREE.Mesh(new THREE.SphereGeometry(.85,7,5),new THREE.MeshBasicMaterial({color:0x667174,transparent:true,opacity:.32,depthWrite:false}));smoke.push(puff);group.add(puff);}const light=new THREE.PointLight(0xff5a24,5+severity*.1,28);light.position.set(0,1.2,.6);group.add(light);defender.add(group);shipDamageEffects.push({group,fire,smoke,light,seed:shipDamageEffects.length*2.37+.4});(defender.userData.hullMat as THREE.MeshStandardMaterial).color.lerp(new THREE.Color(0x2a2423),Math.min(.45,severity/100));}
-function updateSubsystemPanel(){let damaged=0,failed=0;for(const system of subsystemList){if(system.health<99.5)damaged++;if(system.health<=5)failed++;const row=subsystemPanel.querySelector<HTMLElement>(`[data-system="${system.id}"]`);if(!row)continue;row.classList.toggle('damaged',system.health<99.5&&system.health>=65);row.classList.toggle('degraded',system.health<65&&system.health>5);row.classList.toggle('failed',system.health<=5);(row.querySelector('i') as HTMLElement).style.width=`${system.health}%`;(row.querySelector('b') as HTMLElement).textContent=system.health<=5?'FAIL':String(Math.round(system.health));}const summary=subsystemPanel.querySelector('#damageSummary')!;summary.textContent=failed?`${failed} FAILED / ${damaged} DAMAGED`:damaged?`${damaged} SYSTEMS DAMAGED`:'ALL SYSTEMS NOMINAL';subsystemPanel.classList.toggle('alert',damaged>0);}
-function subsystemRows(){return subsystemList.map(system=>`<div class="subsystem-row" data-system="${system.id}"><span>${system.label}</span><div><i></i></div><b>100</b></div>`).join('');}
-function configureShip(shipClass:ShipClass){if(activeShip.id===shipClass)return;const definition=SHIP_DEFINITIONS.get(shipClass);if(!definition)return;const position=defender.position.clone(),rotation=defender.rotation.clone();scene.remove(defender);activeShip=definition;defender=activeShip.build();defender.position.copy(position);defender.rotation.copy(rotation);defender.traverse(object=>{if(object instanceof THREE.Mesh){object.castShadow=true;object.receiveShadow=true;}});scene.add(defender);mk10Launchers=activeShip.launcherKind==='mk10'?[makeMk10State('AFT',defender.userData.launcher,Math.PI),makeMk10State('FORWARD',defender.userData.forwardLauncher,Math.PI)]:[];vlsCells=activeShip.launcherKind==='mk41'?(defender.userData.vlsCells as {lid:THREE.Group;origin:THREE.Object3D;index:number;bank:'FWD'|'AFT'}[]).map(cell=>({...cell,phase:'ready' as const,closeTo:'ready' as const,phaseSince:0,pending:null,loadout:'OTHER' as const})):[];if(activeShip.launcherKind==='mk41')configureVlsLoadout(activeShip.ammo.sm2mr,activeShip.ammo.sm2er);for(const system of subsystemList){system.label=activeShip.subsystemLabels[system.id];system.position.copy(activeShip.subsystemPositions[system.id]);system.health=100;}combatPicture.setSensors(activeShip.sensors);const grid=subsystemPanel.querySelector('.subsystem-grid')!;grid.innerHTML=subsystemRows();updateSubsystemPanel();(document.querySelector('#shipBadge') as HTMLElement).textContent=activeShip.hullNumber;(document.querySelector('#shipName') as HTMLElement).textContent=activeShip.name;(document.querySelector('#shipRole') as HTMLElement).textContent=activeShip.role;(document.querySelector('#radarName') as HTMLElement).textContent=activeShip.sensors.find(sensor=>sensor.threeDimensional)?.name??activeShip.sensors[0].name;const pick=document.querySelector('#pickShip') as HTMLButtonElement|null;if(pick)pick.textContent=`PICK ${activeShip.name} ON RADAR`;log(`SHIP SELECT / ${activeShip.name} ${activeShip.hullNumber} / ${activeShip.era} / ${activeShip.launcherKind.toUpperCase()}`);}
-function damageSubsystem(id:SubsystemId,amount:number,secondary=false,approachBearing=0){const system=subsystems[id],before=system.health;system.health=Math.max(0,system.health-amount);if(Math.round(before)===Math.round(system.health))return;const state=system.health<=5?'DESTROYED':system.health<35?'CRITICAL':system.health<65?'DEGRADED':'DAMAGED';log(`${system.label} ${state} / ${Math.round(before)} -> ${Math.round(system.health)}${secondary?' / FRAGMENTATION':''}`);const sensorFace=id===activeShip.fixedSensorFaces?.subsystemId?damageFixedSensorFace(approachBearing,amount):-1,faceModels=defender.userData.sensorFaceModels as THREE.Group[]|undefined,side=(Math.sin((shipDamageEffects.length+1)*4.17)>=0?1:-1),visualPosition=sensorFace>=0&&faceModels?.[sensorFace]?faceModels[sensorFace].position.clone():system.position.clone();if(sensorFace<0)visualPosition.z=side*Math.max(3.8,Math.abs(visualPosition.z));createShipDamage(defender.localToWorld(visualPosition.clone()),amount*.55,visualPosition);if(id==='mk10Aft'||id==='mk10Forward'){if(activeShip.launcher.kind==='mk41')applyVlsBankDamage(id==='mk10Aft'?'AFT':'FWD',system.health/100);else if(system.health<=5){const launcher=mk10Launchers[id==='mk10Aft'?0:1];if(launcher?.pending){changeAmmo(launcher.pending.weapon,1);launcher.pending=null;}if(launcher){launcher.phase='returning';launcher.reloadRail=-1;launcher.phaseSince=elapsed;}}}updateSubsystemPanel();}
-function applySubsystemDamage(missile:Missile,severity:number){const id=missiles.indexOf(missile)+1,seed=(value:number)=>{const raw=Math.sin(id*12.9898+leakers*78.233+value*37.719)*43758.5453;return raw-Math.floor(raw);},originLocal=defender.worldToLocal(missile.history[0].clone()),approachBearing=Math.atan2(-originLocal.z,originLocal.x),approachBias=THREE.MathUtils.clamp(originLocal.x*.07,-18,18),impactX=THREE.MathUtils.clamp(approachBias+missile.aimOffset.x*4+THREE.MathUtils.lerp(-5,5,seed(1)),-24,24),zones:SubsystemId[]=impactX>14?['mk10Forward','ciws','spg55']:impactX>4?['sps48','spg55','ecm','ciws']:impactX>-7?['spg55','ecm','propulsion','sps48']:impactX>-16?['sps49','srboc','propulsion','spg55']:['mk10Aft','srboc','ciws','sps49'],primary=zones[Math.floor(seed(2)*zones.length)],secondary=zones.filter(id=>id!==primary)[Math.floor(seed(3)*(zones.length-1))];damageSubsystem(primary,severity*(.78+seed(4)*.5),false,approachBearing);if(secondary)damageSubsystem(secondary,severity*(.18+seed(5)*.18),true,approachBearing);log(`DAMAGE CONTROL / ${impactX>8?'FORWARD':impactX<-8?'AFT':'AMIDSHIPS'} HIT / ${subsystems[primary].label} PRIMARY`);}
-function flashCombat(kind:'intercept'|'impact'){combatFlash.className='combat-flash';void combatFlash.offsetWidth;combatFlash.classList.add(kind);}
-function destroyMissileVisual(missile:Missile,effect:'intercept'|'impact'){if(!explodedTargets.has(missile)){explodedTargets.add(missile);createExplosion(missile.mesh.position.clone());}flashCombat(effect);}
-function ciwsTracer(target:THREE.Vector3,origin:THREE.Vector3){const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone(),target.clone()]),new THREE.LineBasicMaterial({color:0xffef9a,transparent:true,opacity:.9}));scene.add(line);setTimeout(()=>{scene.remove(line);line.geometry.dispose();(line.material as THREE.Material).dispose();},110);}
-addMissile(new THREE.Vector3(-85,18,-210)); addMissile(new THREE.Vector3(0,28,-240)); addMissile(new THREE.Vector3(80,14,-220));
-let running=true,elapsed=0,simAccumulator=0,last=performance.now(),ammo=6,sm2Ammo=12,sm2erAmmo=8,selectedWeapon:WeaponType='RIM-67',autoFire=true,radarEnabled=true,timeScale=1,selectedTargetId=1,hullIntegrity=100,ciwsEnabled=true,ciwsRounds=1200,lastCiwsShot=-10,nextSamLaunch=0,leakers=0,missionEnded=false,maxSamChannels=3,maxIlluminators=2,searchWidth=360,doctrine:EngagementDoctrine='SSLS',chaffEnabled=true,ecmEnabled=true,shipEcmEnabled=true,srbocEnabled=true,srbocRounds=12,lastSrboc=-20; let dragging=false,px=0,py=0,az=0.65,el=0.48,dist=210,cinematic=false,waveFrame=0,viewMode:1|2|3|4=2;
-let shipSpeedKnots=0,shipDesiredHeading=0,nextShipDecision=0,shipManeuverThreatId=0;
-let aarSnapshots:AarSnapshot[]=[],aarEvents:AarEvent[]=[],nextAarSnapshot=0,aarReplayTimer:number|undefined;
- const phaseEl=document.querySelector('#phase')!, clockEl=document.querySelector('#clock')!, targetState=document.querySelector('#targetState')!, feed=document.querySelector('#feed')!, ammoEl=document.querySelector('#ammo')!, weaponEnvelope=document.querySelector('#weaponEnvelope')!, threatName=document.querySelector('#threatName')!, threatRange=document.querySelector('#threatRange')!, threatAltitude=document.querySelector('#threatAltitude')!, trackQuality=document.querySelector('#trackQuality')!, threatTti=document.querySelector('#threatTti')!, seekerState=document.querySelector('#seekerState')!,ewState=document.querySelector('#ewState')!,qualityFill=document.querySelector('#qualityFill') as HTMLElement;
-const targetMarker=document.querySelector('#targetMarker') as HTMLElement,targetMarkerLabel=document.querySelector('#targetMarkerLabel') as HTMLElement,combatFlash=document.querySelector('#combatFlash') as HTMLElement;
-const controls=document.createElement('div');controls.className='combat-controls';controls.style.cssText='position:fixed;left:34px;bottom:150px;display:flex;gap:8px;z-index:8';document.body.appendChild(controls);
-const subsystemPanel=document.createElement('section');subsystemPanel.className='subsystem-panel';subsystemPanel.innerHTML=`<header><b>DAMAGE CONTROL</b><span id="damageSummary">ALL SYSTEMS NOMINAL</span></header><div class="subsystem-grid">${subsystemRows()}</div>`;document.body.appendChild(subsystemPanel);
-updateSubsystemPanel();
-const resultPanel=document.createElement('div');resultPanel.className='result-panel aar-panel';resultPanel.style.display='none';document.body.appendChild(resultPanel);
-let placementMode:false|'enemy'|'ship'=false;
-const sandbox=document.createElement('div');sandbox.style.cssText='position:fixed;inset:0;margin:auto;width:470px;height:430px;background:#071923f5;border:1px solid #4ac0b8;color:#d5edf0;z-index:30;padding:28px;font:12px Arial;letter-spacing:1px';sandbox.innerHTML=`<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType"><option>P-500</option><option>P-700</option><option>Kh-22</option></select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.2" max="500" step="0.1" value="1.2"></label><label>CENTER X<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;sandbox.querySelectorAll('input,select').forEach((e:any)=>e.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px');document.body.appendChild(sandbox);running=false;missiles.forEach(m=>{m.mesh.visible=false;m.path.visible=false;});
-sandbox.className='sandbox-panel';
-function numberInput(id:string){return Number((sandbox.querySelector(id) as HTMLInputElement).value);}
-const pickPlacement=document.createElement('button');pickPlacement.textContent='PICK FORMATION CENTER ON RADAR';pickPlacement.style.cssText='margin-top:12px;width:100%;border:1px solid #547d82;background:#0a2229;color:#9fd3d1;padding:8px;cursor:pointer';sandbox.insertBefore(pickPlacement,sandbox.querySelector('#sbStart'));pickPlacement.onclick=()=>{placementMode='enemy';pickPlacement.textContent='CLICK TACTICAL RADAR...';};
-const pickShip=document.createElement('button');pickShip.id='pickShip';pickShip.textContent=`PICK ${activeShip.name} ON RADAR`;pickShip.style.cssText=pickPlacement.style.cssText;sandbox.insertBefore(pickShip,sandbox.querySelector('#sbStart'));pickShip.onclick=()=>{placementMode='ship';pickShip.textContent='CLICK TACTICAL RADAR...';};
-const patternWrap=document.createElement('label');patternWrap.innerHTML='LAUNCH PATTERN<select id="sbPattern"><option value="RIPPLE">RIPPLE / ONE BY ONE</option><option value="SALVO">SALVO / SIMULTANEOUS</option><option value="WAVES">WAVES / GROUPS OF FOUR</option></select>';patternWrap.style.cssText='display:block;margin-top:12px';sandbox.insertBefore(patternWrap,pickPlacement);const patternSelect=patternWrap.querySelector('select') as HTMLSelectElement;patternSelect.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';
-patternSelect.remove(2);patternSelect.onchange=()=>{if(patternSelect.value==='SALVO')(sandbox.querySelector('#sbInterval') as HTMLInputElement).value='0';};
-sandbox.style.height='570px';
-const sandboxGrid=sandbox.querySelector('div[style*="grid"]')!;for(const [label,id,value] of [['SHIP X','sbShipX','0'],['SHIP Z','sbShipZ','40']]){const field=document.createElement('label');field.textContent=label;const input=document.createElement('input');input.id=id;input.type='number';input.value=value;input.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';field.appendChild(input);sandboxGrid.appendChild(field);}sandbox.style.height='640px';
-const shipField=document.createElement('label'),shipOptions=SHIP_CATALOG.map(ship=>`<option value="${ship.id}">${ship.name} / ${ship.hullNumber} / ${ship.launcherKind==='mk41'?'MK 41 VLS':'MK 10'}</option>`).join('');shipField.innerHTML=`DEFENDING SHIP<select id="sbShip">${shipOptions}</select>`;const shipSelect=shipField.querySelector('select') as HTMLSelectElement;shipSelect.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';sandboxGrid.insertBefore(shipField,sandboxGrid.firstChild);shipSelect.onchange=()=>{configureShip(shipSelect.value as ShipClass);const defaults=activeShip.ammo;(sandbox.querySelector('#sbRim') as HTMLInputElement).value=String(defaults.rim67);(sandbox.querySelector('#sbSm2') as HTMLInputElement).value=String(defaults.sm2mr);(sandbox.querySelector('#sbSm2er') as HTMLInputElement).value=String(defaults.sm2er);(sandbox.querySelector('#sbCiws') as HTMLInputElement).value=String(defaults.ciws);(sandbox.querySelector('#sbChannels') as HTMLInputElement).value=String(defaults.channels);(sandbox.querySelector('#sbIlluminators') as HTMLInputElement).value=String(defaults.illuminators);(sandbox.querySelector('#sbLauncherFwdHealth') as HTMLInputElement).value='100';(sandbox.querySelector('#sbLauncherAftHealth') as HTMLInputElement).value='100';(sandbox.querySelector('#sbWeapon') as HTMLSelectElement).value=defaults.rim67>0?'RIM-67':defaults.sm2mr>0?'SM-2MR':'SM-2ER';};
-for(const [label,id,value,max] of [['RIM-67 MAGAZINE','sbRim','6','48'],['SM-2MR MAGAZINE','sbSm2','12','96'],['SM-2ER MAGAZINE','sbSm2er','8','64'],['CIWS ROUNDS','sbCiws','1200','6000']]){const field=document.createElement('label');field.textContent=label;const input=document.createElement('input');input.id=id;input.type='number';input.min='0';input.max=max;input.value=value;input.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';field.appendChild(input);sandboxGrid.appendChild(field);}sandbox.style.height='810px';
-const channelField=document.createElement('label');channelField.textContent='SAM FIRE CHANNELS';const channelInput=document.createElement('input');channelInput.id='sbChannels';channelInput.type='number';channelInput.min='1';channelInput.max='8';channelInput.value='3';channelInput.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';channelField.appendChild(channelInput);sandboxGrid.appendChild(channelField);
-const illuminatorField=document.createElement('label');illuminatorField.textContent='TERMINAL ILLUMINATORS';const illuminatorInput=channelInput.cloneNode() as HTMLInputElement;illuminatorInput.id='sbIlluminators';illuminatorInput.max='4';illuminatorInput.value='2';illuminatorField.appendChild(illuminatorInput);sandboxGrid.appendChild(illuminatorField);
-for(const [label,id] of [['FWD LAUNCHER HEALTH','sbLauncherFwdHealth'],['AFT LAUNCHER HEALTH','sbLauncherAftHealth']]){const field=document.createElement('label');field.textContent=label;const input=document.createElement('input');input.id=id;input.type='number';input.min='0';input.max='100';input.value='100';input.style.cssText=channelInput.style.cssText;field.appendChild(input);sandboxGrid.appendChild(field);}
-const wave2Type=document.createElement('label');wave2Type.innerHTML='SECOND WAVE TYPE<select id="sbType2"><option value="NONE">NONE</option><option>P-500</option><option>P-700</option><option>Kh-22</option></select>';const wave2Select=wave2Type.querySelector('select') as HTMLSelectElement;wave2Select.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';sandboxGrid.appendChild(wave2Type);for(const [label,id,value,max] of [['SECOND WAVE COUNT','sbCount2','4','12'],['SECOND WAVE DELAY','sbDelay2','10','60']]){const field=document.createElement('label');field.textContent=label;const input=document.createElement('input');input.id=id;input.type='number';input.min='0';input.max=max;input.value=value;input.style.cssText='display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px';field.appendChild(input);sandboxGrid.appendChild(field);}sandbox.style.height='950px';sandbox.style.maxHeight='calc(100vh - 48px)';sandbox.style.overflowY='auto';sandbox.style.boxSizing='border-box';
-const presets=document.createElement('div');presets.style.cssText='display:flex;gap:7px;margin-top:12px';sandbox.insertBefore(presets,patternWrap);function presetButton(text:string,kind:EnemyType,count:number,interval:number,altitude:number,spread:number,range:number){const b=document.createElement('button');b.textContent=text;b.style.cssText='flex:1;border:1px solid #3d6f73;background:#09232a;color:#9fd3d1;padding:7px;font-size:9px;cursor:pointer';b.onclick=()=>{(sandbox.querySelector('#sbType') as HTMLSelectElement).value=kind;(sandbox.querySelector('#sbCount') as HTMLInputElement).value=String(count);(sandbox.querySelector('#sbInterval') as HTMLInputElement).value=String(interval);(sandbox.querySelector('#sbAltitude') as HTMLInputElement).value=String(altitude);(sandbox.querySelector('#sbSpread') as HTMLInputElement).value=String(spread);(sandbox.querySelector('#sbZ') as HTMLInputElement).value=String(-range);};presets.appendChild(b);}presetButton('SEA SKIMMER','P-500',6,1.5,1.2,140,600);presetButton('SATURATION','P-700',16,0,2.6,260,750);presetButton('HIGH SPEED','Kh-22',8,2,360,190,1000);
-radarCanvas.addEventListener('pointerdown',e=>{if(!placementMode)return;e.stopPropagation();const rect=radarCanvas.getBoundingClientRect(),px=(e.clientX-rect.left)/rect.width*radarCanvas.width,py=(e.clientY-rect.top)/rect.height*radarCanvas.height,x=Math.round((px-radarCanvas.width/2)/RADAR_PIXELS_PER_WORLD_UNIT),z=Math.round((py-radarCanvas.height/2)/RADAR_PIXELS_PER_WORLD_UNIT);if(placementMode==='ship'){(sandbox.querySelector('#sbShipX') as HTMLInputElement).value=String(x);(sandbox.querySelector('#sbShipZ') as HTMLInputElement).value=String(z);pickShip.textContent=`SHIP SET / X ${x} / Z ${z}`;}else{(sandbox.querySelector('#sbX') as HTMLInputElement).value=String(x);(sandbox.querySelector('#sbZ') as HTMLInputElement).value=String(z);pickPlacement.textContent=`CENTER SET / X ${x} / Z ${z}`;}placementMode=false;});
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('pointerdown',()=>{missiles.forEach(m=>{const line=m.mesh.userData.seekerLine as THREE.Line|undefined;if(line){scene.remove(line);line.geometry.dispose();}});},true);
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('pointerdown',()=>{if(aarReplayTimer!==undefined)clearInterval(aarReplayTimer);aarReplayTimer=undefined;aarSnapshots=[];aarEvents=[];nextAarSnapshot=0;resultPanel.style.display='none';},true);
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).onclick=()=>{missiles.forEach(m=>{scene.remove(m.mesh,m.path);m.path.geometry.dispose();});missiles.length=0;interceptors.forEach(i=>scene.remove(i.mesh));interceptors.length=0;combatPicture.reset();lastTrackClasses.clear();lastAltitudeState.clear();explodedTargets.clear();explosions.forEach(e=>scene.remove(e.core,e.ring,e.light));explosions.length=0;shipDamageEffects.forEach(effect=>defender.remove(effect.group));shipDamageEffects.length=0;boosterDebris.forEach(debris=>scene.remove(debris.mesh,debris.light));boosterDebris.length=0;(defender.userData.hullMat as THREE.MeshStandardMaterial).color.set(activeShip.hullColor);subsystemList.forEach(system=>system.health=100);fixedSensorFaceHealth()?.fill(1);updateSubsystemPanel();elapsed=0;last=performance.now();ammo=activeShip.ammo.rim67;sm2Ammo=activeShip.ammo.sm2mr;sm2erAmmo=activeShip.ammo.sm2er;hullIntegrity=100;ciwsRounds=activeShip.ammo.ciws;missionEnded=false;selectedWeapon=(sandbox.querySelector('#sbWeapon') as HTMLSelectElement).value as WeaponType;const kind=(sandbox.querySelector('#sbType') as HTMLSelectElement).value as EnemyType,count=Math.max(1,Math.min(24,numberInput('#sbCount'))),interval=Math.max(0,numberInput('#sbInterval')),altitude=numberInput('#sbAltitude'),cx=numberInput('#sbX'),cz=numberInput('#sbZ'),spread=numberInput('#sbSpread');for(let i=0;i<count;i++){const offset=count===1?0:(i/(count-1)-.5)*spread;addMissile(new THREE.Vector3(cx+offset,altitude+Math.sin(i)*5,cz-Math.abs(offset)*.12),kind,i*interval);}selectedTargetId=1;searchWidth=360;combatPicture.setSearch(360,Math.atan2(cx-numberInput('#sbShipX'),cz-numberInput('#sbShipZ')));searchButton.textContent='SEARCH: 360 DEG';slewButton.textContent='SLEW: SELECTED';missiles[0].mesh.userData.selection.visible=true;weaponButton.textContent=`WEAPON: ${selectedWeapon}`;ammoEl.textContent=`RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;sandbox.style.display='none';running=true;log(`SANDBOX START / ${activeShip.hullNumber} / ${count} x ${kind} / ${interval}s INTERVAL`);};
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('pointerdown',()=>{interceptors.forEach(i=>{i.illuminationBeam.visible=false;scene.remove(i.illuminationBeam,i.guidancePath);i.guidancePath.geometry.dispose();});illuminators.forEach((state,index)=>{state.target=null;state.lastTargetId=0;state.azimuth=index<2?0:Math.PI;});explosions.forEach(e=>scene.remove(e.core,e.ring,e.light));engagements.clear();simAccumulator=0;nextSamLaunch=0;leakers=0;launcherCycle=0;resetMk10Launchers();resetVlsCells();const x=numberInput('#sbShipX'),z=numberInput('#sbShipZ');defender.position.set(x,0,z);wake.position.set(x-28,.22,z);},true);
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('pointerdown',()=>{shipSpeedKnots=0;shipDesiredHeading=0;nextShipDecision=0;shipManeuverThreatId=0;defender.rotation.y=0;wake.rotation.y=0;wakeLineMat.opacity=.08;},true);
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('pointerdown',()=>{chaffClouds.forEach(c=>scene.remove(c.mesh));chaffClouds.length=0;srbocRoundsInFlight.forEach(round=>scene.remove(round.mesh,round.trail));srbocRoundsInFlight.length=0;chaffSerial=0;srbocRounds=12;lastSrboc=-20;},true);
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('pointerdown',()=>{vlsLaunchEffects.forEach(effect=>scene.remove(effect.group));vlsLaunchEffects.length=0;},true);
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('click',()=>setTimeout(()=>{const requestedRim=Math.max(0,Math.min(48,numberInput('#sbRim'))),requestedMr=Math.max(0,Math.min(96,numberInput('#sbSm2'))),requestedEr=Math.max(0,Math.min(64,numberInput('#sbSm2er')));if(activeShip.launcherKind==='mk41'){const loaded=configureVlsLoadout(requestedMr,requestedEr);ammo=0;sm2Ammo=loaded.mr;sm2erAmmo=loaded.er;if(selectedWeapon==='RIM-67'){selectedWeapon=sm2Ammo>0?'SM-2MR':'SM-2ER';weaponButton.textContent=`WEAPON: ${selectedWeapon}`;}log(`MK 41 LOAD PLAN / ${loaded.mr} SM-2MR / ${loaded.er} SM-2ER / ${loaded.other} OTHER CELLS`);}else{ammo=requestedRim;sm2Ammo=requestedMr;sm2erAmmo=requestedEr;}const forwardHealth=THREE.MathUtils.clamp(numberInput('#sbLauncherFwdHealth'),0,100),aftHealth=THREE.MathUtils.clamp(numberInput('#sbLauncherAftHealth'),0,100);if(forwardHealth<100)damageSubsystem('mk10Forward',100-forwardHealth);if(aftHealth<100)damageSubsystem('mk10Aft',100-aftHealth);ciwsRounds=Math.max(0,Math.min(6000,numberInput('#sbCiws')));maxSamChannels=Math.max(1,Math.min(8,numberInput('#sbChannels')));maxIlluminators=Math.max(1,Math.min(4,numberInput('#sbIlluminators')));ammoEl.textContent=`RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;},0));
-(sandbox.querySelector('#sbStart') as HTMLButtonElement).addEventListener('click',()=>setTimeout(()=>{const kind2=wave2Select.value as EnemyType|'NONE';if(kind2==='NONE')return;const count=Math.max(0,Math.min(12,numberInput('#sbCount2'))),delay=Math.max(0,numberInput('#sbDelay2')),cx=numberInput('#sbX'),cz=numberInput('#sbZ'),altitude=numberInput('#sbAltitude'),spread=numberInput('#sbSpread');for(let i=0;i<count;i++){const offset=count===1?0:(i/(count-1)-.5)*spread*.75;addMissile(new THREE.Vector3(cx+offset,kind2==='Kh-22'?Math.max(45,altitude):altitude,cz-50),kind2,delay+i*.6);}log(`SECOND WAVE / ${count} x ${kind2} / T+${delay}s`);},0));
-function classifyAarEvent(text:string):AarCategory{if(/INTERCEPT|SOFT KILL|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(text))return'effect';if(/LAUNCH|CIWS WINDOW|SRBOC/.test(text))return'fire';if(/OODA MANEUVER/.test(text))return'maneuver';if(/SEEKER|DATALINK|SPG-55|SPG-62|ILLUMIN|CHAFF|ECM|LOCK TRANSFER/.test(text))return'guidance';if(/TRACK|RADAR|SENSOR|CORRELATION/.test(text))return'sensor';return'system';}
-function captureAarSnapshot(force=false){if(!force&&elapsed+1e-6<nextAarSnapshot)return;const snapshot:AarSnapshot={time:elapsed,ship:{x:defender.position.x,z:defender.position.z,heading:defender.rotation.y,hull:hullIntegrity},missiles:missiles.filter(m=>elapsed>=m.launchAt).map((m,id)=>({id:id+1,x:m.mesh.position.x,z:m.mesh.position.z,phase:m.phase,kind:m.kind})),interceptors:interceptors.map((i,id)=>({i,id})).filter(x=>x.i.mesh.visible).map(x=>({id:x.id+1,x:x.i.mesh.position.x,z:x.i.mesh.position.z,weapon:x.i.weapon,targetId:missiles.indexOf(x.i.target)+1})),chaff:chaffClouds.map(c=>({x:c.position.x,z:c.position.z,side:c.side}))};if(force&&aarSnapshots.length&&Math.abs(aarSnapshots[aarSnapshots.length-1].time-elapsed)<.01)aarSnapshots[aarSnapshots.length-1]=snapshot;else aarSnapshots.push(snapshot);nextAarSnapshot=elapsed+.25;}
-function aarTime(time:number){return`${String(Math.floor(time/60)).padStart(2,'0')}:${String(Math.floor(time%60)).padStart(2,'0')}.${Math.floor(time%1*10)}`;}
-function renderAarFrame(index:number){const canvas=resultPanel.querySelector('#aarCanvas') as HTMLCanvasElement|null,slider=resultPanel.querySelector('#aarSlider') as HTMLInputElement|null,label=resultPanel.querySelector('#aarTime') as HTMLElement|null;if(!canvas||!slider||!label||!aarSnapshots.length)return;index=THREE.MathUtils.clamp(Math.round(index),0,aarSnapshots.length-1);slider.value=String(index);const snapshot=aarSnapshots[index],ctx=canvas.getContext('2d')!,w=canvas.width,h=canvas.height,points=aarSnapshots.flatMap(s=>[{x:s.ship.x,z:s.ship.z},...s.missiles,...s.interceptors]),minX=Math.min(...points.map(p=>p.x)),maxX=Math.max(...points.map(p=>p.x)),minZ=Math.min(...points.map(p=>p.z)),maxZ=Math.max(...points.map(p=>p.z)),spanX=Math.max(80,maxX-minX),spanZ=Math.max(80,maxZ-minZ),scale=Math.min((w-80)/spanX,(h-70)/spanZ),centerX=(minX+maxX)/2,centerZ=(minZ+maxZ)/2,map=(p:{x:number;z:number})=>({x:w/2+(p.x-centerX)*scale,y:h/2+(p.z-centerZ)*scale});ctx.fillStyle='#06151b';ctx.fillRect(0,0,w,h);ctx.strokeStyle='rgba(77,151,153,.16)';ctx.lineWidth=1;for(let x=20;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}for(let y=20;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
- const missileIds=[...new Set(snapshot.missiles.map(m=>m.id))];for(const id of missileIds){ctx.strokeStyle='rgba(239,100,84,.42)';ctx.beginPath();let started=false;for(let s=0;s<=index;s+=2){const state=aarSnapshots[s].missiles.find(m=>m.id===id);if(!state)continue;const p=map(state);if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);}ctx.stroke();}for(let id=1;id<=interceptors.length;id++){ctx.strokeStyle='rgba(112,220,239,.32)';ctx.beginPath();let started=false;for(let s=0;s<=index;s+=2){const state=aarSnapshots[s].interceptors.find(i=>i.id===id);if(!state)continue;const p=map(state);if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);}ctx.stroke();}
- for(const cloud of snapshot.chaff){const p=map(cloud);ctx.strokeStyle=cloud.side==='ship'?'#71ddd7':'#e4c66f';ctx.globalAlpha=.72;ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}for(const interceptor of snapshot.interceptors){const p=map(interceptor);ctx.fillStyle='#8de9f3';ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();}for(const missile of snapshot.missiles){const p=map(missile);ctx.strokeStyle=missile.phase==='destroyed'?'#713f3b':'#ef6454';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(p.x,p.y-5);ctx.lineTo(p.x+5,p.y);ctx.lineTo(p.x,p.y+5);ctx.lineTo(p.x-5,p.y);ctx.closePath();ctx.stroke();if(missile.phase!=='destroyed'){ctx.fillStyle='#eaa39b';ctx.font='10px Consolas';ctx.fillText(`T${missile.id}`,p.x+8,p.y-7);}}const ship=map(snapshot.ship),fx=Math.cos(snapshot.ship.heading),fz=-Math.sin(snapshot.ship.heading);ctx.fillStyle=snapshot.ship.hull>0?'#69d6ce':'#925249';ctx.beginPath();ctx.moveTo(ship.x+fx*12,ship.y+fz*12);ctx.lineTo(ship.x-fx*7+fz*6,ship.y-fz*7-fx*6);ctx.lineTo(ship.x-fx*7-fz*6,ship.y-fz*7+fx*6);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(105,214,206,.28)';ctx.beginPath();ctx.arc(ship.x,ship.y,20,0,Math.PI*2);ctx.stroke();label.textContent=`T+${aarTime(snapshot.time)} / HULL ${snapshot.ship.hull}% / ${snapshot.missiles.filter(m=>m.phase!=='destroyed').length} THREATS`;const eventButtons=[...resultPanel.querySelectorAll<HTMLButtonElement>('.aar-event')];let active=-1;aarEvents.forEach((event,eventIndex)=>{if(event.time<=snapshot.time+.01)active=eventIndex;});eventButtons.forEach((button,eventIndex)=>button.classList.toggle('current',eventIndex===active));if(active>=0)eventButtons[active]?.scrollIntoView({block:'nearest'});}
-function showAar(outcome:string,score:number){const samShots=aarEvents.filter(e=>/^(RIM-67|SM-2MR|SM-2ER) .* LAUNCH/.test(e.text)).length,hardKills=aarEvents.filter(e=>/ INTERCEPT |CIWS KILL/.test(e.text)).length,softKills=aarEvents.filter(e=>/SOFT KILL/.test(e.text)).length,impacts=aarEvents.filter(e=>/ IMPACT /.test(e.text)).length;resultPanel.innerHTML=`<header class="aar-top"><div><small>AFTER ACTION REVIEW / USS LONG BEACH</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0,aarSnapshots.length-1)}" value="${Math.max(0,aarSnapshots.length-1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;const eventList=resultPanel.querySelector('#aarEvents')!;aarEvents.forEach((event,eventIndex)=>{const button=document.createElement('button');button.className=`aar-event ${event.category}`;button.innerHTML=`<time>${aarTime(event.time)}</time><span></span>`;(button.querySelector('span') as HTMLElement).textContent=event.text;button.onclick=()=>{const snapshotIndex=aarSnapshots.reduce((best,s,index)=>Math.abs(s.time-event.time)<Math.abs(aarSnapshots[best].time-event.time)?index:best,0);renderAarFrame(snapshotIndex);};button.dataset.index=String(eventIndex);eventList.appendChild(button);});const slider=resultPanel.querySelector('#aarSlider') as HTMLInputElement,play=resultPanel.querySelector('#aarPlay') as HTMLButtonElement;slider.oninput=()=>renderAarFrame(Number(slider.value));(resultPanel.querySelector('#aarStart') as HTMLButtonElement).onclick=()=>renderAarFrame(0);(resultPanel.querySelector('#aarEnd') as HTMLButtonElement).onclick=()=>renderAarFrame(aarSnapshots.length-1);play.onclick=()=>{if(aarReplayTimer!==undefined){clearInterval(aarReplayTimer);aarReplayTimer=undefined;play.textContent='PLAY';return;}if(Number(slider.value)>=aarSnapshots.length-1)renderAarFrame(0);play.textContent='PAUSE';aarReplayTimer=window.setInterval(()=>{const next=Number(slider.value)+1;if(next>=aarSnapshots.length){clearInterval(aarReplayTimer);aarReplayTimer=undefined;play.textContent='PLAY';return;}renderAarFrame(next);},90);};(resultPanel.querySelector('#aarClose') as HTMLButtonElement).onclick=()=>{if(aarReplayTimer!==undefined)clearInterval(aarReplayTimer);aarReplayTimer=undefined;resultPanel.style.display='none';};(resultPanel.querySelector('#restartMission') as HTMLButtonElement).onclick=()=>location.reload();resultPanel.style.display='flex';renderAarFrame(aarSnapshots.length-1);}
-function augmentAarSubsystemSummary(){const metrics=resultPanel.querySelector('.aar-metrics');if(!metrics)return;const heading=resultPanel.querySelector('.aar-top small');if(heading)heading.textContent=`AFTER ACTION REVIEW / ${activeShip.name}`;const operational=subsystemList.filter(system=>system.health>5).length,average=Math.round(subsystemList.reduce((sum,system)=>sum+system.health,0)/subsystemList.length),metric=document.createElement('span');metric.innerHTML=`SYSTEMS<b>${operational}/${subsystemList.length} / ${average}%</b>`;metrics.appendChild(metric);}
-function finishMission(victory:boolean){if(missionEnded)return;missionEnded=true;running=false;captureAarSnapshot(true);const systemAverage=subsystemList.reduce((sum,system)=>sum+system.health,0)/subsystemList.length,score=Math.max(0,Math.round(hullIntegrity*8+systemAverage*2+ammo*150+sm2Ammo*100+ciwsRounds/10-Math.max(0,elapsed-20)*5)),outcome=victory?(leakers===0?'AIRSPACE SECURED':`RAID SURVIVED / ${leakers} LEAKER${leakers===1?'':'S'}`):`${activeShip.name} DISABLED`;showAar(outcome,score);augmentAarSubsystemSummary();}
-function controlButton(label:string,action:()=>void){const b=document.createElement('button');b.textContent=label;b.style.cssText='border:1px solid #438e91;background:#071923dd;color:#a8dddd;padding:8px 11px;font:10px Arial;letter-spacing:1px;cursor:pointer';b.onclick=action;controls.appendChild(b);return b;}
-const autoButton=controlButton('AUTO FIRE: ON',()=>{autoFire=!autoFire;autoButton.textContent=`AUTO FIRE: ${autoFire?'ON':'OFF'}`;});
-const doctrineButton=controlButton('DOCTRINE: SS-L-S',()=>{doctrine=doctrine==='SSLS'?'SINGLE':doctrine==='SINGLE'?'DOUBLE':'SSLS';doctrineButton.textContent=`DOCTRINE: ${doctrine==='SSLS'?'SS-L-S':doctrine}`;log(`ENGAGEMENT DOCTRINE / ${doctrine==='SSLS'?'SHOOT-SHOOT-LOOK-SHOOT':doctrine}`);});
-const radarButton=controlButton('RADAR: ACTIVE',()=>{radarEnabled=!radarEnabled;radarButton.textContent=`RADAR: ${radarEnabled?'ACTIVE':'SILENT'}`;log(radarEnabled?'RADAR EMISSION RESTORED':'EMCON / RADAR SILENT');});
-function slewSearchToSelected(){const track=combatPicture.trackForTarget(selectedTargetId);if(!track){log(`SENSOR SLEW INHIBIT / TARGET ${selectedTargetId} UNAVAILABLE`);return false;}const bearing=Math.atan2(track.position.x-defender.position.x,track.position.z-defender.position.z);combatPicture.setSearch(searchWidth,bearing);log(`SENSOR AXIS / TRACK ${track.id} / ${Math.round(THREE.MathUtils.radToDeg(bearing))} DEG`);return true;}
-const searchButton=controlButton('SEARCH: 360 DEG',()=>{searchWidth=searchWidth===360?120:searchWidth===120?60:360;const current=combatPicture.getSearchState();combatPicture.setSearch(searchWidth,current.bearing);if(searchWidth<360)slewSearchToSelected();searchButton.textContent=`SEARCH: ${searchWidth} DEG`;const state=combatPicture.getSearchState(),primary=activeShip.sensors.find(sensor=>sensor.threeDimensional)??activeShip.sensors[0],phased=primary.scanMode==='phased-array';log(phased&&searchWidth<360?`RADAR RESOURCE / ${primary.name} ELECTRONIC SECTOR ${searchWidth} DEG / QUALITY x1.50 / 360 DEG BACKGROUND SEARCH`:`RADAR RESOURCE / ${searchWidth} DEG / REVISIT x${state.revisitMultiplier.toFixed(2)}${searchWidth<360?' / QUALITY x1.50':''}`);});
-const slewButton=controlButton('SLEW: SELECTED',()=>{slewSearchToSelected();slewButton.textContent=`SLEW: TRACK ${selectedTargetId}`;});
-const ciwsButton=controlButton('CIWS: AUTO',()=>{ciwsEnabled=!ciwsEnabled;ciwsButton.textContent=`CIWS: ${ciwsEnabled?'AUTO':'HOLD'}`;});
-const chaffButton=controlButton('THREAT CHAFF: ON',()=>{chaffEnabled=!chaffEnabled;chaffButton.textContent=`THREAT CHAFF: ${chaffEnabled?'ON':'OFF'}`;});
-const ecmButton=controlButton('THREAT ECM: ON',()=>{ecmEnabled=!ecmEnabled;ecmButton.textContent=`THREAT ECM: ${ecmEnabled?'ON':'OFF'}`;});
-const shipEcmButton=controlButton('SHIP ECM: AUTO',()=>{shipEcmEnabled=!shipEcmEnabled;shipEcmButton.textContent=`SHIP ECM: ${shipEcmEnabled?'AUTO':'HOLD'}`;});
-const srbocButton=controlButton('SRBOC: AUTO',()=>{srbocEnabled=!srbocEnabled;srbocButton.textContent=`SRBOC: ${srbocEnabled?'AUTO':'HOLD'}`;});
-const weaponButton=controlButton('WEAPON: RIM-67',()=>{const weapons:WeaponType[]=['RIM-67','SM-2MR','SM-2ER'];selectedWeapon=weapons[(weapons.indexOf(selectedWeapon)+1)%weapons.length];weaponButton.textContent=`WEAPON: ${selectedWeapon}`;ammoEl.textContent=`RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;});
-const targetButton=controlButton('TARGET: 1',()=>{const live=missiles.map((m,i)=>({m,id:i+1})).filter(x=>x.m.phase!=='destroyed');if(!live.length)return;const current=live.findIndex(x=>x.id===selectedTargetId);selectedTargetId=live[(current+1)%live.length].id;targetButton.textContent=`TARGET: ${selectedTargetId}`;slewButton.textContent=`SLEW: TRACK ${selectedTargetId}`;missiles.forEach((m,i)=>m.mesh.userData.selection.visible=i+1===selectedTargetId&&m.phase!=='destroyed');});
-const fireButton=controlButton('LAUNCH SAM',()=>{
- const pending=pendingLauncherRequests(),active=interceptors.filter(i=>i.mesh.visible).length+pending.length,track=combatPicture.trackForTarget(selectedTargetId),target=missiles[selectedTargetId-1],available=selectedWeapon==='RIM-67'?ammo:selectedWeapon==='SM-2MR'?sm2Ammo:sm2erAmmo,profile=weaponProfiles[selectedWeapon];
- if(!running){log('LAUNCH INHIBIT / SIMULATION PAUSED');return;}if(elapsed<nextSamLaunch){log('LAUNCH INHIBIT / MK 10 LAUNCHER CYCLING');return;}if(active>=maxSamChannels){log(`LAUNCH INHIBIT / CHANNELS ${active}/${maxSamChannels}`);return;}if(available<=0){log('LAUNCH INHIBIT / MAGAZINE EMPTY');return;}if(!target||target.phase==='destroyed'){log('LAUNCH INHIBIT / TARGET INVALID');return;}if(!track){log(`LAUNCH INHIBIT / TRACK ${selectedTargetId} LOST`);return;}if(!track.altitudeKnown){log(`LAUNCH INHIBIT / TRACK ${track.id} 2D WARNING ONLY`);return;}if(track.solutionQuality<.45){log(`LAUNCH INHIBIT / FIRE CONTROL SOLUTION ${Math.round(track.solutionQuality*100)}%`);return;}if(track.age>2.2){log(`LAUNCH INHIBIT / TRACK ${track.id} STALE`);return;}const assigned=interceptors.filter(i=>i.mesh.visible&&i.target===target).length+pending.filter(request=>request.target===target).length,required=defensiveShotRequirement(target,track.quality);if(assigned>=required){log(required===0?'LAUNCH INHIBIT / DOCTRINE LOOK':`LAUNCH INHIBIT / SALVO COMPLETE ${assigned}/${required}`);return;}
- const range=target.mesh.position.distanceTo(defender.position);if(range<profile.minRange||range>profile.maxRange){log(`LAUNCH INHIBIT / ${selectedWeapon} ENVELOPE ${(profile.minRange/10).toFixed(1)}-${(profile.maxRange/10).toFixed(1)} km`);return;}
- if(queueInterceptorLaunch(target,selectedWeapon)){nextSamLaunch=elapsed+.12;changeAmmo(selectedWeapon,-1);}
-});
-const speedButton=controlButton('TIME: 1X',()=>{timeScale=timeScale===1?2:timeScale===2?4:1;speedButton.textContent=`TIME: ${timeScale}X`;});
-controlButton('SCENARIO SETUP',()=>{running=false;sandbox.style.display='block';});
-missiles[0].mesh.userData.selection.visible=true;
-function log(s:string){s=s.replaceAll('SPS-48E',activeShip.subsystemLabels.sps48).replaceAll('SPS-49',activeShip.subsystemLabels.sps49).replaceAll('SPG-55',activeShip.subsystemLabels.spg55);aarEvents.push({time:elapsed,text:s,category:classifyAarEvent(s)});if(aarEvents.length>2000)aarEvents.shift();const d=document.createElement('div');d.textContent=s;feed.prepend(d);while(feed.children.length>8){const removable=[...feed.children].reverse().find(child=>!/(CORRELATION BREAK|FIRE CONTROL RESET|DOCTRINE LOOK|OODA MANEUVER|SPG-55|SPG-62|SEEKER|CHAFF|ECM|DECOY|DAMAGE CONTROL|DAMAGE ISOLATION|TRAPPED|DAMAGED|DEGRADED|CRITICAL|DESTROYED)/.test(child.textContent??''));(removable??feed.lastChild)?.remove();}}
-function updateShipManeuver(dt:number){
- const forward=new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0),defender.rotation.y),tracks=[...combatPicture.tracks.values()].filter(track=>{const missile=missiles[track.sourceId-1];return missile&&missile.phase!=='destroyed'&&track.quality>.08&&track.age<4;}).sort((a,b)=>a.position.distanceTo(defender.position)/Math.max(1,missiles[a.sourceId-1].velocity.length())-b.position.distanceTo(defender.position)/Math.max(1,missiles[b.sourceId-1].velocity.length())),threat=tracks[0],threatRange=threat?.position.distanceTo(defender.position)??Infinity;
- if(elapsed>=nextShipDecision){nextShipDecision=elapsed+1;if(threat&&threatRange<500){const axis=threat.position.clone().sub(defender.position).setY(0).normalize(),left=new THREE.Vector3(-axis.z,0,axis.x),right=left.clone().negate(),beam=forward.dot(left)>=forward.dot(right)?left:right;shipDesiredHeading=Math.atan2(-beam.z,beam.x);if(shipManeuverThreatId!==threat.sourceId){shipManeuverThreatId=threat.sourceId;log(`OODA MANEUVER / BEAM TRACK ${threat.id} / FULL POWER`);}}else shipManeuverThreatId=0;}
- const propulsion=subsystemHealth('propulsion'),maximumKnots=30*propulsion*Math.max(.45,hullIntegrity/100),targetKnots=threat&&threatRange<500?maximumKnots:0,speedStep=(targetKnots>shipSpeedKnots?2:1.25)*(.25+.75*propulsion)*dt;shipSpeedKnots=THREE.MathUtils.clamp(shipSpeedKnots+Math.sign(targetKnots-shipSpeedKnots)*Math.min(Math.abs(targetKnots-shipSpeedKnots),speedStep),0,maximumKnots);const headingError=Math.atan2(Math.sin(shipDesiredHeading-defender.rotation.y),Math.cos(shipDesiredHeading-defender.rotation.y)),turnRate=THREE.MathUtils.degToRad(1.6)*(.35+.65*shipSpeedKnots/30)*(.2+.8*propulsion);defender.rotation.y+=THREE.MathUtils.clamp(headingError,-turnRate*dt,turnRate*dt);const updatedForward=new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0),defender.rotation.y);defender.position.addScaledVector(updatedForward,shipSpeedKnots*.005144*dt);wake.rotation.y=defender.rotation.y;wake.position.copy(defender.position).addScaledVector(updatedForward,-28);wake.position.y=.22;wakeLineMat.opacity=.08+.28*shipSpeedKnots/30;
-}
-function updateShipStatus(){const active=interceptors.filter(i=>i.mesh.visible).length+pendingLauncherRequests().length,illuminatedMissiles=interceptors.filter(i=>i.mesh.visible&&i.illuminated).length,shipClouds=chaffClouds.filter(c=>c.side==='ship').length,forward=new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0),defender.rotation.y),heading=(THREE.MathUtils.radToDeg(Math.atan2(forward.x,-forward.z))+360)%360,directorCount=(defender.userData.directors as THREE.Group[]).length,effectiveIlluminators=Math.min(maxIlluminators,directorCount,Math.ceil(directorCount*subsystemHealth('spg55'))),activeIlluminators=illuminators.slice(0,effectiveIlluminators).filter(state=>state.target?.illuminated).length,queue=illuminators.slice(0,effectiveIlluminators).map(state=>state.target?`T${String(missiles.indexOf(state.target.target)+1).padStart(2,'0')}`:'--').join('/');canvas.dataset.illuminatorsAvailable=String(effectiveIlluminators);canvas.dataset.illuminatorsActive=String(activeIlluminators);canvas.dataset.illuminatedMissiles=String(illuminatedMissiles);canvas.dataset.illuminationQueue=queue;document.querySelector('#shipState')!.textContent=`HULL ${hullIntegrity}% / ${shipSpeedKnots.toFixed(0)} KT / HDG ${heading.toFixed(0).padStart(3,'0')} / CH ${active}/${maxSamChannels} / ILL ${activeIlluminators}/${effectiveIlluminators} / SRBOC ${srbocRounds} / CIWS ${ciwsRounds} / ${queue||'--'}`;}
-log('16:42:08  NTU combat system initialized'); log('16:42:11  SURFACE SEARCH RADAR — CONTACTS ACQUIRED');
-function updateCamera(){if(cinematic)az+=.0018;let focus:THREE.Vector3;if(viewMode===1)focus=defender.position.clone().add(new THREE.Vector3(0,9,0));else if(viewMode===4){const interceptor=interceptors.find(item=>item.mesh.visible),incoming=missiles[selectedTargetId-1];focus=interceptor?.mesh.position.clone()??(incoming?.mesh.visible?incoming.mesh.position.clone():defender.position.clone().add(new THREE.Vector3(0,9,0)));}else if(viewMode===3){const track=combatPicture.trackForTarget(selectedTargetId);focus=track?defender.position.clone().lerp(track.position,.52):defender.position.clone().add(new THREE.Vector3(0,8,-80));}else focus=new THREE.Vector3(defender.position.x,8,defender.position.z-80);const x=Math.cos(el)*Math.sin(az)*dist,z=Math.cos(el)*Math.cos(az)*dist;camera.position.set(focus.x+x,focus.y+Math.sin(el)*dist,focus.z+z);camera.lookAt(focus);}
-function angleDifference(a:number,b:number){return Math.atan2(Math.sin(a-b),Math.cos(a-b));}
-type MissileForwardAxis='+Y'|'-Z';
-function setMissileAttitude(model:THREE.Object3D,direction:THREE.Vector3,axis:MissileForwardAxis,bank:number){
- const previousAttitude=(model.userData.attitudeQuaternion as THREE.Quaternion|undefined)?.clone(),forward=direction.clone().normalize(),worldUp=new THREE.Vector3(0,1,0),previousUp=(model.userData.attitudeUp as THREE.Vector3|undefined)?.clone()??(axis==='+Y'?new THREE.Vector3(1,0,0):worldUp.clone());
- const projectedWorldUp=worldUp.addScaledVector(forward,-worldUp.dot(forward)),projectedPrevious=previousUp.addScaledVector(forward,-previousUp.dot(forward));
- let dorsal:THREE.Vector3;if(projectedWorldUp.lengthSq()>.015){projectedWorldUp.normalize();dorsal=projectedPrevious.lengthSq()>.001?projectedPrevious.normalize().lerp(projectedWorldUp,.22).normalize():projectedWorldUp;}else if(projectedPrevious.lengthSq()>.001)dorsal=projectedPrevious.normalize();else dorsal=new THREE.Vector3(1,0,0).addScaledVector(forward,-forward.x).normalize();
- const right=forward.clone().cross(dorsal).normalize();dorsal.copy(right).cross(forward).normalize();model.userData.attitudeUp=dorsal.clone();
- const basis=new THREE.Matrix4();if(axis==='+Y')basis.makeBasis(right,forward,dorsal);else basis.makeBasis(right,dorsal,forward.clone().negate());model.quaternion.setFromRotationMatrix(basis);
- const localForward=axis==='+Y'?new THREE.Vector3(0,1,0):new THREE.Vector3(0,0,-1);if(bank)model.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(localForward,bank));
- const renderedForward=localForward.applyQuaternion(model.quaternion).normalize(),error=THREE.MathUtils.radToDeg(renderedForward.angleTo(forward)),step=previousAttitude?THREE.MathUtils.radToDeg(previousAttitude.angleTo(model.quaternion)):0;model.userData.attitudeErrorDeg=error;model.userData.attitudeQuaternion=model.quaternion.clone();model.userData.maxAttitudeStepDeg=Math.max(model.userData.maxAttitudeStepDeg??0,step);canvas.dataset[axis==='+Y'?'interceptorAttitudeError':'incomingAttitudeError']=error.toFixed(4);canvas.dataset[axis==='+Y'?'interceptorAttitudeStep':'incomingAttitudeStep']=(model.userData.maxAttitudeStepDeg as number).toFixed(3);
-}
-function aimLocal(model:THREE.Object3D,target:THREE.Vector3,dt:number,yawRate:number,pitchRate:number){
- const local=model.parent!.worldToLocal(target.clone()).sub(model.position),desiredYaw=Math.atan2(-local.z,local.x),yawStep=yawRate*dt;
- model.rotation.y+=THREE.MathUtils.clamp(angleDifference(desiredYaw,model.rotation.y),-yawStep,yawStep);
- const pivot=model.userData.elevationPivot as THREE.Group|undefined;if(!pivot)return;
- const desiredPitch=THREE.MathUtils.clamp(Math.atan2(local.y,Math.hypot(local.x,local.z)),THREE.MathUtils.degToRad(-8),THREE.MathUtils.degToRad(72)),pitchStep=pitchRate*dt;
- pivot.rotation.z+=THREE.MathUtils.clamp(desiredPitch-pivot.rotation.z,-pitchStep,pitchStep);
-}
-function updateShipWeaponVisuals(dt:number){
- const sps48=subsystemHealth('sps48'),sps49=subsystemHealth('sps49'),spg55=subsystemHealth('spg55');
- if(!defender.userData.radar.userData.static)defender.userData.radar.rotation.y+=dt*.8*sps48;defender.userData.sps49.rotation.y-=dt*.5*sps49;
- if(!defender.userData.fireControl.userData.static)defender.userData.fireControl.rotation.y=Math.sin(elapsed*.7)*.3*spg55;
- const faceConfig=activeShip.fixedSensorFaces,faces=fixedSensorFaceHealth(),faceModels=defender.userData.sensorFaceModels as THREE.Group[]|undefined;if(faceConfig&&faces&&faceModels){faceModels.forEach((model,index)=>{const material=(model.userData.panel as THREE.Mesh).material as THREE.MeshStandardMaterial,health=faces[index];material.color.copy(new THREE.Color(faceConfig.damagedColor)).lerp(new THREE.Color(faceConfig.healthyColor),health);material.emissive.setHex(health<.35?faceConfig.criticalEmissive:0x000000);material.emissiveIntensity=(1-health)*.85;});canvas.dataset.sensorFaceHealth=faces.map(health=>Math.round(health*100)).join(',');canvas.dataset.sensorWeakestFace=faceConfig.labels[faces.indexOf(Math.min(...faces))];}
- const directors=defender.userData.directors as THREE.Group[];directors.forEach((director,index)=>{const state=illuminators[index],target=state?.target?.target;if(target&&target.phase!=='destroyed'&&spg55>.05)aimLocal(director,target.mesh.position,dt,THREE.MathUtils.degToRad(55)*(.25+.75*spg55),THREE.MathUtils.degToRad(38)*(.25+.75*spg55));else{const stow=director.userData.stowHeading as number,pivot=director.userData.elevationPivot as THREE.Group;director.rotation.y+=THREE.MathUtils.clamp(angleDifference(stow,director.rotation.y),-dt*.22*spg55,dt*.22*spg55);pivot.rotation.z=THREE.MathUtils.lerp(pivot.rotation.z,0,Math.min(1,dt*1.5));}});
- const ciwsHealth=subsystemHealth('ciws');for(const mount of [{model:defender.getObjectByName('ciwsFore'),heading:Math.PI/2},{model:defender.getObjectByName('ciwsAft'),heading:-Math.PI/2}]){if(!mount.model)continue;const candidate=missiles.filter(m=>{if(m.phase==='destroyed'||!m.mesh.visible||m.mesh.position.distanceTo(defender.position)>=24)return false;const worldRelative=m.mesh.position.clone().sub(defender.position),relative=defender.worldToLocal(m.mesh.position.clone()),bearing=Math.atan2(relative.x,relative.z),closing=-m.velocity.dot(worldRelative.normalize());return closing>.5&&Math.abs(angleDifference(bearing,mount.heading))<=THREE.MathUtils.degToRad(105);}).sort((a,b)=>a.mesh.position.distanceTo(defender.position)-b.mesh.position.distanceTo(defender.position))[0];if(candidate&&ciwsHealth>.05)aimLocal(mount.model,candidate.mesh.position,dt,THREE.MathUtils.degToRad(70)*ciwsHealth,THREE.MathUtils.degToRad(55)*ciwsHealth);else{const pivot=mount.model.userData.elevationPivot as THREE.Group|undefined;if(pivot)pivot.rotation.z=THREE.MathUtils.lerp(pivot.rotation.z,0,Math.min(1,dt*2));}}
-}
-function updateShipVisualLod(){const range=camera.position.distanceTo(defender.position),near=range<270,medium=range>=270&&range<340,low=range>=340;(defender.userData.highDetail as THREE.Group).visible=near;(defender.userData.mediumDetail as THREE.Group).visible=medium;(defender.userData.lowDetail as THREE.Group).visible=low;(defender.userData.detail as THREE.Object3D[]).forEach(object=>object.visible=!low);}
-function updateShipLights(){const lights=defender.userData.navigationLights as THREE.PointLight[],bulbs=defender.userData.lightBulbs as THREE.Mesh[],pulse=.9+Math.sin(elapsed*2.6)*.1;lights.forEach((light,index)=>light.intensity=(index<2?3:2.2)*pulse);bulbs.forEach((bulb,index)=>bulb.scale.setScalar((index<2?1.15:1)*pulse));const beam=defender.userData.radar.userData.searchBeam as THREE.Mesh,material=beam.material as THREE.MeshBasicMaterial,health=subsystemHealth('sps48');beam.visible=radarEnabled&&health>.05&&camera.position.distanceTo(defender.position)<340;material.opacity=.012+.028*health;}
-function scheduleIlluminators(candidates:Interceptor[],dt:number){
- const health=subsystemHealth('spg55'),active=candidates.filter(i=>i.mesh.visible&&i.target.phase!=='destroyed'),directorCount=(defender.userData.directors as THREE.Group[]).length,limit=health<=.05?0:Math.min(maxIlluminators,directorCount,Math.max(1,Math.ceil(directorCount*health)));
- illuminators.forEach((state,index)=>{if(index>=limit||!state.target||!active.includes(state.target))state.target=null;});
- for(const interceptor of active){
-  if(illuminators.some(state=>state.target===interceptor||state.target?.target===interceptor.target))continue;
-  const targetLocal=defender.worldToLocal(interceptor.target.mesh.position.clone()),bearing=Math.atan2(-targetLocal.z,targetLocal.x);
-  const free=illuminators.slice(0,limit).filter(state=>!state.target).sort((a,b)=>Math.abs(angleDifference(bearing,a.azimuth))-Math.abs(angleDifference(bearing,b.azimuth)))[0];
-  if(free){free.target=interceptor;const id=missiles.indexOf(interceptor.target)+1;if(free.lastTargetId!==id){free.lastTargetId=id;log(`SPG-55 ${free.id} TASK / TRACK ${id} / SLEWING`);}}
- }
- const slewRate=THREE.MathUtils.degToRad(55)*(.25+.75*health);
- const capturedTargets=new Map<Missile,number>();for(const [index,state] of illuminators.slice(0,limit).entries()){const interceptor=state.target;if(!interceptor)continue;const targetLocal=defender.worldToLocal(interceptor.target.mesh.position.clone()),desired=Math.atan2(-targetLocal.z,targetLocal.x),delta=angleDifference(desired,state.azimuth);state.azimuth+=THREE.MathUtils.clamp(delta,-slewRate*dt,slewRate*dt);const captured=Math.abs(delta)<THREE.MathUtils.degToRad(14);if(captured)capturedTargets.set(interceptor.target,index);interceptor.illuminated=captured;interceptor.illuminationBeam.visible=captured;}
- for(const interceptor of active){const directorIndex=capturedTargets.get(interceptor.target);if(directorIndex===undefined)continue;interceptor.illuminated=true;interceptor.illuminationBeam.visible=true;const director=(defender.userData.directors as THREE.Group[])[directorIndex],feed=director.userData.feedTip as THREE.Object3D,origin=new THREE.Vector3();feed.getWorldPosition(origin);interceptor.illuminationBeam.geometry.dispose();interceptor.illuminationBeam.geometry=new THREE.BufferGeometry().setFromPoints([origin,interceptor.target.mesh.position.clone()]);}
- for(const interceptor of interceptors)if(!active.includes(interceptor)){interceptor.illuminated=false;interceptor.illuminationBeam.visible=false;}
-}
-function updateCiws(){
- const health=subsystemHealth('ciws');if(!ciwsEnabled||health<=.05||ciwsRounds<=0||elapsed-lastCiwsShot<.55/Math.max(.4,health))return;
- const mounts=[{name:'FORE',model:defender.getObjectByName('ciwsFore'),heading:Math.PI/2},{name:'AFT',model:defender.getObjectByName('ciwsAft'),heading:-Math.PI/2}].filter(mount=>mount.model);
- const candidates=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15).map(m=>{
-  const worldRelative=m.mesh.position.clone().sub(defender.position),relative=defender.worldToLocal(m.mesh.position.clone()),bearing=Math.atan2(relative.x,relative.z),closingSpeed=-m.velocity.dot(worldRelative.clone().normalize()),mount=mounts.map(x=>({...x,delta:Math.abs(angleDifference(bearing,x.heading))})).sort((a,b)=>a.delta-b.delta)[0];
-  return {m,bearing,closingSpeed,mount};
- }).filter(x=>x.closingSpeed>.5&&x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)/a.closingSpeed-b.m.mesh.position.distanceTo(defender.position)/b.closingSpeed);
- const target=candidates[0];
- if(!target){const nearby=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15),approaching=nearby.some(m=>{const relative=m.mesh.position.clone().sub(defender.position);return -m.velocity.dot(relative.normalize())>.5;});if(nearby.length){lastCiwsShot=elapsed;log(approaching?'CIWS HOLD / BLIND SECTOR':'CIWS HOLD / TARGET OPENING');}return;}
- const range=target.m.mesh.position.distanceTo(defender.position),tti=range/target.closingSpeed,bursts=Math.max(1,Math.floor(tti/.55));
- if(tti<.35){lastCiwsShot=elapsed;log(`CIWS HOLD / WINDOW CLOSED / ${target.m.kind} / ${tti.toFixed(2)}s / ${target.mount.name}`);return;}
- const mountModel=defender.getObjectByName(target.mount.name==='FORE'?'ciwsFore':'ciwsAft'),localAim=mountModel?.parent?.worldToLocal(target.m.mesh.position.clone()).sub(mountModel.position),desiredTraverse=localAim?Math.atan2(-localAim.z,localAim.x):0,traverseError=mountModel?angleDifference(desiredTraverse,mountModel.rotation.y):0;
- if(mountModel)mountModel.rotation.y+=THREE.MathUtils.clamp(traverseError,-THREE.MathUtils.degToRad(70)*.55*health,THREE.MathUtils.degToRad(70)*.55*health);
- if(Math.abs(traverseError)>THREE.MathUtils.degToRad(12)){lastCiwsShot=elapsed;log(`CIWS SLEWING / ${target.mount.name} / ${Math.round(THREE.MathUtils.radToDeg(Math.abs(traverseError)))} DEG`);return;}
- lastCiwsShot=elapsed;ciwsRounds=Math.max(0,ciwsRounds-60);const mountOrigin=new THREE.Vector3();target.mount.model!.getWorldPosition(mountOrigin);mountOrigin.y+=1.2;ciwsTracer(target.m.mesh.position,mountOrigin);
- const saturation=Math.max(1,candidates.length),basePk=(Math.max(.08,.46/saturation)-(target.m.kind==='P-500'?.1:target.m.kind==='P-700'?.16:.3))*(.25+.75*health),singlePk=target.m.kind==='Kh-22'?Math.min(.14,basePk):Math.max(.04,basePk),windowFactor=Math.min(1.35,.75+bursts*.12),pk=Math.min(.72,singlePk*windowFactor),roll=Math.abs(Math.sin(elapsed*31.7+ciwsRounds*.013));
- log(`CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / PK ${Math.round(pk*100)}% / ${target.mount.name}`);
- if(roll<pk){target.m.phase='destroyed';target.m.mesh.visible=false;destroyMissileVisual(target.m,'intercept');log(`CIWS KILL / ${target.mount.name} / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);}else log(`CIWS MISS / ${target.mount.name} / PK ${Math.round(pk*100)}% / ${ciwsRounds} ROUNDS`);
-}
-setInterval(()=>interceptors.forEach(i=>{if(i.mesh.userData.seeker)i.mesh.userData.seeker.visible=i.weapon==='RIM-67'&&!!i.mesh.userData.seekerOn&&i.mesh.visible&&i.target.phase!=='destroyed'&&i.mesh.position.distanceTo(i.target.mesh.position)<weaponProfiles[i.weapon].terminalRange;}),50);
-setInterval(()=>{const live=missiles.filter(m=>m.phase!=='destroyed').length,engagedTargets=new Set(interceptors.filter(i=>i.mesh.visible).map(i=>i.target)).size,tracks=[...combatPicture.tracks.values()].filter(track=>missiles[track.sourceId-1]?.phase!=='destroyed').length;targetState.textContent=live>0?`${live} THREATS / ${tracks} TRACKS / ${engagedTargets} ENGAGED`:'AIRSPACE CLEAR';},120);
-setInterval(()=>{if(missiles[selectedTargetId-1]?.phase==='destroyed'){const next=missiles.findIndex(m=>m.phase!=='destroyed');if(next>=0){selectedTargetId=next+1;targetButton.textContent=`TARGET: ${selectedTargetId}`;}}missiles.forEach((m,i)=>m.mesh.userData.selection.visible=i+1===selectedTargetId&&m.phase!=='destroyed'&&!!combatPicture.trackForTarget(i+1));},120);
-setInterval(()=>{explosions.forEach(e=>{e.age+=.05;e.core.scale.setScalar(1+e.age*3.4);e.ring.scale.setScalar(1+e.age*5.8);e.ring.quaternion.copy(camera.quaternion);(e.core.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.92-e.age/1.45);(e.ring.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.78-e.age/1.15);e.light.intensity=Math.max(0,18-e.age*14);if(e.age>1.5){e.core.visible=false;e.ring.visible=false;e.light.visible=false;}});},50);
-setInterval(()=>{if(!radarCtx)return; const w=radarCanvas.width,h=radarCanvas.height,cx=w/2,cy=h/2; radarCtx.clearRect(0,0,w,h); radarCtx.fillStyle='#061923'; radarCtx.fillRect(0,0,w,h); radarCtx.strokeStyle='#2d7f83'; radarCtx.globalAlpha=.65; for(const r of [35,70,105]){radarCtx.beginPath();radarCtx.arc(cx,cy,r,0,Math.PI*2);radarCtx.stroke();} radarCtx.setLineDash([4,4]);for(const [weapon,color] of [['SM-2MR','#d7aa55'],['RIM-67','#65cfd0']] as const){radarCtx.strokeStyle=color;radarCtx.globalAlpha=weapon===selectedWeapon?.72:.32;radarCtx.beginPath();radarCtx.arc(cx,cy,weaponProfiles[weapon].maxRange*RADAR_PIXELS_PER_WORLD_UNIT,0,Math.PI*2);radarCtx.stroke();}radarCtx.setLineDash([]);radarCtx.beginPath();radarCtx.moveTo(cx,cy);radarCtx.lineTo(cx+Math.cos(elapsed*.8)*110,cy+Math.sin(elapsed*.8)*110);radarCtx.strokeStyle='#78e1c8';radarCtx.globalAlpha=.65;radarCtx.stroke();radarCtx.globalAlpha=1;radarCtx.fillStyle='#78e1c8';radarCtx.fillRect(cx-3,cy-3,6,6);for(const track of combatPicture.tracks.values()){const missile=missiles[track.sourceId-1];if(!missile||missile.phase==='destroyed')continue;const x=cx+(track.position.x-defender.position.x)*RADAR_PIXELS_PER_WORLD_UNIT,y=cy+(track.position.z-defender.position.z)*RADAR_PIXELS_PER_WORLD_UNIT,color=track.quality>.7?'#ff5148':track.quality>.25?'#ffb347':'#bd78ff',uncertainty=Math.max(2,track.uncertainty/100*RADAR_PIXELS_PER_WORLD_UNIT);radarCtx.strokeStyle=color;radarCtx.globalAlpha=.28;radarCtx.beginPath();radarCtx.arc(x,y,uncertainty,0,Math.PI*2);radarCtx.stroke();radarCtx.globalAlpha=.95;radarCtx.beginPath();radarCtx.moveTo(x-5,y);radarCtx.lineTo(x+5,y);radarCtx.moveTo(x,y-5);radarCtx.lineTo(x,y+5);radarCtx.stroke();if(lastTrackClasses.get(track.id)!==track.classification){lastTrackClasses.set(track.id,track.classification);log(`TRACK ${track.id} ${track.classification.toUpperCase()} · UNCERTAINTY ${(track.uncertainty/1000).toFixed(1)} km`);}}radarCtx.globalAlpha=1;interceptors.forEach(i=>{if(!i.mesh.visible)return; const x=cx+(i.mesh.position.x-defender.position.x)*RADAR_PIXELS_PER_WORLD_UNIT,y=cy+(i.mesh.position.z-defender.position.z)*RADAR_PIXELS_PER_WORLD_UNIT; radarCtx.fillStyle='#a4ecff';radarCtx.beginPath();radarCtx.arc(x,y,3,0,Math.PI*2);radarCtx.fill();});},100);
-setInterval(()=>{if(!radarCtx)return;const state=combatPicture.getSearchState(),cx=radarCanvas.width/2,cy=radarCanvas.height/2;if(state.focused){const angle=Math.PI/2-state.bearing,half=THREE.MathUtils.degToRad(state.width/2);radarCtx.fillStyle='#45c6bd';radarCtx.globalAlpha=.1;radarCtx.beginPath();radarCtx.moveTo(cx,cy);radarCtx.arc(cx,cy,110,angle-half,angle+half);radarCtx.closePath();radarCtx.fill();radarCtx.strokeStyle='#63d7cf';radarCtx.globalAlpha=.5;radarCtx.stroke();}for(const track of combatPicture.tracks.values()){if(!track.altitudeKnown){const x=cx+(track.position.x-defender.position.x)*RADAR_PIXELS_PER_WORLD_UNIT,y=cy+(track.position.z-defender.position.z)*RADAR_PIXELS_PER_WORLD_UNIT;radarCtx.strokeStyle='#78a7ff';radarCtx.globalAlpha=.95;radarCtx.strokeRect(x-5,y-5,10,10);}if(lastAltitudeState.get(track.id)!==track.altitudeKnown){lastAltitudeState.set(track.id,track.altitudeKnown);log(`TRACK ${track.id} / ${track.altitudeKnown?'SPS-48E 3D FIRE CONTROL':'SPS-49 2D WARNING ONLY'}`);}}radarCtx.globalAlpha=1;},100);
-function updateCombat(dt:number){
- updateCiws();
- updateBoosterDebris(dt);
- updateVlsLaunchEffects(dt);
- updateCountermeasures(dt);
- const primaryDefinition=activeShip.sensors.find(sensor=>sensor.threeDimensional)??activeShip.sensors[0],primarySensor=primaryDefinition.name,secondarySensor=activeShip.sensors.find(sensor=>!sensor.threeDimensional)?.name??activeShip.sensors[1]?.name??primarySensor,aspectHealth=activeShip.fixedSensorFaces?.sensorName===primarySensor?{[primarySensor]:fixedSensorAspectHealth}:{};combatPicture.update(elapsed,dt,radarEnabled?missiles.map((m,i)=>({m,i})).filter(x=>elapsed>=x.m.launchAt&&x.m.phase!=='destroyed').map(x=>({id:x.i+1,position:x.m.mesh.position,velocity:x.m.velocity,altitude:x.m.mesh.position.y*50,rcs:x.m.rcs})):[],{[primarySensor]:subsystemHealth('sps48'),[secondarySensor]:subsystemHealth('sps49')},defender.position,aspectHealth);const radarState=combatPicture.getSearchState(),primaryTracks=[...combatPicture.tracks.values()].filter(track=>track.sensorContributors.includes(primarySensor)),outsideFocus=radarState.focused?primaryTracks.filter(track=>track.age<=primaryDefinition.baseInterval*2.2&&Math.abs(angleDifference(Math.atan2(track.position.x-defender.position.x,track.position.z-defender.position.z),radarState.bearing))>THREE.MathUtils.degToRad(radarState.width/2)).length:0;canvas.dataset.radarScanMode=primaryDefinition.scanMode??'mechanical';canvas.dataset.radarPrimaryTracks=String(primaryTracks.length);canvas.dataset.radarBackgroundTracks=String(outsideFocus);
- updateShipManeuver(dt);
- if(activeShip.launcherKind==='mk10')updateMk10Launchers(dt);else updateVlsCells(dt);
- combatPicture.drainEvents().forEach(event=>log(event));
- const activeInterceptors=interceptors.filter(i=>i.mesh.visible),pending=pendingLauncherRequests(),active=activeInterceptors.length+pending.length,assignments=new Map<Missile,number>();activeInterceptors.forEach(i=>assignments.set(i.target,(assignments.get(i.target)??0)+1));pending.forEach(request=>assignments.set(request.target,(assignments.get(request.target)??0)+1));const best=[...combatPicture.tracks.values()].filter(t=>{const missile=missiles[t.sourceId-1];return missile&&missile.phase!=='destroyed'&&t.altitudeKnown&&t.solutionQuality>=.45&&t.age<2.2&&(assignments.get(missile)??0)<defensiveShotRequirement(missile,t.quality);}).sort((a,b)=>missileThreatScore(missiles[b.sourceId-1],b.quality)-missileThreatScore(missiles[a.sourceId-1],a.quality))[0];
- const terminalSm2=activeInterceptors.filter(i=>i.weapon.startsWith('SM-2')&&i.target.phase!=='destroyed'&&i.mesh.position.distanceTo(i.target.mesh.position)<weaponProfiles[i.weapon].terminalRange).sort((a,b)=>a.mesh.position.distanceTo(a.target.mesh.position)-b.mesh.position.distanceTo(b.target.mesh.position));
- scheduleIlluminators(terminalSm2,.05);
- updateShipStatus();
- const selected=missiles[selectedTargetId-1],selectedTrack=combatPicture.trackForTarget(selectedTargetId);if(selected&&selected.phase!=='destroyed'){const range=selected.mesh.position.distanceTo(defender.position),profile=weaponProfiles[selectedWeapon],inRange=range>=profile.minRange&&range<=profile.maxRange,fireControl=!!selectedTrack?.altitudeKnown,solutionReady=(selectedTrack?.solutionQuality??0)>=.45,envelopeState=!fireControl?'NO 3D SOLUTION':!solutionReady?`FC BUILD ${Math.round((selectedTrack?.solutionQuality??0)*100)}%`:range<profile.minRange?'INSIDE MIN RANGE / CIWS':range>profile.maxRange?'OUT OF ENVELOPE':'IN RANGE';threatName.textContent=`TRACK ${selectedTrack?String(selectedTrack.id).padStart(2,'0'):'--'} / ${selectedTrack?.classification==='classified'?selected.kind:selectedTrack?.classification.toUpperCase()??'PENDING ID'}`;threatRange.textContent=`${(range/10).toFixed(1)} km`;threatAltitude.textContent=selectedTrack?(fireControl?`${Math.round(selectedTrack.altitudeEstimate)} m / +/-${Math.round(selectedTrack.altitudeUncertainty)} m`:'2D / ALTITUDE UNKNOWN'):'NO DATA';trackQuality.textContent=selectedTrack?`TQ ${Math.round(selectedTrack.quality*100)}% / FC ${Math.round(selectedTrack.solutionQuality*100)}% ${selectedTrack.solutionTime.toFixed(1)}s / ${selectedTrack.sensorContributors.map(s=>s.replace('AN/','')).join('+')}`:'NO DATA';threatTti.textContent=`${Math.max(0,Math.round(range/Math.max(1,selected.velocity.length())))} s`;qualityFill.style.width=`${Math.round((selectedTrack?.solutionQuality??0)*100)}%`;weaponEnvelope.textContent=`${selectedWeapon} / ${envelopeState}`;weaponEnvelope.className=fireControl&&solutionReady&&inRange?'in-range':'out-range';}
- if(running&&autoFire&&elapsed>2&&elapsed>=nextSamLaunch&&(ammo>0||sm2Ammo>0||sm2erAmmo>0)&&active<maxSamChannels&&best){const target=missiles[best.sourceId-1],range=target.mesh.position.distanceTo(defender.position),rim=weaponProfiles['RIM-67'],mr=weaponProfiles['SM-2MR'],er=weaponProfiles['SM-2ER'],rimOk=ammo>0&&range>=rim.minRange&&range<=rim.maxRange,mrOk=sm2Ammo>0&&range>=mr.minRange&&range<=mr.maxRange,erOk=sm2erAmmo>0&&range>=er.minRange&&range<=er.maxRange;if(rimOk||mrOk||erOk){selectedWeapon=mrOk&&range<mr.maxRange*.8?'SM-2MR':rimOk?'RIM-67':'SM-2ER';if(queueInterceptorLaunch(target,selectedWeapon)){nextSamLaunch=elapsed+.12;changeAmmo(selectedWeapon,-1);}else nextSamLaunch=elapsed+1;weaponButton.textContent=`WEAPON: ${selectedWeapon}`;}}
- interceptors.forEach(i=>{
-  if(!i.mesh.visible)return;if(i.target.phase==='destroyed'){settleEngagement(i,'cancel');i.mesh.visible=false;i.illuminationBeam.visible=false;return;}
-  const profile=weaponProfiles[i.weapon];i.age+=dt;if(i.age>=profile.boost)separateBooster(i);const range=i.mesh.position.distanceTo(i.target.mesh.position),speed=Math.max(1,i.velocity.length()),expectedInterceptorSpeed=Math.max(speed,profile.maxSpeed*.58),timeToGo=Math.min(4,range/(expectedInterceptorSpeed+i.target.velocity.length())),terminal=range<profile.terminalRange,trackId=missiles.indexOf(i.target)+1;i.commandPoint.addScaledVector(i.commandVelocity,dt);
-  if(!terminal&&elapsed>=i.nextDatalink){const track=combatPicture.trackForTarget(trackId);if(track&&track.altitudeKnown&&track.age<2.2&&track.quality>.08){const delay=.2+(1-track.quality)*.85,solution=track.position.clone().addScaledVector(track.velocity,delay+timeToGo*.65);i.commandPoint.lerp(solution,.68);i.commandVelocity.lerp(track.velocity,.6);i.datalinkValid=true;i.nextDatalink=elapsed+.38+(1-track.quality)*1.05;}else{i.datalinkValid=false;i.nextDatalink=elapsed+.55;}}
-  if(terminal&&i.weapon==='RIM-67'&&!i.mesh.userData.seekerOn){i.mesh.userData.seekerOn=true;i.mesh.userData.seekerOnAt=elapsed;i.mesh.userData.handoffError=i.commandPoint.distanceTo(i.target.mesh.position);log(`RIM-67 SEEKER ON / TRACK ${trackId} / ${(range/WORLD_UNITS_PER_KM).toFixed(1)} km / HANDOFF +/-${(i.mesh.userData.handoffError/WORLD_UNITS_PER_KM).toFixed(2)} km`);}
-  const seekerReady=i.weapon==='RIM-67'&&i.mesh.userData.seekerOn&&elapsed-(i.mesh.userData.seekerOnAt??elapsed)>=.35;
-  if(terminal&&seekerReady&&!i.mesh.userData.seekerAcquired){const lookAngle=i.velocity.clone().normalize().angleTo(i.target.mesh.position.clone().sub(i.mesh.position).normalize()),fov=THREE.MathUtils.degToRad(32),rangeGain=THREE.MathUtils.clamp(1-range/profile.terminalRange,0,1),handoffPenalty=THREE.MathUtils.clamp((i.mesh.userData.handoffError??0)/(profile.terminalRange*.35),0,.28),localContacts=missiles.filter(m=>m.phase!=='destroyed'&&m!==i.target&&m.mesh.position.distanceTo(i.target.mesh.position)<20).length,competitionPenalty=Math.min(.24,localContacts*.06),seaClutterPenalty=i.target.mesh.position.y<1.5&&i.mesh.position.y-i.target.mesh.position.y>4?.12:0,aspectAngle=i.target.velocity.clone().normalize().angleTo(i.mesh.position.clone().sub(i.target.mesh.position).normalize()),aspectRcs=i.target.rcs*(.62+.38*Math.sin(aspectAngle)),acquisitionPk=THREE.MathUtils.clamp(.58+rangeGain*.3+aspectRcs*.06-lookAngle/fov*.18-handoffPenalty-competitionPenalty-seaClutterPenalty,.2,.96),acquisitionRoll=Math.abs(Math.sin(trackId*41.17+Math.floor(i.age*4)*13.9));if(lookAngle<fov&&acquisitionRoll<acquisitionPk){i.mesh.userData.seekerAcquired=true;i.mesh.userData.seekerConfidence=.35;log(`RIM-67 SEEKER CAPTURE / TRACK ${trackId} / FOV ${Math.round(THREE.MathUtils.radToDeg(lookAngle))} DEG / PK ${Math.round(acquisitionPk*100)}% / RCS ${aspectRcs.toFixed(2)} / ${localContacts} COMPETING${seaClutterPenalty?' / SEA CLUTTER':''}`);}}
-  if(terminal&&i.weapon==='RIM-67'&&i.mesh.userData.seekerAcquired){const lineOfSight=i.target.mesh.position.clone().sub(i.mesh.position).normalize(),trackingAngle=i.velocity.clone().normalize().angleTo(lineOfSight),losRate=i.mesh.userData.lastSeekerLos?i.mesh.userData.lastSeekerLos.angleTo(lineOfSight)/Math.max(dt,.001):0; i.mesh.userData.lastSeekerLos=lineOfSight.clone();const gimbalExceeded=trackingAngle>THREE.MathUtils.degToRad(45)||losRate>THREE.MathUtils.degToRad(70);if(gimbalExceeded){if(i.mesh.userData.seekerBreakAt===undefined)i.mesh.userData.seekerBreakAt=elapsed;if(elapsed-i.mesh.userData.seekerBreakAt>.65){i.mesh.userData.seekerAcquired=false;i.mesh.userData.seekerCoastUntil=elapsed+.45;i.mesh.userData.seekerBreakAt=undefined;log(`RIM-67 SEEKER BREAK / TRACK ${trackId} / ${Math.round(THREE.MathUtils.radToDeg(trackingAngle))} DEG / RATE ${Math.round(THREE.MathUtils.radToDeg(losRate))} DPS`);}}else i.mesh.userData.seekerBreakAt=undefined;}
-  if(i.mesh.userData.seekerAcquired){if(i.mesh.userData.seekerAimPoint)i.mesh.userData.seekerAimPoint.addScaledVector(i.target.velocity,dt);if(elapsed>=(i.mesh.userData.nextSeekerUpdate??0)){const noise=Math.min(2.2,range*(.006+(1-i.target.rcs)*.004)),seed=trackId*19.3+Math.floor(elapsed*8.3);i.mesh.userData.seekerAimPoint=i.target.mesh.position.clone().add(new THREE.Vector3(Math.sin(seed)*noise,Math.cos(seed*1.7)*noise*.35,Math.sin(seed*2.1)*noise));i.mesh.userData.seekerConfidence=Math.min(1,(i.mesh.userData.seekerConfidence??.35)+.12);i.mesh.userData.nextSeekerUpdate=elapsed+.12;}}
-  const seekerCoasting=i.weapon==='RIM-67'&&!i.mesh.userData.seekerAcquired&&elapsed<(i.mesh.userData.seekerCoastUntil??0);if(seekerCoasting)i.mesh.userData.seekerConfidence=Math.max(.12,(i.mesh.userData.seekerConfidence??.35)-dt*.9);
-  const nearestChaff=chaffClouds.filter(c=>c.age<12&&c.position.distanceTo(i.target.mesh.position)<18).sort((a,b)=>b.rcs-a.rcs)[0],decoyProbability=nearestChaff?nearestChaff.rcs/(nearestChaff.rcs+i.target.rcs):0,decoyCaptured=i.weapon.startsWith('SM-2')&&terminal&&!!nearestChaff&&Math.abs(Math.sin(trackId*27.1+Math.floor(elapsed*2)))<decoyProbability,ecmStrength=ecmEnabled&&i.weapon.startsWith('SM-2')?THREE.MathUtils.clamp(range/320,0,.65):0,ecmOffset=new THREE.Vector3(Math.sin(elapsed*3.1+trackId)*ecmStrength*4,Math.cos(elapsed*2.7)*ecmStrength,Math.sin(elapsed*2.3+1)*ecmStrength*4);i.mesh.userData.ecmStrength=ecmStrength;if(ecmEnabled&&i.weapon.startsWith('SM-2')&&terminal&&range<90&&!i.mesh.userData.burnThrough){i.mesh.userData.burnThrough=true;log(`${i.weapon} ECM BURN-THROUGH / TRACK ${trackId} / ${(range/WORLD_UNITS_PER_KM).toFixed(1)} km`);}if(decoyCaptured&&!i.mesh.userData.decoyCaptured){i.mesh.userData.decoyCaptured=true;log(`${i.weapon} DECOY CAPTURE / CHAFF RCS ${nearestChaff.rcs.toFixed(1)}`);}if(!decoyCaptured)i.mesh.userData.decoyCaptured=false;
-  const terminalHoming=terminal&&(i.weapon==='RIM-67'?(!!i.mesh.userData.seekerAcquired||seekerCoasting):i.illuminated),terminalAim=i.weapon==='RIM-67'&&i.mesh.userData.seekerAimPoint?i.mesh.userData.seekerAimPoint:decoyCaptured&&nearestChaff?nearestChaff.position:i.target.mesh.position.clone().add(ecmOffset),seekerBlend=i.weapon==='RIM-67'?i.mesh.userData.seekerConfidence??.35:1,aim=terminalHoming?i.commandPoint.clone().lerp(terminalAim.clone().addScaledVector(decoyCaptured?nearestChaff?.velocity??i.target.velocity:i.target.velocity,timeToGo*.8),seekerBlend):i.commandPoint.clone();
-  const seaSkimmer=i.target.kind!=='Kh-22',estimatedLaunchRange=Math.min(profile.maxRange,range+i.distanceTraveled),loftFactor=THREE.MathUtils.clamp((estimatedLaunchRange-profile.terminalRange)/Math.max(1,profile.maxRange-profile.terminalRange),0,1);
-  if(seaSkimmer){
-   // Against sea skimmers, clear the launcher and pitch toward a shallow forward corridor.
-   // This is deliberately not the energy-saving loft used against the high-altitude Kh-22.
-   const launchClearance=THREE.MathUtils.smoothstep(i.age,0,Math.min(.65,profile.boost*.14));
-   const lowAltitudeCorridor=i.target.mesh.position.y+THREE.MathUtils.lerp(3.2,1.8,launchClearance)+loftFactor*.5;
-   aim.y=lowAltitudeCorridor;
-   if(!i.mesh.userData.trajectoryProfileLogged){i.mesh.userData.trajectoryProfileLogged=true;log(`${i.weapon} SEA-SKIMMER FORWARD INTERCEPT / ${i.target.kind} / CRUISE ALT ${Math.round(lowAltitudeCorridor*50)} m`);}
+type SubsystemState = {
+  id: SubsystemId;
+  label: string;
+  health: number;
+  position: THREE.Vector3;
+};
+const canvas = document.querySelector("#scene") as HTMLCanvasElement;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x06111b, 180, 900);
+scene.background = new THREE.Color(0x06111b);
+const camera = new THREE.PerspectiveCamera(
+  48,
+  innerWidth / innerHeight,
+  0.1,
+  2000,
+);
+camera.position.set(120, 95, 150);
+camera.lookAt(0, 0, 0);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+scene.add(new THREE.HemisphereLight(0x9cc7dd, 0x10212b, 1.55));
+const sun = new THREE.DirectionalLight(0xffe3ad, 2.5);
+sun.position.set(-120, 200, 100);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -250;
+sun.shadow.camera.right = 250;
+sun.shadow.camera.top = 250;
+sun.shadow.camera.bottom = -250;
+scene.add(sun);
+const seaGeometry = new THREE.PlaneGeometry(1800, 1800, 64, 64);
+const sea = new THREE.Mesh(
+  seaGeometry,
+  new THREE.MeshStandardMaterial({
+    color: 0x0a3340,
+    roughness: 0.68,
+    metalness: 0.18,
+    flatShading: false,
+  }),
+);
+sea.rotation.x = -Math.PI / 2;
+scene.add(sea);
+const seaPositions = seaGeometry.attributes.position as THREE.BufferAttribute;
+const seaBase = Float32Array.from(seaPositions.array as ArrayLike<number>);
+const grid = new THREE.GridHelper(1200, 48, 0x1d6570, 0x123f4b);
+grid.position.y = 0.15;
+(grid.material as THREE.Material).opacity = 0.25;
+(grid.material as THREE.Material).transparent = true;
+scene.add(grid);
+function createHullGeometry() {
+  const sections = [
+    [-29, 3.15],
+    [-27, 3.9],
+    [-22, 4.35],
+    [-14, 4.55],
+    [8, 4.65],
+    [17, 4.2],
+    [23, 3.15],
+    [27, 1.65],
+    [29.5, 0.18],
+  ] as const;
+  const vertices: number[] = [],
+    indices: number[] = [];
+  for (const [x, w] of sections)
+    vertices.push(x, 6, -w, x, 6, w, x, 0.4, -w * 0.58, x, 0.4, w * 0.58);
+  for (let i = 0; i < sections.length - 1; i++) {
+    const a = i * 4,
+      b = (i + 1) * 4;
+    indices.push(
+      a,
+      a + 1,
+      b + 1,
+      a,
+      b + 1,
+      b,
+      a + 2,
+      b + 2,
+      b + 3,
+      a + 2,
+      b + 3,
+      a + 3,
+      a,
+      a + 2,
+      b + 2,
+      a,
+      b + 2,
+      b,
+      a + 1,
+      b + 1,
+      b + 3,
+      a + 1,
+      b + 3,
+      a + 3,
+    );
   }
-  else if(i.age<profile.boost)aim.y=Math.max(aim.y,20+loftFactor*28);
-  else if(!terminal)aim.y+=Math.min(34,range*.16);
-  const guidanceDirection=aim.sub(i.mesh.position).normalize(),verticalDirection=i.mesh.userData.verticalDirection as THREE.Vector3|undefined,verticalBlend=i.mesh.userData.vlsLaunch?THREE.MathUtils.smoothstep(i.age,seaSkimmer?.06:.78,seaSkimmer?.24:1.85):1,desired=verticalDirection?verticalDirection.clone().lerp(guidanceDirection,verticalBlend).normalize():guidanceDirection,current=i.velocity.clone().normalize(),turnSign=current.clone().cross(desired).y,angle=current.angleTo(desired),boosterSeparated=!!i.mesh.userData.boosterSeparated,massFactor=boosterSeparated?1:.68,boostTurnFactor=seaSkimmer?14:.62,turnLimit=profile.turnRate*dt*(terminal?2.2:i.age<profile.boost?boostTurnFactor:1)*massFactor,turnDemand=THREE.MathUtils.clamp(angle/Math.max(.001,turnLimit),0,1),blend=angle>0?Math.min(1,turnLimit/angle):1,direction=current.lerp(desired,blend).normalize(),rangeFraction=Math.min(1,i.distanceTraveled/profile.maxRange),commandedSpeed=profile.maxSpeed*(1-rangeFraction*.1),dragLoss=(.18+.72*turnDemand)*(terminal?1.15:1)*dt,nextSpeed=Math.max(profile.maxSpeed*.28,Math.min(commandedSpeed,speed+profile.acceleration*massFactor*dt)-dragLoss),previousPosition=i.mesh.position.clone();
-  i.mesh.userData.energy=Math.max(0,(i.mesh.userData.energy??1)-dragLoss*.028);i.velocity.copy(direction.multiplyScalar(nextSpeed));i.mesh.position.addScaledVector(i.velocity,dt);i.distanceTraveled+=nextSpeed*dt;i.mesh.userData.maxAltitude=Math.max(i.mesh.userData.maxAltitude??i.mesh.position.y,i.mesh.position.y);canvas.dataset.interceptorMaxAltitude=(i.mesh.userData.maxAltitude as number).toFixed(2);canvas.dataset.interceptorTrajectory=seaSkimmer?'low-altitude':'high-altitude';
-  const targetBank=THREE.MathUtils.clamp(turnSign*12,-.7,.7),attitudeBank=THREE.MathUtils.lerp(i.mesh.userData.flightBank??0,targetBank,Math.min(1,dt*2.8));i.mesh.userData.flightBank=attitudeBank;setMissileAttitude(i.mesh,direction,'+Y',attitudeBank);const closestPoint=new THREE.Vector3();new THREE.Line3(previousPosition,i.mesh.position).closestPointToPoint(i.target.mesh.position,true,closestPoint);const postRange=i.mesh.position.distanceTo(i.target.mesh.position),interceptDistance=Math.min(range,postRange,closestPoint.distanceTo(i.target.mesh.position));
-  if(i.history[i.history.length-1].distanceTo(i.mesh.position)>2.2){i.history.push(i.mesh.position.clone());if(i.history.length>140)i.history.shift();i.guidancePath.geometry.dispose();i.guidancePath.geometry=new THREE.BufferGeometry().setFromPoints(i.history);}
-  const needsIllumination=i.weapon.startsWith('SM-2')&&terminal,seekerConfidence=Math.round((i.mesh.userData.seekerConfidence??0)*100);if(needsIllumination){if(i.illuminated)i.mesh.userData.illuminationLostAt=undefined;else if(i.mesh.userData.illuminationLostAt===undefined)i.mesh.userData.illuminationLostAt=elapsed;if(typeof i.mesh.userData.illuminationLostAt==='number'&&elapsed-i.mesh.userData.illuminationLostAt>2.5){settleEngagement(i,'miss');i.mesh.visible=false;i.illuminationBeam.visible=false;log(`${i.weapon} MISS / ${activeShip.subsystemLabels.spg55} ILLUMINATION LOST`);return;}} phaseEl.textContent=i.age<profile.boost?(seaSkimmer?'BOOST / LOW-ALTITUDE PROGRAM TURN':'BOOST / LOFT CLIMB'):needsIllumination?(i.illuminated?`TERMINAL / ${activeShip.subsystemLabels.spg55} ILLUMINATION`:'TERMINAL / COASTING WITHOUT ILLUMINATION'):terminal?(i.mesh.userData.seekerAcquired?`TERMINAL / ACTIVE SEEKER ${seekerConfidence}%`:seekerCoasting?`TERMINAL / TRACK MEMORY ${seekerConfidence}%`:seekerReady?'TERMINAL / SEEKER SEARCH':'TERMINAL / SEEKER WARMUP'):i.datalinkValid?'MIDCOURSE / DATALINK UPDATE':'MIDCOURSE / INERTIAL COAST';
-  if(terminal&&i.weapon==='RIM-67'&&!i.mesh.userData.seekerAcquired&&!seekerCoasting&&elapsed-(i.mesh.userData.seekerOnAt??elapsed)>3.2){settleEngagement(i,'miss');i.mesh.visible=false;i.illuminationBeam.visible=false;log(`RIM-67 MISS / SEEKER NO CAPTURE / TRACK ${trackId}`);return;}
-  if(interceptDistance<2.5){const id=missiles.indexOf(i.target)+1,trackQualityValue=combatPicture.trackForTarget(id)?.quality??.1,guidanceQuality=i.weapon==='RIM-67'?(i.mesh.userData.seekerAcquired?Math.max(.62,trackQualityValue):.15):i.illuminated?Math.max(.55,trackQualityValue):trackQualityValue,saturation=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(i.target.mesh.position)<35).length,illuminationPenalty=needsIllumination&&!i.illuminated?.34:0,relativeClosing=i.velocity.clone().sub(i.target.velocity),lineToTarget=i.target.mesh.position.clone().sub(i.mesh.position).normalize(),approachCos=relativeClosing.normalize().dot(lineToTarget),geometryFactor=.55+.45*Math.max(0,approachCos),energyFactor=.86+.14*(i.mesh.userData.energy??1);const pk=Math.max(.08,Math.min(.88,(.48+guidanceQuality*.42-saturation*.07+(i.weapon==='SM-2MR'?.06:0)-illuminationPenalty)*geometryFactor*energyFactor));const roll=Math.abs(Math.sin(id*97.13+(ammo+sm2Ammo)*17.7+i.age*3.17));i.mesh.visible=false;i.illuminationBeam.visible=false;if(roll<pk){settleEngagement(i,'hit');i.target.phase='destroyed';i.target.mesh.visible=false;destroyMissileVisual(i.target,'intercept');phaseEl.textContent='TERMINAL INTERCEPT';log(`${i.weapon} INTERCEPT / ${(i.distanceTraveled/WORLD_UNITS_PER_KM).toFixed(1)} km / PK ${(pk*100).toFixed(0)}% / GEOM ${(geometryFactor*100).toFixed(0)}%${needsIllumination?' / ILLUMINATED':''}`);}else{settleEngagement(i,'miss');log(`${i.weapon} MISS / PK ${(pk*100).toFixed(0)}% / GEOM ${(geometryFactor*100).toFixed(0)}%${illuminationPenalty?' / NO ILLUMINATOR':''}`);}return;}
-  if(terminal){const closestEver=Math.min(i.mesh.userData.closestApproach??Infinity,interceptDistance),previousRange=i.mesh.userData.previousTargetRange??Infinity;i.mesh.userData.closestApproach=closestEver;i.mesh.userData.previousTargetRange=postRange;if(postRange>previousRange+.15&&closestEver<8){settleEngagement(i,'miss');i.mesh.visible=false;i.illuminationBeam.visible=false;log(`${i.weapon} MISS / CPA ${(closestEver/WORLD_UNITS_PER_KM).toFixed(2)} km`);return;}}
-  if(i.distanceTraveled>profile.maxRange){settleEngagement(i,'miss');i.mesh.visible=false;i.illuminationBeam.visible=false;log(`${i.weapon} MISS / RANGE EXHAUSTED ${(i.distanceTraveled/WORLD_UNITS_PER_KM).toFixed(1)} km`);return;}
- });
- const launchSystemIdle=activeShip.launcherKind==='mk10'?mk10Launchers.every(launcher=>launcher.phase==='ready'):vlsCells.every(cell=>!cell.pending&&cell.phase!=='opening'&&cell.phase!=='launching'&&cell.phase!=='closing');if(!missionEnded&&missiles.length>0&&missiles.every(m=>m.phase==='destroyed')&&hullIntegrity>0&&launchSystemIdle){interceptors.forEach(i=>{i.mesh.visible=false;i.illuminationBeam.visible=false;});updateShipStatus();finishMission(true);}
+  indices.push(
+    0,
+    4,
+    5,
+    0,
+    5,
+    1,
+    (sections.length - 1) * 4,
+    (sections.length - 1) * 4 + 1,
+    (sections.length - 1) * 4 + 3,
+    (sections.length - 1) * 4,
+    (sections.length - 1) * 4 + 3,
+    (sections.length - 1) * 4 + 2,
+  );
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(vertices, 3),
+  );
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
-function updateIncomingMissile(m:Missile,dt:number){
- if(m.phase==='destroyed'){m.mesh.userData.seekerLine.visible=false;m.mesh.userData.seekerFov.visible=false;return;}if(elapsed<m.launchAt){m.mesh.visible=false;m.path.visible=false;m.mesh.userData.seekerLine.visible=false;return;}m.mesh.visible=true;m.path.visible=true;
- m.age+=dt;
- const range=m.mesh.position.distanceTo(defender.position),profile=incomingProfiles[m.kind],terminalFactor=THREE.MathUtils.clamp((profile.terminalAt-range)/(profile.terminalAt*.72),0,1);m.phase=range<profile.terminalAt?'terminal':range<profile.terminalAt*1.9?'midcourse':'inbound';
- if(chaffEnabled&&m.phase==='terminal'&&!m.mesh.userData.chaffDeployed&&range<profile.terminalAt*.72)deployChaff(m);
- if(m.phase==='terminal'&&!m.mesh.userData.seekerOn){m.mesh.userData.seekerOn=true;log(`${m.kind} ACTIVE SEEKER ON / ${(range/WORLD_UNITS_PER_KM).toFixed(1)} km`);}
- if(m.phase==='terminal'&&srbocEnabled&&range<140&&!m.mesh.userData.shipDecoyCloud&&(m.mesh.userData.srbocShots??0)<2&&deployShipChaff(m))m.mesh.userData.srbocShots=(m.mesh.userData.srbocShots??0)+1;
- const commandedAltitude=THREE.MathUtils.lerp(profile.cruiseAltitude,profile.terminalAltitude,terminalFactor);
- const weave=m.kind==='P-700'?new THREE.Vector3(Math.sin(m.age*2.8)*7*terminalFactor,0,Math.cos(m.age*2.35)*5*terminalFactor):m.kind==='P-500'?new THREE.Vector3(Math.sin(m.age*3.8)*2.2*terminalFactor,0,Math.cos(m.age*3.1)*1.4*terminalFactor):new THREE.Vector3();
- const availableShipChaff=chaffClouds.filter(c=>c.side==='ship'&&c.age<12&&c.position.distanceTo(defender.position)<55);
- const ecmHealth=subsystemHealth('ecm'),previousDecoy=m.mesh.userData.shipDecoyCloud as ChaffCloud|undefined,sjRatio=Math.pow(profile.burnThroughRange/Math.max(1,range),2)/Math.max(.05,ecmHealth),sjDb=10*Math.log10(sjRatio),burnThrough=!shipEcmEnabled||ecmHealth<=.05||sjDb>=0,shipEcmStrength=shipEcmEnabled&&!burnThrough?THREE.MathUtils.clamp(-sjDb/18,0,.8)*ecmHealth:0,lockedDecoy=previousDecoy&&availableShipChaff.includes(previousDecoy)?previousDecoy:undefined;
- const evaluated=(m.mesh.userData.evaluatedShipChaff??=new Set<number>()) as Set<number>,newClouds=availableShipChaff.filter(c=>!evaluated.has(c.serial)),shipChaff=lockedDecoy??newClouds.sort((a,b)=>b.rcs/Math.pow(Math.max(4,b.position.distanceTo(m.mesh.position)),4)-a.rcs/Math.pow(Math.max(4,a.position.distanceTo(m.mesh.position)),4))[0];
- const chaffPower=shipChaff?shipChaff.rcs/Math.pow(Math.max(4,shipChaff.position.distanceTo(m.mesh.position)),4):0,shipPower=SHIP_RADAR_RCS/Math.pow(Math.max(4,range),4)*(1-shipEcmStrength*.55),deceptionPk=shipChaff?THREE.MathUtils.clamp(chaffPower/(chaffPower+shipPower)+shipEcmStrength*.15,.05,.88):0,captureSeed=shipChaff?Math.sin((missiles.indexOf(m)+1)*12.9898+shipChaff.serial*78.233)*43758.5453:0,captureRoll=shipChaff?captureSeed-Math.floor(captureSeed):1,capturedNow=!burnThrough&&!!shipChaff&&!lockedDecoy&&captureRoll<deceptionPk,deceived=!burnThrough&&(!!lockedDecoy||capturedNow);
- if(shipChaff&&!lockedDecoy){evaluated.add(shipChaff.serial);if(!capturedNow)log(`${m.kind} CHAFF REJECT / PK ${Math.round(deceptionPk*100)}% / ROLL ${Math.round(captureRoll*100)}%`);}
- if(burnThrough){m.mesh.userData.shipDecoyCloud=undefined;if(shipEcmEnabled&&!m.mesh.userData.shipEcmBurnThrough){m.mesh.userData.shipEcmBurnThrough=true;log(`${m.kind} SHIP ECM BURN-THROUGH / ${(range/WORLD_UNITS_PER_KM).toFixed(1)} km`);}}
- if(deceived&&shipChaff&&!lockedDecoy){m.mesh.userData.shipDecoyCloud=shipChaff;log(`${m.kind} LOCK TRANSFER / SRBOC CHAFF / PK ${Math.round(deceptionPk*100)}%`);}
- m.mesh.userData.shipDecoy=deceived;m.mesh.userData.ewState=deceived?'CHAFF LOCK':shipEcmStrength>0?`J/S +${Math.round(-sjDb)} dB`:burnThrough&&shipEcmEnabled?`S/J +${Math.round(sjDb)} dB`:'CLEAR';m.mesh.userData.seekerState=m.phase==='terminal'?(deceived?'FALSE TARGET':'ACTIVE'):'STANDBY';const ecmOffset=new THREE.Vector3(Math.sin(m.age*2.1)*shipEcmStrength*8,0,Math.cos(m.age*1.7)*shipEcmStrength*8),aimBase=deceived&&shipChaff?shipChaff.position:defender.position.clone().add(ecmOffset),aimPoint=aimBase.clone().add(m.aimOffset).add(weave).add(new THREE.Vector3(0,commandedAltitude,0));
- const seekerFov=m.mesh.userData.seekerFov as THREE.Mesh,seekerLine=m.mesh.userData.seekerLine as THREE.Line,seekerVisible=m.phase==='terminal'&&missiles.indexOf(m)+1===selectedTargetId,seekerColor=deceived?0xffcf55:shipEcmStrength>0?0x5ee5dc:0xff5b4d;seekerFov.visible=seekerVisible;seekerLine.visible=seekerVisible;(seekerFov.material as THREE.MeshBasicMaterial).color.setHex(seekerColor);(seekerLine.material as THREE.LineBasicMaterial).color.setHex(seekerColor);if(seekerVisible){seekerLine.geometry.dispose();seekerLine.geometry=new THREE.BufferGeometry().setFromPoints([m.mesh.position.clone(),aimBase.clone().add(new THREE.Vector3(0,commandedAltitude,0))]);}
- const desired=aimPoint.sub(m.mesh.position).normalize();
- if(deceived)m.mesh.userData.everDecoyed=true;
- const current=m.velocity.clone().normalize();
- const turnSign=current.clone().cross(desired).y;
- const angle=current.angleTo(desired),maxTurn=THREE.MathUtils.degToRad(profile.turnRate*(1+terminalFactor*.75))*dt;
- const blend=angle>0?Math.min(1,maxTurn/angle):1;
- const direction=current.lerp(desired,blend).normalize();
- const targetSpeed=THREE.MathUtils.lerp(profile.cruiseSpeed,profile.terminalSpeed,terminalFactor);
- const speed=THREE.MathUtils.lerp(m.velocity.length(),targetSpeed,Math.min(1,dt*.55));
- m.velocity.copy(direction.multiplyScalar(speed));
- m.mesh.position.addScaledVector(m.velocity,dt);
- m.bank=THREE.MathUtils.lerp(m.bank,THREE.MathUtils.clamp(turnSign*8,-.62,.62),Math.min(1,dt*2.4));
- setMissileAttitude(m.mesh,m.velocity,'-Z',m.bank);
- if(m.mesh.userData.seaMist)m.mesh.userData.seaMist.visible=m.kind!=='Kh-22'&&m.phase==='terminal'&&m.mesh.position.y<1.25;
- if(m.mesh.userData.shockCone)m.mesh.userData.shockCone.visible=m.kind==='Kh-22'&&m.phase==='terminal';
- if(m.history.length===0||m.mesh.position.distanceTo(m.history[m.history.length-1])>3){m.history.push(m.mesh.position.clone());if(m.history.length>90)m.history.shift();m.path.geometry.dispose();m.path.geometry=new THREE.BufferGeometry().setFromPoints(m.history);}
- const postShipRange=m.mesh.position.distanceTo(defender.position),closestShipRange=Math.min(m.mesh.userData.closestShipRange??Infinity,postShipRange);m.mesh.userData.closestShipRange=closestShipRange;m.mesh.userData.previousShipRange=postShipRange;if(m.mesh.userData.everDecoyed&&postShipRange>closestShipRange+4&&closestShipRange<profile.terminalAt&&closestShipRange>6){m.phase='destroyed';m.mesh.visible=false;log(`${m.kind} SOFT KILL / SRBOC DECOY / CPA ${(closestShipRange/WORLD_UNITS_PER_KM).toFixed(2)} km`);return;}
- if(postShipRange<6){const nearestSam=interceptors.filter(i=>i.mesh.visible).reduce((best,i)=>Math.min(best,i.mesh.position.distanceTo(m.mesh.position)),Infinity);m.phase='destroyed';m.mesh.visible=false;leakers++;hullIntegrity=Math.max(0,hullIntegrity-profile.damage);createShipDamage(m.mesh.position,profile.damage);applySubsystemDamage(m,profile.damage);destroyMissileVisual(m,'impact');log(`${m.kind} IMPACT / ${profile.damage}% DAMAGE / SAM ${Number.isFinite(nearestSam)?(nearestSam/WORLD_UNITS_PER_KM).toFixed(1)+' km':'NONE'} / HULL ${hullIntegrity}%`);updateShipStatus();if(hullIntegrity<=0){phaseEl.textContent=`${activeShip.name} DISABLED`;finishMission(false);}}
+function createSlopedBoxGeometry(
+  length: number,
+  height: number,
+  depth: number,
+  slope: number,
+) {
+  const geometry = new THREE.BoxGeometry(length, height, depth, 1, 1, 1),
+    position = geometry.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < position.count; i++)
+    if (position.getX(i) > 0 && position.getY(i) > 0)
+      position.setX(i, position.getX(i) - slope);
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
 }
-function updateTargetMarker(){const selected=missiles[selectedTargetId-1],track=combatPicture.trackForTarget(selectedTargetId);seekerState.textContent=selected?.mesh.userData.seekerState??'STANDBY';ewState.textContent=selected?.mesh.userData.ewState??'CLEAR';seekerState.className=selected?.mesh.userData.seekerState==='FALSE TARGET'?'ew-warning':'';ewState.className=selected?.mesh.userData.ewState==='ECM JAMMED'?'ew-active':selected?.mesh.userData.ewState==='CHAFF LOCK'?'ew-warning':'';if(!selected||selected.phase==='destroyed'||elapsed<selected.launchAt||!track){targetMarker.style.display='none';return;}const projected=track.position.clone().project(camera),behind=projected.z<-1||projected.z>1,rawX=(projected.x*.5+.5)*innerWidth,rawY=(-projected.y*.5+.5)*innerHeight,margin=innerWidth<560?28:46,safeTop=innerWidth<560?250:76,safeBottom=innerWidth<560?220:110,centerX=innerWidth*.5,centerY=innerHeight*.5,angle=Math.atan2(rawY-centerY,rawX-centerX),displayX=behind?centerX+Math.cos(angle+Math.PI)*innerWidth:centerX+Math.cos(angle)*innerWidth,displayY=behind?centerY+Math.sin(angle+Math.PI)*innerHeight:centerY+Math.sin(angle)*innerHeight,x=Math.max(margin,Math.min(innerWidth-margin,behind?displayX:rawX)),y=Math.max(safeTop,Math.min(innerHeight-safeBottom,behind?displayY:rawY)),offscreen=behind||rawX<margin||rawX>innerWidth-margin||rawY<safeTop||rawY>innerHeight-safeBottom,range=track.position.distanceTo(defender.position),tti=Math.max(0,Math.round(range/Math.max(1,track.velocity.length())));targetMarker.style.display='block';targetMarker.style.left=`${x}px`;targetMarker.style.top=`${y}px`;targetMarker.style.setProperty('--bearing',`${Math.atan2((behind?displayY:rawY)-centerY,(behind?displayX:rawX)-centerX)}rad`);targetMarker.classList.toggle('offscreen',offscreen);targetMarker.classList.toggle('right-edge',x>innerWidth-180);targetMarkerLabel.textContent=`T${String(track.id).padStart(2,'0')} ${track.classification==='classified'?selected.kind:track.classification.toUpperCase()} / ${tti}s / ±${(track.uncertainty/1000).toFixed(1)}km`;}
-function tick(now:number){
- const realDt=Math.min((now-last)/1000,.1);last=now;
- if(running){simAccumulator+=realDt*timeScale;while(simAccumulator>=.05&&running){elapsed+=.05;updateCombat(.05);missiles.forEach(m=>updateIncomingMissile(m,.05));captureAarSnapshot();simAccumulator-=.05;}const activeMissiles=missiles.filter(m=>m.phase!=='destroyed'&&elapsed>=m.launchAt),live=activeMissiles.length,distances=activeMissiles.map(m=>m.mesh.position.distanceTo(defender.position));document.querySelector('#targetCount')!.textContent=`${live} ACTIVE / ${missiles.filter(m=>m.phase!=='destroyed').length-live} RESERVE / ${distances.length?(Math.max(...distances)/10).toFixed(1):'0.0'} km`;}
- for(let i=0;i<seaPositions.count;i++){const p=i*3,x=seaBase[p],y=seaBase[p+1];seaPositions.setZ(i,Math.sin(x*.026+elapsed*.72)*.48+Math.sin(y*.019-elapsed*.54)*.34+Math.sin((x+y)*.011+elapsed*.31)*.2);}seaPositions.needsUpdate=true;if(++waveFrame%8===0)seaGeometry.computeVertexNormals();const ewPulse=defender.userData.ewPulse as THREE.Group|undefined,ewThreat=missiles.some(m=>m.mesh.visible&&m.phase==='terminal'),ecmHealth=subsystemHealth('ecm');if(ewPulse){ewPulse.visible=shipEcmEnabled&&ecmHealth>.05&&ewThreat;ewPulse.children.forEach((ring,index)=>{const phase=(elapsed*.72+index/3)%1,material=(ring as THREE.Mesh).material;if(material instanceof THREE.MeshBasicMaterial){ring.scale.setScalar(.55+phase*.8);material.opacity=.2*(1-phase)*ecmHealth;}});}
- missiles.forEach((m,index)=>{if(!m.mesh.visible)return;const selection=m.mesh.userData.selection as THREE.Mesh|undefined;if(selection?.visible){const parentWorld=m.mesh.getWorldQuaternion(new THREE.Quaternion());selection.quaternion.copy(parentWorld.invert().multiply(camera.quaternion));}const pulse=.88+Math.sin(elapsed*19+index*1.7)*.12;(m.mesh.userData.exhaust as THREE.Mesh|undefined)?.scale.set(1,pulse,1);(m.mesh.userData.hotCore as THREE.Mesh|undefined)?.scale.setScalar(.9+pulse*.12);(m.mesh.userData.seaMist as THREE.Mesh|undefined)?.scale.set(1+pulse*.12,1+pulse*.28,1+pulse*.12);const shock=m.mesh.userData.shockCone as THREE.Mesh|undefined;if(shock)(shock.material as THREE.MeshBasicMaterial).opacity=.09+pulse*.035;});
- clockEl.textContent=`${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(Math.floor(elapsed%60)).padStart(2,'0')}`;updateShipWeaponVisuals(realDt);updateCamera();updateShipVisualLod();updateShipLights();defender.userData.smokePuffs?.forEach((puff:THREE.Mesh,index:number)=>{const life=(elapsed*.22+index/9)%1;puff.position.set(-4-life*7,15+life*11,Math.sin(index*2.1+life*4)*.8);puff.scale.setScalar(.55+life*2.1);(puff.material as THREE.MeshBasicMaterial).opacity=.13*(1-life);});if(defender.userData.flag){const flagPositions=defender.userData.flag.geometry.attributes.position as THREE.BufferAttribute;for(let i=0;i<flagPositions.count;i++){const x=flagPositions.getX(i),y=flagPositions.getY(i),free=-x/3.8;flagPositions.setZ(i,Math.sin(elapsed*5+x*2.8+y*.7)*.34*free);}flagPositions.needsUpdate=true;}shipDamageEffects.forEach(effect=>{effect.fire.scale.setScalar(.8+Math.sin(elapsed*13+effect.seed)*.22);effect.light.intensity=3.5+Math.sin(elapsed*17+effect.seed)*1.5;effect.smoke.forEach((puff,index)=>{const life=(elapsed*.28+index/effect.smoke.length+effect.seed)%1;puff.position.set(-life*2,1+life*9,Math.sin(effect.seed+index*1.7)*.7);puff.scale.setScalar(.5+life*2.4);(puff.material as THREE.MeshBasicMaterial).opacity=.32*(1-life);});});updateTargetMarker();renderer.render(scene,camera);requestAnimationFrame(tick);
+function createSectorGeometry(
+  radius: number,
+  halfAngle: number,
+  segments = 24,
+) {
+  const vertices = [0, 0, 0],
+    indices: number[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const angle = -halfAngle + (halfAngle * 2 * i) / segments;
+    vertices.push(Math.cos(angle) * radius, 0, -Math.sin(angle) * radius);
+  }
+  for (let i = 1; i <= segments; i++) indices.push(0, i, i + 1);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(vertices, 3),
+  );
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+function addStrut(
+  group: THREE.Group,
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  radius: number,
+  material: THREE.Material,
+) {
+  const direction = end.clone().sub(start),
+    strut = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, direction.length(), 7),
+      material,
+    );
+  strut.position.copy(start).add(end).multiplyScalar(0.5);
+  strut.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize(),
+  );
+  group.add(strut);
+  return strut;
+}
+function createHullNumberTexture() {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 64;
+  const ctx = c.getContext("2d")!;
+  ctx.clearRect(0, 0, 128, 64);
+  ctx.fillStyle = "#e8ece5";
+  ctx.font = "bold 46px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("9", 64, 34);
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+function createUSFlagTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 247;
+  canvas.height = 130;
+  const ctx = canvas.getContext("2d")!;
+  for (let stripe = 0; stripe < 13; stripe++) {
+    ctx.fillStyle = stripe % 2 === 0 ? "#b22234" : "#f5f4ed";
+    ctx.fillRect(0, stripe * 10, 247, 10);
+  }
+  ctx.fillStyle = "#3c3b6e";
+  ctx.fillRect(0, 0, 99, 70);
+  ctx.fillStyle = "#fff";
+  for (let row = 0; row < 5; row++)
+    for (let column = 0; column < 6; column++) {
+      ctx.beginPath();
+      ctx.arc(
+        9 + column * 16 + (row % 2) * 8,
+        8 + row * 14,
+        1.8,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+function createMk10Launcher(deckMat: THREE.Material, darkMat: THREE.Material) {
+  const launcher = new THREE.Group();
+  launcher.userData.arms = [];
+  const launcherMat = new THREE.MeshStandardMaterial({
+      color: 0x929c98,
+      metalness: 0.48,
+      roughness: 0.48,
+    }),
+    roundMat = new THREE.MeshStandardMaterial({
+      color: 0xd9ddd5,
+      metalness: 0.42,
+      roughness: 0.34,
+    });
+  const turntable = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.75, 3.15, 0.55, 20),
+    darkMat,
+  );
+  turntable.position.y = 0.28;
+  launcher.add(turntable);
+  const race = new THREE.Mesh(
+    new THREE.TorusGeometry(2.48, 0.12, 7, 32),
+    launcherMat,
+  );
+  race.rotation.x = Math.PI / 2;
+  race.position.y = 0.6;
+  launcher.add(race);
+  const housing = new THREE.Mesh(
+    createSlopedBoxGeometry(4.6, 1.35, 4.35, 0.45),
+    launcherMat,
+  );
+  housing.position.set(-0.25, 1.15, 0);
+  launcher.add(housing);
+  const rearCab = new THREE.Mesh(
+    new THREE.BoxGeometry(1.45, 1.2, 3.7),
+    darkMat,
+  );
+  rearCab.position.set(-2, 1.2, 0);
+  launcher.add(rearCab);
+  const crossShaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.34, 0.34, 4.15, 14),
+    darkMat,
+  );
+  crossShaft.rotation.x = Math.PI / 2;
+  crossShaft.position.set(-0.15, 2, 0);
+  launcher.add(crossShaft);
+  for (const z of [-1.72, 1.72]) {
+    const trunnion = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.58, 0.58, 0.48, 14),
+      darkMat,
+    );
+    trunnion.rotation.x = Math.PI / 2;
+    trunnion.position.set(-0.15, 2, z);
+    launcher.add(trunnion);
+    const arm = new THREE.Group();
+    arm.name = "launcherArm";
+    arm.position.set(-0.15, 2, z);
+    launcher.userData.arms.push(arm);
+    const spine = new THREE.Mesh(
+      new THREE.BoxGeometry(7.7, 0.34, 0.42),
+      launcherMat,
+    );
+    spine.position.set(2.4, 0, 0);
+    arm.add(spine);
+    for (const railOffset of [-0.23, 0.23]) {
+      const guide = new THREE.Mesh(
+        new THREE.BoxGeometry(7.4, 0.13, 0.1),
+        darkMat,
+      );
+      guide.position.set(2.5, 0.28, railOffset);
+      arm.add(guide);
+    }
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 0.48, 0.75),
+      darkMat,
+    );
+    shoe.position.set(0.3, 0.15, 0);
+    arm.add(shoe);
+    const readyRound = new THREE.Group();
+    readyRound.name = "readyRound";
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.26, 5.5, 10),
+      roundMat,
+    );
+    body.rotation.z = Math.PI / 2;
+    readyRound.add(body);
+    const nose = new THREE.Mesh(
+      new THREE.ConeGeometry(0.22, 0.72, 10),
+      roundMat,
+    );
+    nose.rotation.z = -Math.PI / 2;
+    nose.position.x = 3.1;
+    readyRound.add(nose);
+    for (const finZ of [-1, 1]) {
+      const fin = new THREE.Mesh(
+        new THREE.BoxGeometry(0.55, 0.06, 0.42),
+        darkMat,
+      );
+      fin.position.set(-2.45, 0, finZ * 0.3);
+      readyRound.add(fin);
+    }
+    readyRound.position.set(3.15, 0.42, 0);
+    arm.add(readyRound);
+    launcher.add(arm);
+  }
+  for (const side of [-1, 1]) {
+    const serviceRail = new THREE.Mesh(
+      new THREE.BoxGeometry(5.2, 0.12, 0.12),
+      deckMat,
+    );
+    serviceRail.position.set(-0.2, 0.72, side * 2.35);
+    launcher.add(serviceRail);
+    const loaderGuide = new THREE.Mesh(
+      new THREE.BoxGeometry(2.4, 0.16, 0.34),
+      darkMat,
+    );
+    loaderGuide.position.set(-2.65, 0.7, side * 1.72);
+    launcher.add(loaderGuide);
+    const hydraulic = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.15, 2.25, 8),
+      launcherMat,
+    );
+    hydraulic.rotation.z = Math.PI / 2;
+    hydraulic.position.set(0.55, 1.45, side * 1.72);
+    launcher.add(hydraulic);
+  }
+  const loaderDoor = new THREE.Mesh(
+    new THREE.BoxGeometry(1.7, 0.1, 3.65),
+    darkMat,
+  );
+  loaderDoor.position.set(-3.12, 0.67, 0);
+  launcher.add(loaderDoor);
+  return launcher;
+}
+function buildLongBeach(color = 0x4b5a59, scale = 1) {
+  const g = new THREE.Group();
+  g.scale.setScalar(scale);
+  const hullMat = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0.72,
+    roughness: 0.32,
+  });
+  const deckMat = new THREE.MeshStandardMaterial({
+    color: 0x707d7c,
+    metalness: 0.35,
+    roughness: 0.6,
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x263538,
+    metalness: 0.5,
+    roughness: 0.45,
+  });
+  const hull = new THREE.Mesh(createHullGeometry(), hullMat);
+  g.add(hull);
+  const deckShape = new THREE.Shape();
+  deckShape.moveTo(-28, -3.15);
+  deckShape.lineTo(-22, -4.25);
+  deckShape.lineTo(16, -4.25);
+  deckShape.lineTo(23, -3.15);
+  deckShape.lineTo(29, 0);
+  deckShape.lineTo(23, 3.15);
+  deckShape.lineTo(16, 4.25);
+  deckShape.lineTo(-22, 4.25);
+  deckShape.lineTo(-28, 3.15);
+  deckShape.closePath();
+  const mainDeck = new THREE.Mesh(new THREE.ShapeGeometry(deckShape), deckMat);
+  mainDeck.rotation.x = -Math.PI / 2;
+  mainDeck.position.y = 6.05;
+  g.add(mainDeck);
+  const waterline = new THREE.Mesh(
+    createHullGeometry(),
+    new THREE.MeshStandardMaterial({ color: 0x151d20, roughness: 0.75 }),
+  );
+  waterline.scale.set(1.002, 0.28, 1.002);
+  waterline.position.y = -0.1;
+  g.add(waterline);
+  const keel = new THREE.Mesh(new THREE.BoxGeometry(24, 0.7, 2.8), darkMat);
+  keel.position.set(-1, 0.15, 0);
+  g.add(keel);
+  const aftDeck = new THREE.Mesh(new THREE.BoxGeometry(13, 0.7, 8), deckMat);
+  aftDeck.position.set(-10, 6, 0);
+  g.add(aftDeck);
+  const bridge = new THREE.Mesh(
+    createSlopedBoxGeometry(11, 5.5, 6.5, 1.35),
+    deckMat,
+  );
+  bridge.position.set(5, 8, 0);
+  g.add(bridge);
+  const bridgeRoof = new THREE.Mesh(
+    new THREE.BoxGeometry(13, 0.8, 7.2),
+    darkMat,
+  );
+  bridgeRoof.position.set(5, 11, 0);
+  g.add(bridgeRoof);
+  const mast = new THREE.Group();
+  const mastFeet = [
+      new THREE.Vector3(-1.4, 14.1, -2.25),
+      new THREE.Vector3(-1.4, 14.1, 2.25),
+      new THREE.Vector3(3.2, 14.1, 0),
+    ],
+    mastCrown = [
+      new THREE.Vector3(0.45, 22, -0.62),
+      new THREE.Vector3(0.45, 22, 0.62),
+      new THREE.Vector3(1.55, 22, 0),
+    ];
+  mastFeet.forEach((foot, index) =>
+    addStrut(mast, foot, mastCrown[index], 0.19, darkMat),
+  );
+  for (let y = 15.5; y < 21.5; y += 1.65) {
+    const fraction = (y - 14.1) / 7.9,
+      port = new THREE.Vector3(
+        THREE.MathUtils.lerp(-1.4, 0.45, fraction),
+        y,
+        THREE.MathUtils.lerp(-2.25, -0.62, fraction),
+      ),
+      starboard = new THREE.Vector3(port.x, y, -port.z);
+    addStrut(mast, port, starboard, 0.075, darkMat);
+    if (Math.round((y - 15.5) / 1.65) % 2 === 0)
+      addStrut(
+        mast,
+        port,
+        new THREE.Vector3(
+          THREE.MathUtils.lerp(3.2, 1.55, fraction),
+          y + 0.8,
+          0,
+        ),
+        0.07,
+        darkMat,
+      );
+  }
+  const mastPlatform = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.25, 2.6, 0.34, 12),
+    darkMat,
+  );
+  mastPlatform.position.set(1, 22, 0);
+  mast.add(mastPlatform);
+  const upperMast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.3, 7.2, 8),
+    darkMat,
+  );
+  upperMast.position.set(1, 25.5, 0);
+  mast.add(upperMast);
+  g.add(mast);
+  const yard = new THREE.Mesh(new THREE.BoxGeometry(9, 0.24, 0.24), darkMat);
+  yard.position.set(1, 27.1, 0);
+  g.add(yard);
+  const radar = new THREE.Group();
+  radar.position.set(1, 24, 0);
+  const dish = new THREE.Mesh(
+    new THREE.BoxGeometry(5.8, 4.3, 0.45),
+    new THREE.MeshStandardMaterial({
+      color: 0x9caaa6,
+      metalness: 0.35,
+      roughness: 0.52,
+    }),
+  );
+  dish.rotation.z = 0.08;
+  radar.add(dish);
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(3.8, 3.1, 1.1), darkMat);
+  backing.position.z = -0.65;
+  radar.add(backing);
+  for (let x = -2; x <= 2; x++)
+    for (let y = -1; y <= 1; y++) {
+      const cell = new THREE.Mesh(
+        new THREE.BoxGeometry(0.65, 0.65, 0.12),
+        new THREE.MeshStandardMaterial({
+          color: 0xc1cbc5,
+          metalness: 0.3,
+          roughness: 0.5,
+        }),
+      );
+      cell.position.set(x, y * 1.05, 0.3);
+      radar.add(cell);
+    }
+  const feed = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.16, 2.8, 8),
+    darkMat,
+  );
+  feed.rotation.x = Math.PI / 2;
+  feed.position.z = 1.6;
+  radar.add(feed);
+  for (const side of [-1, 1]) {
+    addStrut(
+      radar,
+      new THREE.Vector3(side * 2.45, -1.75, -0.35),
+      new THREE.Vector3(side * 0.85, -1.1, -1.45),
+      0.11,
+      darkMat,
+    );
+    addStrut(
+      radar,
+      new THREE.Vector3(side * 2.45, 1.75, -0.35),
+      new THREE.Vector3(side * 0.85, 1.1, -1.45),
+      0.11,
+      darkMat,
+    );
+  }
+  const radarGearbox = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.48, 0.62, 1.4, 10),
+    darkMat,
+  );
+  radarGearbox.position.set(0, -2.55, -0.45);
+  radar.add(radarGearbox);
+  const searchBeam = new THREE.Mesh(
+    createSectorGeometry(105, THREE.MathUtils.degToRad(8)),
+    new THREE.MeshBasicMaterial({
+      color: 0x5ee9df,
+      transparent: true,
+      opacity: 0.035,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  searchBeam.position.y = 0.15;
+  radar.add(searchBeam);
+  radar.userData.searchBeam = searchBeam;
+  g.add(radar);
+  const fireControl = new THREE.Group();
+  fireControl.position.set(8, 12, 0);
+  fireControl.add(
+    new THREE.Mesh(
+      new THREE.SphereGeometry(1.6, 12, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x9ba9a6,
+        metalness: 0.5,
+        roughness: 0.45,
+      }),
+    ),
+  );
+  g.add(fireControl);
+  // Keep the aft Mk 10 clear of the aft-house/bridge visual envelope.
+  const launcher = createMk10Launcher(deckMat, darkMat);
+  launcher.position.set(-23, 6.18, 0);
+  launcher.rotation.y = Math.PI;
+  g.add(launcher);
+  const windowMat = new THREE.MeshStandardMaterial({
+    color: 0x75d8d4,
+    emissive: 0x164b4a,
+    emissiveIntensity: 1.8,
+  });
+  const windows = new THREE.Group();
+  for (let z = -2.3; z <= 2.3; z += 1.15) {
+    const pane = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.5, 0.72),
+      windowMat,
+    );
+    pane.position.set(10.58, 9.6, z);
+    windows.add(pane);
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.72, 0.07),
+      darkMat,
+    );
+    frame.position.set(10.7, 9.6, z + 0.52);
+    windows.add(frame);
+  }
+  for (const side of [-1, 1])
+    for (let x = 1.5; x <= 8.5; x += 1.4) {
+      const pane = new THREE.Mesh(
+        new THREE.BoxGeometry(0.72, 0.5, 0.18),
+        windowMat,
+      );
+      pane.position.set(x, 9.6, side * 3.33);
+      windows.add(pane);
+      const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.72, 0.22),
+        darkMat,
+      );
+      frame.position.set(x + 0.62, 9.6, side * 3.38);
+      windows.add(frame);
+    }
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 6.3), darkMat);
+  brow.position.set(10.72, 10.08, 0);
+  windows.add(brow);
+  g.add(windows);
+  const upperBridge = new THREE.Mesh(
+    createSlopedBoxGeometry(7, 2.4, 5.2, 0.8),
+    deckMat,
+  );
+  upperBridge.position.set(4, 13, 0);
+  g.add(upperBridge);
+  const bridgeDetails = new THREE.Group();
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(
+      new THREE.BoxGeometry(4.8, 0.24, 2.25),
+      deckMat,
+    );
+    wing.position.set(6, 12.05, side * 4.15);
+    bridgeDetails.add(wing);
+    const bulwark = new THREE.Mesh(
+      new THREE.BoxGeometry(4.8, 0.62, 0.12),
+      darkMat,
+    );
+    bulwark.position.set(6, 12.4, side * 5.22);
+    bridgeDetails.add(bulwark);
+    for (let x = 4.1; x <= 7.9; x += 0.95) {
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.035, 0.62, 5),
+        darkMat,
+      );
+      post.position.set(x, 12.7, side * 5.18);
+      bridgeDetails.add(post);
+    }
+    addStrut(
+      bridgeDetails,
+      new THREE.Vector3(4.2, 11.65, side * 3.55),
+      new THREE.Vector3(4.2, 12, side * 5),
+      0.07,
+      darkMat,
+    );
+    addStrut(
+      bridgeDetails,
+      new THREE.Vector3(7.8, 11.65, side * 3.55),
+      new THREE.Vector3(7.8, 12, side * 5),
+      0.07,
+      darkMat,
+    );
+    const pelorus = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.3, 0.55, 8),
+      darkMat,
+    );
+    pelorus.position.set(7, 12.45, side * 4.45);
+    bridgeDetails.add(pelorus);
+  }
+  for (const side of [-1, 1])
+    for (let x = 1.5; x <= 6.5; x += 1.25) {
+      const vent = new THREE.Mesh(
+        new THREE.BoxGeometry(0.72, 0.55, 0.08),
+        darkMat,
+      );
+      vent.position.set(x, 7.8, side * 3.29);
+      bridgeDetails.add(vent);
+    }
+  g.add(bridgeDetails);
+  const aftHouse = new THREE.Mesh(
+    createSlopedBoxGeometry(8, 3.2, 6, 0.45),
+    deckMat,
+  );
+  aftHouse.position.set(-7, 8.2, 0);
+  g.add(aftHouse);
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Mesh(
+      createSlopedBoxGeometry(5.4, 1.6, 1.25, 0.7),
+      deckMat,
+    );
+    shoulder.position.set(-10.5, 7.2, side * 3.2);
+    shoulder.rotation.y = side * 0.04;
+    g.add(shoulder);
+  }
+  const stack = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.1, 1.35, 5, 10),
+    darkMat,
+  );
+  stack.position.set(-4, 12.3, 0);
+  g.add(stack);
+  const gunMount = new THREE.Group();
+  gunMount.position.set(13, 7, -4.55);
+  gunMount.rotation.y = -0.08;
+  const turret = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.45, 1.8, 1.25, 10),
+    deckMat,
+  );
+  gunMount.add(turret);
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.25, 6, 8),
+    darkMat,
+  );
+  barrel.rotation.z = Math.PI / 2;
+  barrel.position.set(3, 1, 0);
+  gunMount.add(barrel);
+  const portGun = gunMount.clone(true);
+  portGun.position.z = 4.55;
+  portGun.rotation.y = 0.08;
+  g.add(gunMount, portGun);
+  const aftDirector = new THREE.Group();
+  aftDirector.position.set(-7, 12, 0);
+  aftDirector.add(
+    new THREE.Mesh(
+      new THREE.SphereGeometry(1.3, 12, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x9ba9a6,
+        metalness: 0.5,
+        roughness: 0.45,
+      }),
+    ),
+  );
+  g.add(aftDirector);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 42, 6),
+      new THREE.MeshStandardMaterial({
+        color: 0xa5afaa,
+        metalness: 0.5,
+        roughness: 0.5,
+      }),
+    );
+    rail.rotation.z = Math.PI / 2;
+    rail.position.set(-1, 7, side * 4.15);
+    g.add(rail);
+    for (let x = -19; x <= 18; x += 4) {
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.055, 0.055, 1.2, 6),
+        darkMat,
+      );
+      post.position.set(x, 6.5, side * 4.15);
+      g.add(post);
+    }
+  }
+  for (const side of [-1, 1])
+    for (const x of [-5, -1]) {
+      const raft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.45, 2.2, 10),
+        new THREE.MeshStandardMaterial({ color: 0xe6ded0, roughness: 0.65 }),
+      );
+      raft.rotation.x = Math.PI / 2;
+      raft.position.set(x, 8.1, side * 3.8);
+      g.add(raft);
+    }
+  for (const x of [-5, 5]) {
+    const antenna = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 7, 6),
+      darkMat,
+    );
+    antenna.position.set(x, 17, 0);
+    antenna.rotation.z = x < 0 ? -0.18 : 0.18;
+    g.add(antenna);
+  }
+  const navigationLights: THREE.PointLight[] = [],
+    lightBulbs: THREE.Mesh[] = [];
+  const numberMat = new THREE.MeshBasicMaterial({
+    map: createHullNumberTexture(),
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  for (const side of [-1, 1]) {
+    const number = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), numberMat);
+    number.position.set(17.5, 3.7, side * 4.02);
+    number.rotation.y = side > 0 ? 0 : Math.PI;
+    g.add(number);
+    const lampColor = side > 0 ? 0x36ff78 : 0xff3a32,
+      nav = new THREE.PointLight(lampColor, 3, 18),
+      bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 8, 6),
+        new THREE.MeshBasicMaterial({ color: lampColor }),
+      );
+    nav.position.set(6, 14, side * 3.7);
+    bulb.position.copy(nav.position);
+    navigationLights.push(nav);
+    lightBulbs.push(bulb);
+    g.add(nav, bulb);
+    for (const x of [-17, -9, 1, 12]) {
+      const port = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 7, 5),
+        new THREE.MeshBasicMaterial({ color: 0xffd99a }),
+      );
+      port.position.set(x, 7.05, side * 4.05);
+      lightBulbs.push(port);
+      g.add(port);
+    }
+  }
+  for (const [x, y, color] of [
+    [1, 29, 0xf4fff1],
+    [-7, 24, 0xf4fff1],
+    [-27, 8, 0xf4fff1],
+  ] as const) {
+    const light = new THREE.PointLight(color, 2.2, 22),
+      bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 8, 6),
+        new THREE.MeshBasicMaterial({ color }),
+      );
+    light.position.set(x, y, 0);
+    bulb.position.copy(light.position);
+    navigationLights.push(light);
+    lightBulbs.push(bulb);
+    g.add(light, bulb);
+  }
+  for (const side of [-1, 1]) {
+    const anchor = new THREE.Mesh(
+      new THREE.TorusGeometry(0.45, 0.12, 8, 16),
+      darkMat,
+    );
+    anchor.position.set(21, 3.2, side * 3.1);
+    anchor.rotation.x = Math.PI / 2;
+    g.add(anchor);
+  }
+  for (const x of [-15, -10, 10]) {
+    const hatch = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 0.16, 1.4),
+      darkMat,
+    );
+    hatch.position.set(x, 6.3, 0);
+    g.add(hatch);
+  }
+  for (const x of [-14, -8, 0, 8, 14]) {
+    const bollard = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.16, 0.8, 8),
+      darkMat,
+    );
+    bollard.position.set(x, 6.5, 4);
+    g.add(bollard);
+  }
+  // The forward Mk 10 stows facing aft; the loading housing remains on the bow side.
+  const forwardLauncher = launcher.clone(true);
+  forwardLauncher.position.set(23, 6.18, 0);
+  forwardLauncher.rotation.y = Math.PI;
+  forwardLauncher.scale.setScalar(0.88);
+  forwardLauncher.userData.arms = [];
+  forwardLauncher.traverse((o) => {
+    if (o.name === "launcherArm") forwardLauncher.userData.arms.push(o);
+  });
+  g.add(forwardLauncher);
+  const safetyMat = new THREE.MeshStandardMaterial({
+    color: 0xd5b64e,
+    metalness: 0.2,
+    roughness: 0.65,
+  });
+  for (const [x, length] of [
+    [-17.4, 3.8],
+    [17.7, 3.35],
+  ] as const) {
+    const hatch = new THREE.Mesh(
+      new THREE.BoxGeometry(length, 0.09, 3.9),
+      darkMat,
+    );
+    hatch.position.set(x, 6.16, 0);
+    g.add(hatch);
+    for (const side of [-1, 1]) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(length + 0.45, 0.035, 0.09),
+        safetyMat,
+      );
+      stripe.position.set(x, 6.23, side * 2.18);
+      g.add(stripe);
+    }
+    for (const end of [-1, 1]) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.09, 0.035, 4.45),
+        safetyMat,
+      );
+      stripe.position.set(x + (end * (length + 0.45)) / 2, 6.23, 0);
+      g.add(stripe);
+    }
+  }
+  const aftMast = new THREE.Group();
+  aftMast.position.set(-7, 12, 0);
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.22, 12, 7),
+      darkMat,
+    );
+    leg.position.set(0, 5, side * 1.55);
+    leg.rotation.x = side * 0.18;
+    aftMast.add(leg);
+  }
+  for (let y = 1; y <= 10; y += 2) {
+    const brace = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.18, 3.2),
+      darkMat,
+    );
+    brace.position.y = y;
+    aftMast.add(brace);
+  }
+  const sps49 = new THREE.Group(),
+    antennaMat = new THREE.MeshStandardMaterial({
+      color: 0xaab8b3,
+      metalness: 0.62,
+      roughness: 0.32,
+    });
+  sps49.position.y = 11;
+  const antennaFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(9, 0.18, 0.18),
+    antennaMat,
+  );
+  sps49.add(antennaFrame);
+  for (let x = -4; x <= 4; x += 1) {
+    const vertical = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 3, 0.08),
+      antennaMat,
+    );
+    vertical.position.set(x, 0, 0);
+    sps49.add(vertical);
+  }
+  for (const y of [-1.5, 0, 1.5]) {
+    const horizontal = new THREE.Mesh(
+      new THREE.BoxGeometry(9, 0.06, 0.08),
+      antennaMat,
+    );
+    horizontal.position.y = y;
+    sps49.add(horizontal);
+  }
+  const antennaFeed = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 2.6, 6),
+    darkMat,
+  );
+  antennaFeed.rotation.x = Math.PI / 2;
+  antennaFeed.position.z = 1.4;
+  sps49.add(antennaFeed);
+  aftMast.add(sps49);
+  g.add(aftMast);
+  const directors: THREE.Group[] = [];
+  for (const [x, z, heading] of [
+    [9, -3.4, -0.38],
+    [-8, 3.4, 2.72],
+  ] as const) {
+    const director = new THREE.Group();
+    director.position.set(x, 13, z);
+    director.rotation.y = heading;
+    director.userData.stowHeading = heading;
+    const pedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.75, 1.05, 1.4, 12),
+      darkMat,
+    );
+    director.add(pedestal);
+    const yoke = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 1.45, 2.15),
+      darkMat,
+    );
+    yoke.position.y = 0.78;
+    director.add(yoke);
+    const elevationPivot = new THREE.Group();
+    elevationPivot.position.set(0, 0.82, 0);
+    director.add(elevationPivot);
+    const dishBack = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.48, 1.22, 0.34, 18),
+      darkMat,
+    );
+    dishBack.rotation.z = Math.PI / 2;
+    dishBack.position.x = 0.82;
+    elevationPivot.add(dishBack);
+    const dish = new THREE.Mesh(
+      new THREE.SphereGeometry(1.55, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.48),
+      new THREE.MeshStandardMaterial({
+        color: 0xaab7b2,
+        metalness: 0.45,
+        roughness: 0.38,
+        side: THREE.DoubleSide,
+      }),
+    );
+    dish.rotation.z = -Math.PI / 2;
+    dish.position.x = 1.05;
+    elevationPivot.add(dish);
+    const horn = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.16, 1.9, 8),
+      darkMat,
+    );
+    horn.rotation.z = Math.PI / 2;
+    horn.position.x = 2;
+    elevationPivot.add(horn);
+    const feedTip = new THREE.Object3D();
+    feedTip.position.x = 3;
+    elevationPivot.add(feedTip);
+    director.userData.elevationPivot = elevationPivot;
+    director.userData.feedTip = feedTip;
+    directors.push(director);
+    g.add(director);
+  }
+  const highDetail = new THREE.Group();
+  for (const [x, z] of [
+    [-1, -3.7],
+    [-1, 3.7],
+    [6, -3.7],
+    [6, 3.7],
+  ] as const) {
+    const canister = new THREE.Mesh(
+      new THREE.BoxGeometry(4.6, 0.85, 1.05),
+      new THREE.MeshStandardMaterial({
+        color: 0x6d7774,
+        metalness: 0.52,
+        roughness: 0.48,
+      }),
+    );
+    canister.position.set(x, 7.15, z);
+    canister.rotation.y = z > 0 ? 0.12 : -0.12;
+    highDetail.add(canister);
+  }
+  for (const [x, z] of [
+    [-10, -4.1],
+    [-10, 4.1],
+  ] as const) {
+    const boat = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.62, 3.4, 4, 10),
+      new THREE.MeshStandardMaterial({ color: 0xc4c1ac, roughness: 0.68 }),
+    );
+    boat.rotation.z = Math.PI / 2;
+    boat.position.set(x, 9, z);
+    highDetail.add(boat);
+  }
+  for (const [x, z] of [
+    [-14, 0],
+    [13, 0],
+  ] as const) {
+    const ciws = new THREE.Group();
+    ciws.position.set(x, 7.4, z);
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.8, 1.05, 0.8, 12),
+      deckMat,
+    );
+    ciws.add(base);
+    const turret = new THREE.Mesh(
+      new THREE.BoxGeometry(1.15, 1.2, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0xd2d7cf,
+        metalness: 0.35,
+        roughness: 0.48,
+      }),
+    );
+    turret.position.y = 1;
+    ciws.add(turret);
+    const elevationPivot = new THREE.Group();
+    elevationPivot.position.set(0, 1.18, 0);
+    for (let barrelIndex = -1; barrelIndex <= 1; barrelIndex++) {
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 2.4, 6),
+        darkMat,
+      );
+      barrel.rotation.z = Math.PI / 2;
+      barrel.position.set(1.45, 0, barrelIndex * 0.13);
+      elevationPivot.add(barrel);
+    }
+    const radome = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 10, 7),
+      new THREE.MeshStandardMaterial({ color: 0xe0e3dc, roughness: 0.4 }),
+    );
+    radome.position.set(-0.2, 0.6, 0);
+    ciws.add(radome);
+    ciws.add(elevationPivot);
+    ciws.userData.elevationPivot = elevationPivot;
+    highDetail.add(ciws);
+  }
+  for (const side of [-1, 1])
+    for (let x = -20; x <= 22; x += 3) {
+      const stanchion = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.035, 0.7, 5),
+        darkMat,
+      );
+      stanchion.position.set(x, 6.75, side * 4.18);
+      highDetail.add(stanchion);
+    }
+  const breakwater = new THREE.Mesh(
+    createSlopedBoxGeometry(0.7, 1.2, 7.2, 0.18),
+    darkMat,
+  );
+  breakwater.position.set(18.5, 6.75, 0);
+  breakwater.rotation.z = -0.18;
+  highDetail.add(breakwater);
+  for (const side of [-1, 1])
+    for (const x of [-18, -11, 2, 11]) {
+      const reel = new THREE.Mesh(
+        new THREE.TorusGeometry(0.48, 0.1, 7, 14),
+        darkMat,
+      );
+      reel.rotation.y = Math.PI / 2;
+      reel.position.set(x, 6.65, side * 2.8);
+      highDetail.add(reel);
+    }
+  for (const x of [-16, -6, 4, 14]) {
+    const vent = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.3, 0.6, 8),
+      darkMat,
+    );
+    vent.position.set(x, 6.55, -2.4);
+    highDetail.add(vent);
+  }
+  const smokePuffs: THREE.Mesh[] = [];
+  for (let i = 0; i < 9; i++) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.7, 7, 5),
+      new THREE.MeshBasicMaterial({
+        color: 0x526064,
+        transparent: true,
+        opacity: 0.12,
+        depthWrite: false,
+      }),
+    );
+    smokePuffs.push(puff);
+    highDetail.add(puff);
+  }
+  g.add(highDetail);
+  const srbocLaunchers = new THREE.Group();
+  for (const side of [-1, 1]) {
+    const station = new THREE.Group();
+    station.position.set(0, 7.25, side * 4.05);
+    station.rotation.x = side * 0.42;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 1.25), darkMat);
+    station.add(base);
+    for (let row = 0; row < 2; row++)
+      for (let column = 0; column < 3; column++) {
+        const tube = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.16, 0.19, 1.8, 8),
+          new THREE.MeshStandardMaterial({
+            color: 0x687473,
+            metalness: 0.62,
+            roughness: 0.4,
+          }),
+        );
+        tube.rotation.z = Math.PI / 2;
+        tube.position.set(0.35, row * 0.42 - 0.2, column * 0.38 - 0.38);
+        station.add(tube);
+      }
+    srbocLaunchers.add(station);
+  }
+  highDetail.add(srbocLaunchers);
+  const ewPulse = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(12 + i * 8, 0.08, 6, 72),
+      new THREE.MeshBasicMaterial({
+        color: 0x66e5dc,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 18;
+    ewPulse.add(ring);
+  }
+  for (const side of [-1, 1]) {
+    const ewAntenna = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.18, 2.8, 8),
+      darkMat,
+    );
+    ewAntenna.position.set(2.5, 16.2, side * 3.25);
+    ewAntenna.rotation.x = side * 0.28;
+    g.add(ewAntenna);
+  }
+  ewPulse.visible = false;
+  g.add(ewPulse);
+  highDetail.children
+    .filter(
+      (o) =>
+        Math.abs(o.position.y - 7.4) < 0.01 && Math.abs(o.position.z) < 0.01,
+    )
+    .forEach((o) => {
+      o.name = o.position.x > 0 ? "ciwsFore" : "ciwsAft";
+      o.rotation.y = o.position.x > 0 ? 0 : Math.PI;
+    });
+  const flagGeometry = new THREE.PlaneGeometry(3.8, 2, 12, 4);
+  flagGeometry.translate(-1.9, 0, 0);
+  const flag = new THREE.Mesh(
+    flagGeometry,
+    new THREE.MeshStandardMaterial({
+      map: createUSFlagTexture(),
+      side: THREE.DoubleSide,
+      roughness: 0.72,
+    }),
+  );
+  flag.position.set(-7, 22, 0);
+  highDetail.add(flag);
+  for (const x of [-21, 21]) {
+    const safetyRing = new THREE.Mesh(
+      new THREE.TorusGeometry(3.55, 0.055, 5, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xe1c46d,
+        transparent: true,
+        opacity: 0.28,
+        depthWrite: false,
+      }),
+    );
+    safetyRing.rotation.x = Math.PI / 2;
+    safetyRing.position.set(x, 6.24, 0);
+    highDetail.add(safetyRing);
+  }
+  const mediumDetail = new THREE.Group();
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(42, 0.08, 0.08),
+      new THREE.MeshBasicMaterial({ color: 0x81908d }),
+    );
+    rail.position.set(-1, 6.9, side * 4.18);
+    mediumDetail.add(rail);
+  }
+  for (const x of [-18, -8, 3, 14]) {
+    const deckBox = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.45, 1.1),
+      darkMat,
+    );
+    deckBox.position.set(x, 6.45, 2.7);
+    mediumDetail.add(deckBox);
+  }
+  g.add(mediumDetail);
+  const lowDetail = new THREE.Group();
+  const lowMast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.5, 15, 6),
+    darkMat,
+  );
+  lowMast.position.set(0, 18, 0);
+  const lowArray = new THREE.Mesh(
+    new THREE.BoxGeometry(5.5, 3.6, 0.28),
+    new THREE.MeshBasicMaterial({ color: 0x82928f }),
+  );
+  lowArray.position.set(0, 25, 0);
+  const lowStack = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9, 1.2, 5, 7),
+    darkMat,
+  );
+  lowStack.position.set(-4, 12, 0);
+  lowDetail.add(lowMast, lowArray, lowStack);
+  lowDetail.visible = false;
+  g.add(lowDetail);
+  g.userData = {
+    radar,
+    sps49,
+    fireControl,
+    launcher,
+    forwardLauncher,
+    directors,
+    highDetail,
+    mediumDetail,
+    lowDetail,
+    smokePuffs,
+    flag,
+    hullMat,
+    ewPulse,
+    navigationLights,
+    lightBulbs,
+    detail: [
+      mast,
+      radar,
+      fireControl,
+      launcher,
+      forwardLauncher,
+      windows,
+      aftMast,
+      gunMount,
+      portGun,
+      aftDirector,
+      ...directors,
+    ],
+  };
+  return g;
+}
+const { ships: SHIP_CATALOG, byId: SHIP_DEFINITIONS } =
+  createShipCatalog(buildLongBeach);
+let activeShip = SHIP_DEFINITIONS.get("long-beach")!,
+  defender = activeShip.build();
+if (activeShip.fixedSensorFaces)
+  defender.userData.fixedSensorFaceHealth = createFaceHealth(
+    activeShip.fixedSensorFaces,
+  );
+defender.position.set(0, 0, 40);
+defender.traverse((o) => {
+  if (o instanceof THREE.Mesh) {
+    o.castShadow = true;
+    o.receiveShadow = true;
+  }
+});
+scene.add(defender);
+function makeMk10State(
+  name: "AFT" | "FORWARD",
+  model: THREE.Group,
+  stowAzimuth: number,
+): Mk10LauncherState {
+  const rounds = (model.userData.arms as THREE.Group[]).map(
+    (arm) => arm.getObjectByName("readyRound") as THREE.Group,
+  );
+  rounds.forEach((round) => {
+    round.userData.homePosition = round.position.clone();
+    round.userData.homeScale = round.scale.clone();
+  });
+  return {
+    name,
+    model,
+    stowAzimuth,
+    phase: "ready",
+    phaseSince: 0,
+    pending: null,
+    azimuth: stowAzimuth,
+    elevation: 0,
+    railIndex: 0,
+    reloadRail: 0,
+    rounds,
+  };
+}
+let mk10Launchers: Mk10LauncherState[] = [
+    makeMk10State("AFT", defender.userData.launcher, Math.PI),
+    makeMk10State("FORWARD", defender.userData.forwardLauncher, Math.PI),
+  ],
+  vlsCells: VlsCellState[] = [];
+const vlsBanks: Record<"FWD" | "AFT", VlsBankState> = {
+  FWD: {
+    lastLaunchAt: -Infinity,
+    lastCellIndex: -1,
+    minimumObservedGap: Infinity,
+    launchHistory: [],
+    damageCenters: [],
+    trappedRounds: 0,
+  },
+  AFT: {
+    lastLaunchAt: -Infinity,
+    lastCellIndex: -1,
+    minimumObservedGap: Infinity,
+    launchHistory: [],
+    damageCenters: [],
+    trappedRounds: 0,
+  },
+};
+const subsystemList: SubsystemState[] = [
+  {
+    id: "sps48",
+    label: activeShip.subsystemLabels.sps48,
+    health: 100,
+    position: activeShip.subsystemPositions.sps48.clone(),
+  },
+  {
+    id: "sps49",
+    label: activeShip.subsystemLabels.sps49,
+    health: 100,
+    position: activeShip.subsystemPositions.sps49.clone(),
+  },
+  {
+    id: "spg55",
+    label: activeShip.subsystemLabels.spg55,
+    health: 100,
+    position: activeShip.subsystemPositions.spg55.clone(),
+  },
+  {
+    id: "mk10Aft",
+    label: activeShip.subsystemLabels.mk10Aft,
+    health: 100,
+    position: activeShip.subsystemPositions.mk10Aft.clone(),
+  },
+  {
+    id: "mk10Forward",
+    label: activeShip.subsystemLabels.mk10Forward,
+    health: 100,
+    position: activeShip.subsystemPositions.mk10Forward.clone(),
+  },
+  {
+    id: "ciws",
+    label: activeShip.subsystemLabels.ciws,
+    health: 100,
+    position: activeShip.subsystemPositions.ciws.clone(),
+  },
+  {
+    id: "ecm",
+    label: activeShip.subsystemLabels.ecm,
+    health: 100,
+    position: activeShip.subsystemPositions.ecm.clone(),
+  },
+  {
+    id: "srboc",
+    label: activeShip.subsystemLabels.srboc,
+    health: 100,
+    position: activeShip.subsystemPositions.srboc.clone(),
+  },
+  {
+    id: "propulsion",
+    label: activeShip.subsystemLabels.propulsion,
+    health: 100,
+    position: activeShip.subsystemPositions.propulsion.clone(),
+  },
+];
+const subsystems = Object.fromEntries(
+  subsystemList.map((system) => [system.id, system]),
+) as Record<SubsystemId, SubsystemState>;
+function subsystemHealth(id: SubsystemId) {
+  return subsystems[id].health / 100;
+}
+function fixedSensorFaceHealth() {
+  return defender.userData.fixedSensorFaceHealth as number[] | undefined;
+}
+function fixedSensorAspectHealth(worldBearing: number) {
+  const config = activeShip.fixedSensorFaces,
+    health = fixedSensorFaceHealth();
+  if (!config || !health) return 1;
+  return sensorFaceAspectHealth(
+    config,
+    health,
+    worldBearingToLocal(
+      worldBearing,
+      defender.getWorldQuaternion(new THREE.Quaternion()),
+    ),
+  );
+}
+function damageFixedSensorFace(localBearing: number, amount: number) {
+  const config = activeShip.fixedSensorFaces,
+    health = fixedSensorFaceHealth();
+  if (!config || !health) return -1;
+  const result = damageSensorFace(config, health, localBearing, amount);
+  log(
+    `${config.sensorName} ${result.label} FACE DAMAGE / ${Math.round(result.before * 100)} -> ${Math.round(result.after * 100)}`,
+  );
+  return result.index;
+}
+const wake = new THREE.Group(),
+  wakeLineMat = new THREE.LineBasicMaterial({
+    color: 0xc5eff0,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+for (const side of [-1, 1])
+  for (const offset of [0, 1.2]) {
+    const points = [
+      new THREE.Vector3(0, 0, side * (2.8 + offset * 0.25)),
+      new THREE.Vector3(-14, 0, side * (4.4 + offset)),
+      new THREE.Vector3(-34, 0, side * (8 + offset * 1.6)),
+      new THREE.Vector3(-58, 0, side * (14 + offset * 2)),
+    ];
+    wake.add(
+      new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(points),
+        wakeLineMat,
+      ),
+    );
+  }
+wake.position.set(-28, 0.22, 40);
+scene.add(wake);
+const missiles: Missile[] = [];
+const interceptors: Interceptor[] = [];
+const engagements = new Map<Missile, EngagementState>();
+const illuminators: IlluminatorState[] = [
+  { id: 1, azimuth: 0, target: null, lastTargetId: 0 },
+  { id: 2, azimuth: 0, target: null, lastTargetId: 0 },
+  { id: 3, azimuth: Math.PI, target: null, lastTargetId: 0 },
+  { id: 4, azimuth: Math.PI, target: null, lastTargetId: 0 },
+];
+const combatPicture = new CombatPicture();
+const radarCanvas = document.querySelector("#radar") as HTMLCanvasElement;
+const radarCtx = radarCanvas?.getContext("2d");
+let launcherCycle = 0;
+const lastTrackClasses = new Map<number, string>(),
+  lastAltitudeState = new Map<number, boolean>();
+const explosions: Explosion[] = [];
+const explodedTargets = new Set<Missile>();
+const shipDamageEffects: ShipDamageEffect[] = [];
+const boosterDebris: BoosterDebris[] = [];
+const chaffClouds: ChaffCloud[] = [];
+const srbocRoundsInFlight: SrbocRound[] = [];
+const vlsLaunchEffects: VlsLaunchEffect[] = [];
+let chaffSerial = 0;
+const WORLD_UNITS_PER_KM = 10,
+  RADAR_PIXELS_PER_WORLD_UNIT = 0.14;
+const SHIP_RADAR_RCS = 12;
+function defensiveShotRequirement(missile: Missile, _quality: number) {
+  const state = engagements.get(missile);
+  if (!state) return doctrine === "SINGLE" ? 1 : 2;
+  if (doctrine === "SSLS") {
+    if (state.shots < 2) return 2;
+    if (state.pending > 0) return state.pending;
+    if (elapsed - state.lastResolution < 1.2 || state.shots >= 4) return 0;
+    return 1;
+  }
+  if (
+    doctrine === "SINGLE" &&
+    state.pending === 0 &&
+    elapsed - state.lastResolution < 0.65
+  )
+    return 0;
+  return doctrine === "SINGLE" ? 1 : 2;
+}
+function recordEngagementLaunch(target: Missile) {
+  const state = engagements.get(target) ?? {
+    shots: 0,
+    pending: 0,
+    misses: 0,
+    lastResolution: -Infinity,
+  };
+  state.shots++;
+  state.pending++;
+  engagements.set(target, state);
+}
+function settleEngagement(
+  interceptor: Interceptor,
+  result: "hit" | "miss" | "cancel",
+) {
+  if (interceptor.mesh.userData.engagementSettled) return;
+  interceptor.mesh.userData.engagementSettled = true;
+  const state = engagements.get(interceptor.target);
+  if (!state) return;
+  state.pending = Math.max(0, state.pending - 1);
+  if (result === "miss") state.misses++;
+  state.lastResolution = elapsed;
+  if (
+    doctrine === "SSLS" &&
+    result === "miss" &&
+    state.shots >= 2 &&
+    state.pending === 0 &&
+    interceptor.target.phase !== "destroyed"
+  )
+    log(
+      `DOCTRINE LOOK / TARGET ${missiles.indexOf(interceptor.target) + 1} / ${state.misses} MISS`,
+    );
+}
+function missileThreatScore(missile: Missile, quality: number) {
+  const range = missile.mesh.position.distanceTo(defender.position),
+    tti = range / Math.max(1, missile.velocity.length());
+  return (
+    Math.max(0, 120 - tti) * 2 +
+    (missile.phase === "terminal"
+      ? 90
+      : missile.phase === "midcourse"
+        ? 35
+        : 0) +
+    (missile.kind === "Kh-22" ? 45 : missile.kind === "P-700" ? 18 : 0) +
+    quality * 12
+  );
+}
+function createEnemyMissile(kind: EnemyType) {
+  const g = new THREE.Group(),
+    isGranite = kind === "P-700",
+    isKh22 = kind === "Kh-22",
+    length = isKh22 ? 11 : isGranite ? 9.6 : 8.8,
+    radius = isGranite ? 1.05 : isKh22 ? 0.72 : 0.86;
+  const skin = new THREE.MeshStandardMaterial({
+    color: isKh22 ? 0xb7b9ad : isGranite ? 0xa9553d : 0xb96245,
+    metalness: 0.58,
+    roughness: 0.4,
+  });
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x242b2c,
+    metalness: 0.55,
+    roughness: 0.5,
+  });
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.9, radius, length, 14),
+    skin,
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const forwardBand = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.94, radius * 0.94, 0.42, 14),
+    new THREE.MeshStandardMaterial({
+      color: isKh22 ? 0xd8d9cf : 0x373f40,
+      metalness: 0.65,
+      roughness: 0.35,
+    }),
+  );
+  forwardBand.rotation.x = Math.PI / 2;
+  forwardBand.position.z = -length * 0.28;
+  g.add(forwardBand);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(radius * 0.9, isKh22 ? 2.8 : 2.1, 14),
+    skin,
+  );
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -length * 0.5 - 1;
+  g.add(nose);
+  const tail = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.72, radius, 1.6, 14),
+    dark,
+  );
+  tail.rotation.x = Math.PI / 2;
+  tail.position.z = length * 0.5 + 0.6;
+  g.add(tail);
+  const wingSpan = isKh22 ? 4.8 : isGranite ? 5.6 : 5.1,
+    wingChord = isKh22 ? 3.4 : 2.8;
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 0);
+  wingShape.lineTo(wingSpan, wingChord * 0.7);
+  wingShape.lineTo(wingSpan * 0.78, -wingChord * 0.45);
+  wingShape.lineTo(0, -wingChord * 0.7);
+  wingShape.closePath();
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape), skin);
+    wing.rotation.x = Math.PI / 2;
+    wing.rotation.z = side < 0 ? Math.PI : 0;
+    wing.position.set(side * radius * 0.45, 0, isKh22 ? 0.5 : 1);
+    g.add(wing);
+  }
+  for (const side of [-1, 1]) {
+    const fin = new THREE.Mesh(
+      new THREE.BoxGeometry(isKh22 ? 0.13 : 0.18, isKh22 ? 2.2 : 1.7, 2.5),
+      dark,
+    );
+    fin.position.set(side * (radius + 0.35), 0, length * 0.35);
+    fin.rotation.z = side * 0.18;
+    g.add(fin);
+  }
+  if (isGranite) {
+    const intake = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.58, 3, 10),
+      dark,
+    );
+    intake.rotation.x = Math.PI / 2;
+    intake.position.set(0, -radius * 0.85, 1);
+    g.add(intake);
+  }
+  if (kind === "P-500") {
+    for (const side of [-1, 1]) {
+      const intakeLip = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.55, 2.6),
+        dark,
+      );
+      intakeLip.position.set(side * 0.78, -0.68, 0.9);
+      intakeLip.rotation.z = side * 0.16;
+      g.add(intakeLip);
+    }
+  }
+  if (isKh22) {
+    const dorsal = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.8, 4.5), skin);
+    dorsal.position.set(0, 1.15, 1.5);
+    dorsal.rotation.x = 0.08;
+    g.add(dorsal);
+    const belly = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 3.8), dark);
+    belly.position.set(0, -0.78, 1.1);
+    g.add(belly);
+  }
+  const exhaust = new THREE.Mesh(
+    new THREE.ConeGeometry(radius * 0.5, isKh22 ? 6 : 5, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: isKh22 ? 0xffd37a : 0xff7138,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  exhaust.rotation.x = -Math.PI / 2;
+  exhaust.position.z = length * 0.5 + 3.4;
+  g.add(exhaust);
+  const hotCore = new THREE.Mesh(
+    new THREE.ConeGeometry(radius * 0.18, 3.2, 10, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff2c0,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  hotCore.rotation.x = -Math.PI / 2;
+  hotCore.position.z = length * 0.5 + 2.4;
+  g.add(hotCore);
+  const glow = new THREE.PointLight(0xff642d, isKh22 ? 7 : 5, isKh22 ? 35 : 28);
+  glow.position.z = length * 0.5 + 2;
+  g.add(glow);
+  const seaMist = new THREE.Mesh(
+    new THREE.ConeGeometry(
+      isGranite ? 1.8 : 1.45,
+      isGranite ? 11 : 9,
+      12,
+      1,
+      true,
+    ),
+    new THREE.MeshBasicMaterial({
+      color: 0xbce8ec,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seaMist.rotation.x = -Math.PI / 2;
+  seaMist.position.z = length * 0.5 + 7;
+  seaMist.visible = false;
+  g.add(seaMist);
+  const shockCone = new THREE.Mesh(
+    new THREE.ConeGeometry(2.1, 7, 18, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xe7f4f2,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  shockCone.rotation.x = -Math.PI / 2;
+  shockCone.position.z = -length * 0.16;
+  shockCone.visible = false;
+  g.add(shockCone);
+  const seekerFov = new THREE.Mesh(
+    new THREE.ConeGeometry(isKh22 ? 8 : 10, isKh22 ? 30 : 36, 24, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff6554,
+      transparent: true,
+      opacity: 0.07,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seekerFov.rotation.x = -Math.PI / 2;
+  seekerFov.position.z = -length * 0.5 - (isKh22 ? 16 : 19);
+  seekerFov.visible = false;
+  g.add(seekerFov);
+  g.userData.exhaust = exhaust;
+  g.userData.hotCore = hotCore;
+  g.userData.seaMist = seaMist;
+  g.userData.shockCone = shockCone;
+  g.userData.seekerFov = seekerFov;
+  return g;
+}
+function addMissile(
+  pos: THREE.Vector3,
+  kind: EnemyType = "P-500",
+  launchAt = 0,
+) {
+  const visual =
+      kind === "P-700"
+        ? { rcs: 0.7, scale: 1.05 }
+        : {
+            rcs: kind === "Kh-22" ? 1.1 : 0.42,
+            scale: kind === "Kh-22" ? 0.92 : 0.96,
+          },
+    profile = incomingProfiles[kind],
+    ordinal = missiles.length,
+    aimOffset = new THREE.Vector3(
+      Math.sin((ordinal + 1) * 2.399) * 2.8,
+      0,
+      Math.cos((ordinal + 1) * 1.73) * 1.2,
+    ),
+    g = createEnemyMissile(kind);
+  g.position.copy(pos);
+  g.scale.setScalar(visual.scale);
+  g.visible = launchAt <= 0;
+  const selection = new THREE.Mesh(
+    new THREE.TorusGeometry(kind === "P-700" ? 4.8 : 4.2, 0.12, 8, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd45a,
+      transparent: true,
+      opacity: 0.9,
+    }),
+  );
+  selection.rotation.x = Math.PI / 2;
+  selection.visible = false;
+  g.add(selection);
+  g.userData.selection = selection;
+  const history = [pos.clone()],
+    path = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(history),
+      new THREE.LineBasicMaterial({
+        color: kind === "Kh-22" ? 0xffb05a : 0xe25a43,
+        transparent: true,
+        opacity: 0.34,
+        blending: THREE.AdditiveBlending,
+      }),
+    ),
+    seekerLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([pos, pos]),
+      new THREE.LineBasicMaterial({
+        color: 0xff6a55,
+        transparent: true,
+        opacity: 0.46,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+  path.visible = g.visible;
+  seekerLine.visible = false;
+  g.userData.seekerLine = seekerLine;
+  scene.add(g, path, seekerLine);
+  const initialDirection = defender.position
+    .clone()
+    .sub(pos)
+    .setY(0)
+    .normalize();
+  missiles.push({
+    mesh: g,
+    velocity: initialDirection.multiplyScalar(profile.cruiseSpeed),
+    phase: "inbound",
+    age: 0,
+    history,
+    path,
+    kind,
+    speedFactor: profile.cruiseSpeed,
+    rcs: visual.rcs,
+    launchAt,
+    aimOffset,
+    bank: 0,
+  });
+}
+function launchInterceptor(
+  target: Missile,
+  weapon: WeaponType,
+  launcherLabel: string,
+  launchPoint: string,
+  origin: THREE.Vector3,
+  railDirection: THREE.Vector3,
+) {
+  const g = new THREE.Group(),
+    visual = new THREE.Group(),
+    er = weapon === "SM-2ER",
+    sm2 = weapon === "SM-2MR" || er,
+    missileMat = new THREE.MeshStandardMaterial({
+      color: sm2 ? 0xf0eee4 : 0xd9d7c7,
+      metalness: 0.7,
+      roughness: 0.3,
+    });
+  g.add(visual);
+  visual.rotation.x = Math.PI / 2;
+  visual.scale.setScalar(0.58);
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      sm2 ? 0.42 : 0.55,
+      sm2 ? 0.48 : 0.62,
+      sm2 ? 5.6 : 6.4,
+      12,
+    ),
+    missileMat,
+  );
+  body.rotation.x = Math.PI / 2;
+  visual.add(body);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(sm2 ? 0.42 : 0.55, sm2 ? 1.7 : 2.1, 12),
+    missileMat,
+  );
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -(sm2 ? 3.65 : 4.25);
+  visual.add(nose);
+  const booster = new THREE.Group(),
+    boosterBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        sm2 ? 0.48 : 0.62,
+        sm2 ? 0.55 : 0.7,
+        sm2 ? 2.2 : 2.8,
+        12,
+      ),
+      new THREE.MeshStandardMaterial({
+        color: 0xb9bcb4,
+        metalness: 0.55,
+        roughness: 0.42,
+      }),
+    );
+  boosterBody.rotation.x = Math.PI / 2;
+  boosterBody.position.z = sm2 ? 3.7 : 4.5;
+  booster.add(boosterBody);
+  for (const side of [-1, 1])
+    for (const axis of ["x", "y"] as const) {
+      const fin = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          axis === "x" ? 1.8 : 0.12,
+          axis === "y" ? 1.8 : 0.12,
+          1.25,
+        ),
+        missileMat,
+      );
+      fin.position[axis] = side * (sm2 ? 0.82 : 1.05);
+      fin.position.z = sm2 ? 4.1 : 4.9;
+      booster.add(fin);
+    }
+  g.add(booster);
+  g.userData.booster = booster;
+  const flame = new THREE.PointLight(sm2 ? 0x8fdfff : 0x6cdcff, 7, 28);
+  flame.position.z = sm2 ? 5.1 : 6;
+  g.add(flame);
+  const trail = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 4),
+      new THREE.Vector3(0, 0, 16),
+    ]),
+    new THREE.LineBasicMaterial({
+      color: 0x8fe9ff,
+      transparent: true,
+      opacity: 0.8,
+    }),
+  );
+  g.add(trail);
+  const seeker = new THREE.Mesh(
+    new THREE.ConeGeometry(sm2 ? 5 : 7, sm2 ? 22 : 30, 20, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0x65e4ff,
+      transparent: true,
+      opacity: 0.08,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seeker.rotation.x = -Math.PI / 2;
+  seeker.position.z = -15;
+  seeker.visible = false;
+  g.add(seeker);
+  g.userData.seeker = seeker;
+  visual.add(booster, flame, trail, seeker);
+  if (er) {
+    visual.scale.set(0.63, 0.63, 0.72);
+    const erBand = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.51, 0.51, 0.42, 12),
+      new THREE.MeshStandardMaterial({
+        color: 0xd39a43,
+        metalness: 0.52,
+        roughness: 0.38,
+      }),
+    );
+    erBand.rotation.x = Math.PI / 2;
+    erBand.position.z = 1.6;
+    visual.add(erBand);
+  }
+  g.position.copy(origin);
+  setMissileAttitude(g, railDirection, "+Y", 0);
+  const illuminationBeam = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+    ]),
+    new THREE.LineBasicMaterial({
+      color: 0xffd66b,
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  illuminationBeam.visible = false;
+  const history = [g.position.clone()],
+    guidancePath = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(history),
+      new THREE.LineBasicMaterial({
+        color: sm2 ? 0x9deaff : 0x71d6ff,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+      }),
+    ),
+    track = combatPicture.trackForTarget(missiles.indexOf(target) + 1),
+    salvoLeader = interceptors.find(
+      (i) => i.mesh.visible && i.target === target,
+    ),
+    commandPoint = (
+      salvoLeader?.commandPoint ??
+      track?.position ??
+      target.mesh.position
+    ).clone(),
+    commandVelocity = (
+      salvoLeader?.commandVelocity ??
+      track?.velocity ??
+      target.velocity
+    ).clone(),
+    nextDatalink = salvoLeader?.nextDatalink ?? elapsed + 0.35;
+  scene.add(g, illuminationBeam, guidancePath);
+  const interceptor = {
+    mesh: g,
+    target,
+    age: 0,
+    weapon,
+    velocity: railDirection.clone().multiplyScalar(9),
+    distanceTraveled: 0,
+    history,
+    guidancePath,
+    commandPoint,
+    commandVelocity,
+    nextDatalink,
+    datalinkValid: salvoLeader?.datalinkValid ?? !!track,
+    illuminated: false,
+    illuminationBeam,
+  } as Interceptor;
+  interceptors.push(interceptor);
+  recordEngagementLaunch(target);
+  const launchRange =
+    target.mesh.position.distanceTo(defender.position) / WORLD_UNITS_PER_KM;
+  log(
+    `${weapon} ${launcherLabel} LAUNCH / ${launchPoint} / ${launchRange.toFixed(1)} km / TRACK ${Math.round((track?.quality ?? 0) * 100)}% / ${doctrine}`,
+  );
+  return interceptor;
+}
+function changeAmmo(weapon: WeaponType, amount: number) {
+  if (weapon === "RIM-67") ammo += amount;
+  else if (weapon === "SM-2MR") sm2Ammo += amount;
+  else sm2erAmmo += amount;
+  ammoEl.textContent = `RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;
+}
+function pendingLauncherRequests() {
+  return activeShip.launcher.kind === "mk10"
+    ? mk10Launchers
+        .filter((launcher) => launcher.pending)
+        .map((launcher) => launcher.pending!)
+    : vlsCells.filter((cell) => cell.pending).map((cell) => cell.pending!);
+}
+function launcherHealth(launcher: Mk10LauncherState) {
+  return subsystemHealth(launcher.name === "AFT" ? "mk10Aft" : "mk10Forward");
+}
+function vlsCellDistance(a: number, b: number) {
+  return activeShip.launcher.kind === "mk41"
+    ? calculateVlsCellDistance(a, b, activeShip.launcher.columns)
+    : Number.POSITIVE_INFINITY;
+}
+function changeVlsCellAmmo(cell: VlsCellState, amount: number) {
+  if (cell.loadout === "SM-2MR") changeAmmo("SM-2MR", amount);
+  else if (cell.loadout === "SM-2ER") changeAmmo("SM-2ER", amount);
+}
+function disableVlsCell(cell: VlsCellState) {
+  if (
+    cell.phase === "disabled" ||
+    cell.phase === "spent" ||
+    cell.phase === "launching" ||
+    (cell.phase === "closing" && cell.closeTo === "spent")
+  )
+    return false;
+  const bank = vlsBanks[cell.bank],
+    roundLoaded = cell.loadout !== "OTHER";
+  if (cell.phase === "ready") changeVlsCellAmmo(cell, -1);
+  else if (cell.phase === "closing" && cell.closeTo === "ready")
+    changeVlsCellAmmo(cell, -1);
+  if (cell.pending) {
+    cell.pending = null;
+  }
+  if (roundLoaded) bank.trappedRounds++;
+  if (cell.phase === "opening" || cell.phase === "closing") {
+    cell.closeTo = "disabled";
+    cell.phase = "closing";
+    cell.phaseSince = elapsed;
+  } else cell.phase = "disabled";
+  return true;
+}
+function applyVlsBankDamage(bankName: VlsCellState["bank"], health: number) {
+  if (activeShip.launcher.kind !== "mk41") return;
+  const cells = vlsCells.filter((cell) => cell.bank === bankName),
+    bank = vlsBanks[bankName],
+    current = cells.filter(
+      (cell) =>
+        cell.phase === "disabled" ||
+        (cell.phase === "closing" && cell.closeTo === "disabled"),
+    ).length,
+    target = desiredDisabledCells(cells.length, health, activeShip.launcher);
+  if (target <= current) return;
+  if (bank.damageCenters.length === 0 || health > 0.05) {
+    const candidates = cells.filter(
+      (cell) => cell.phase !== "spent" && cell.phase !== "launching",
+    );
+    if (candidates.length)
+      bank.damageCenters.push(
+        candidates[
+          (bank.damageCenters.length * 23 + (bankName === "FWD" ? 7 : 31)) %
+            candidates.length
+        ].index,
+      );
+  }
+  let disabled = current;
+  while (disabled < target) {
+    const candidate = cells
+      .filter(
+        (cell) =>
+          cell.phase !== "disabled" &&
+          cell.phase !== "spent" &&
+          cell.phase !== "launching" &&
+          !(cell.phase === "closing" && cell.closeTo === "spent"),
+      )
+      .sort(
+        (a, b) =>
+          Math.min(
+            ...bank.damageCenters.map((center) =>
+              vlsCellDistance(a.index, center),
+            ),
+          ) -
+            Math.min(
+              ...bank.damageCenters.map((center) =>
+                vlsCellDistance(b.index, center),
+              ),
+            ) || a.index - b.index,
+      )[0];
+    if (!candidate || !disableVlsCell(candidate)) break;
+    disabled++;
+  }
+  log(
+    `MK 41 ${bankName} DAMAGE ISOLATION / ${disabled} CELLS DISABLED / ${bank.trappedRounds} ROUNDS TRAPPED`,
+  );
+}
+function queueInterceptorLaunch(target: Missile, weapon: WeaponType) {
+  const launcherConfig = activeShip.launcher;
+  if (!launcherConfig.compatibleWeapons.includes(weapon)) {
+    log(
+      `LAUNCH INHIBIT / ${weapon} NOT ${launcherConfig.displayName} COMPATIBLE`,
+    );
+    return false;
+  }
+  if (launcherConfig.kind === "mk41") {
+    const desiredBank: VlsCellState["bank"] = launcherCycle % 2 ? "AFT" : "FWD",
+      activeCells = vlsCells.filter(
+        (cell) => cell.phase === "opening" || cell.phase === "launching",
+      );
+    const eligible = (bank: VlsCellState["bank"]) =>
+      vlsCells
+        .filter(
+          (cell) =>
+            cell.bank === bank &&
+            cell.loadout === weapon &&
+            cell.phase === "ready" &&
+            subsystemHealth(bank === "FWD" ? "mk10Forward" : "mk10Aft") >
+              0.05 &&
+            activeCells
+              .filter((active) => active.bank === bank)
+              .every(
+                (active) => vlsCellDistance(active.index, cell.index) > 1,
+              ) &&
+            (elapsed - vlsBanks[bank].lastLaunchAt >=
+              launcherConfig.exhaustClearance ||
+              vlsCellDistance(vlsBanks[bank].lastCellIndex, cell.index) > 1),
+        )
+        .sort(
+          (a, b) =>
+            vlsCellDistance(b.index, vlsBanks[bank].lastCellIndex) -
+            vlsCellDistance(a.index, vlsBanks[bank].lastCellIndex),
+        );
+    const preferred =
+      eligible(desiredBank)[0] ??
+      eligible(desiredBank === "FWD" ? "AFT" : "FWD")[0];
+    if (!preferred) {
+      const loadedReady = vlsCells.some(
+        (cell) => cell.loadout === weapon && cell.phase === "ready",
+      );
+      log(
+        loadedReady
+          ? "LAUNCH INHIBIT / MK 41 DECK SAFETY SEPARATION"
+          : `LAUNCH INHIBIT / MK 41 NO READY ${weapon} CELL`,
+      );
+      return false;
+    }
+    launcherCycle++;
+    preferred.pending = { target, weapon };
+    preferred.closeTo = "ready";
+    preferred.phase = "opening";
+    preferred.phaseSince = elapsed;
+    log(
+      `MK 41 ${preferred.bank} CELL ${String(preferred.index + 1).padStart(2, "0")} / ${preferred.loadout} TASK / TRACK ${missiles.indexOf(target) + 1} / HATCH OPENING`,
+    );
+    return true;
+  }
+  const available = mk10Launchers.filter(
+      (state) => state.phase === "ready" && launcherHealth(state) > 0.05,
+    ),
+    preferred = launcherCycle % mk10Launchers.length,
+    launcher = available.includes(mk10Launchers[preferred])
+      ? mk10Launchers[preferred]
+      : available[0];
+  if (!launcher) {
+    log("LAUNCH INHIBIT / MK 10 UNAVAILABLE OR CYCLING");
+    return false;
+  }
+  launcherCycle = (mk10Launchers.indexOf(launcher) + 1) % mk10Launchers.length;
+  launcher.pending = { target, weapon };
+  launcher.reloadRail = -1;
+  launcher.phase = "slewing";
+  launcher.phaseSince = elapsed;
+  const trackId = missiles.indexOf(target) + 1;
+  log(
+    `MK 10 ${launcher.name} TASK / TRACK ${trackId} / SLEWING / HEALTH ${Math.round(launcherHealth(launcher) * 100)}%`,
+  );
+  return true;
+}
+function moveAngle(current: number, target: number, maxStep: number) {
+  return (
+    current +
+    THREE.MathUtils.clamp(angleDifference(target, current), -maxStep, maxStep)
+  );
+}
+function moveToward(current: number, target: number, maxStep: number) {
+  return (
+    current +
+    Math.sign(target - current) * Math.min(Math.abs(target - current), maxStep)
+  );
+}
+function setLauncherElevation(launcher: Mk10LauncherState, elevation: number) {
+  launcher.elevation = elevation;
+  (launcher.model.userData.arms as THREE.Group[]).forEach(
+    (arm) => (arm.rotation.z = elevation),
+  );
+}
+function updateMk10Launchers(dt: number) {
+  if (activeShip.launcher.kind !== "mk10") return;
+  const config = activeShip.launcher,
+    tolerance = THREE.MathUtils.degToRad(2);
+  for (const launcher of mk10Launchers) {
+    const health = launcherHealth(launcher),
+      azimuthRate =
+        THREE.MathUtils.degToRad(config.azimuthRateDeg) *
+        (0.25 + 0.75 * health),
+      elevationRate =
+        THREE.MathUtils.degToRad(config.elevationRateDeg) *
+        (0.25 + 0.75 * health),
+      request = launcher.pending;
+    if (request && health <= 0.05) {
+      changeAmmo(request.weapon, 1);
+      launcher.pending = null;
+      launcher.reloadRail = -1;
+      launcher.phase = "returning";
+      launcher.phaseSince = elapsed;
+      log(`MK 10 ${launcher.name} CASUALTY / LAUNCH ABORT / AMMO RETURNED`);
+    }
+    if (
+      launcher.pending &&
+      launcher.pending.target.phase === "destroyed" &&
+      launcher.phase === "slewing"
+    ) {
+      changeAmmo(launcher.pending.weapon, 1);
+      launcher.pending = null;
+      launcher.phase = "returning";
+      launcher.phaseSince = elapsed;
+      log(
+        `MK 10 ${launcher.name} TASK CANCEL / TARGET DESTROYED / AMMO RETURNED`,
+      );
+    }
+    if (launcher.phase === "slewing" && launcher.pending) {
+      const trackId = missiles.indexOf(launcher.pending.target) + 1,
+        track = combatPicture.trackForTarget(trackId);
+      if (!track) {
+        if (elapsed - launcher.phaseSince > 4.5) {
+          changeAmmo(launcher.pending.weapon, 1);
+          launcher.pending = null;
+          launcher.phase = "returning";
+          launcher.phaseSince = elapsed;
+          log(
+            `MK 10 ${launcher.name} TASK CANCEL / TRACK LOST / AMMO RETURNED`,
+          );
+        }
+        continue;
+      }
+      const localTarget = defender.worldToLocal(track.position.clone()),
+        relative = localTarget.sub(launcher.model.position),
+        desiredAzimuth = Math.atan2(-relative.z, relative.x),
+        desiredElevation = THREE.MathUtils.clamp(
+          Math.atan2(relative.y, Math.hypot(relative.x, relative.z)),
+          THREE.MathUtils.degToRad(5),
+          THREE.MathUtils.degToRad(70),
+        );
+      launcher.azimuth = moveAngle(
+        launcher.azimuth,
+        desiredAzimuth,
+        azimuthRate * dt,
+      );
+      setLauncherElevation(
+        launcher,
+        moveToward(launcher.elevation, desiredElevation, elevationRate * dt),
+      );
+      launcher.model.rotation.y = launcher.azimuth;
+      if (
+        Math.abs(angleDifference(desiredAzimuth, launcher.azimuth)) <
+          tolerance &&
+        Math.abs(desiredElevation - launcher.elevation) < tolerance
+      ) {
+        const railIndex = launcher.railIndex,
+          round = launcher.rounds[railIndex],
+          origin = new THREE.Vector3(),
+          quaternion = new THREE.Quaternion();
+        round.getWorldPosition(origin);
+        round.getWorldQuaternion(quaternion);
+        const railDirection = new THREE.Vector3(1, 0, 0)
+          .applyQuaternion(quaternion)
+          .normalize();
+        launcher.reloadRail = railIndex;
+        round.visible = false;
+        log(
+          `MK 10 ${launcher.name} ON BEARING / AZ ${Math.round(THREE.MathUtils.radToDeg(launcher.azimuth))} / EL ${Math.round(THREE.MathUtils.radToDeg(launcher.elevation))}`,
+        );
+        launchInterceptor(
+          launcher.pending.target,
+          launcher.pending.weapon,
+          `MK 10 ${launcher.name}`,
+          `RAIL ${railIndex + 1}`,
+          origin,
+          railDirection,
+        );
+        launcher.pending = null;
+        launcher.phase = "firing";
+        launcher.phaseSince = elapsed;
+      }
+    } else if (
+      launcher.phase === "firing" &&
+      elapsed - launcher.phaseSince >= 0.38
+    ) {
+      launcher.phase = "returning";
+      launcher.phaseSince = elapsed;
+      log(`MK 10 ${launcher.name} RETURN TO LOAD`);
+    } else if (launcher.phase === "returning") {
+      launcher.azimuth = moveAngle(
+        launcher.azimuth,
+        launcher.stowAzimuth,
+        azimuthRate * dt,
+      );
+      launcher.model.rotation.y = launcher.azimuth;
+      setLauncherElevation(
+        launcher,
+        moveToward(launcher.elevation, 0, elevationRate * dt),
+      );
+      if (
+        Math.abs(angleDifference(launcher.stowAzimuth, launcher.azimuth)) <
+          tolerance &&
+        launcher.elevation < tolerance
+      ) {
+        launcher.azimuth = launcher.stowAzimuth;
+        launcher.model.rotation.y = launcher.stowAzimuth;
+        setLauncherElevation(launcher, 0);
+        launcher.phaseSince = elapsed;
+        if (launcher.reloadRail < 0) {
+          launcher.phase = "ready";
+          log(`MK 10 ${launcher.name} READY / TASK CANCELLED`);
+          continue;
+        }
+        launcher.phase = "loading";
+        const round = launcher.rounds[launcher.reloadRail],
+          home = round.userData.homePosition as THREE.Vector3;
+        round.position.copy(home).add(new THREE.Vector3(-5.2, -0.12, 0));
+        round.scale
+          .copy(round.userData.homeScale as THREE.Vector3)
+          .multiplyScalar(0.72);
+        round.visible = true;
+        log(`MK 10 ${launcher.name} LOADING / RAIL ${launcher.reloadRail + 1}`);
+      }
+    } else if (launcher.phase === "loading") {
+      if (health <= 0.05) continue;
+      const round = launcher.rounds[launcher.reloadRail],
+        home = round.userData.homePosition as THREE.Vector3,
+        reloadTime = config.reloadSeconds / (0.3 + 0.7 * health),
+        t = THREE.MathUtils.smoothstep(
+          (elapsed - launcher.phaseSince) / reloadTime,
+          0,
+          1,
+        );
+      round.position.lerpVectors(
+        home.clone().add(new THREE.Vector3(-5.2, -0.12, 0)),
+        home,
+        t,
+      );
+      round.scale
+        .copy(round.userData.homeScale as THREE.Vector3)
+        .multiplyScalar(THREE.MathUtils.lerp(0.72, 1, t));
+      if (t >= 1) {
+        round.position.copy(home);
+        round.scale.copy(round.userData.homeScale as THREE.Vector3);
+        launcher.railIndex = (launcher.reloadRail + 1) % launcher.rounds.length;
+        launcher.phase = "ready";
+        launcher.phaseSince = elapsed;
+        log(`MK 10 ${launcher.name} READY / RAIL ${launcher.reloadRail + 1}`);
+      }
+    }
+  }
+}
+function resetMk10Launchers() {
+  for (const launcher of mk10Launchers) {
+    launcher.pending = null;
+    launcher.phase = "ready";
+    launcher.phaseSince = 0;
+    launcher.azimuth = launcher.stowAzimuth;
+    launcher.elevation = 0;
+    launcher.railIndex = 0;
+    launcher.reloadRail = 0;
+    launcher.model.rotation.y = launcher.stowAzimuth;
+    (launcher.model.userData.arms as THREE.Group[]).forEach(
+      (arm) => (arm.rotation.z = 0),
+    );
+    launcher.rounds.forEach((round) => {
+      round.visible = true;
+      round.position.copy(round.userData.homePosition as THREE.Vector3);
+      round.scale.copy(round.userData.homeScale as THREE.Vector3);
+    });
+  }
+}
+function configureVlsLoadout(requestedMr: number, requestedEr: number) {
+  if (activeShip.launcher.kind !== "mk41") return { mr: 0, er: 0, other: 0 };
+  const capacity = vlsCells.length,
+    allocation = allocateVlsLoadout(capacity, requestedMr, requestedEr),
+    order = vlsLoadOrder(vlsCells, activeShip.launcher);
+  vlsCells.forEach((cell) => (cell.loadout = "OTHER"));
+  let mrAssigned = 0,
+    erAssigned = 0;
+  for (const cell of order) {
+    const assignMr =
+      mrAssigned < allocation.mr &&
+      (erAssigned >= allocation.er ||
+        mrAssigned / Math.max(1, allocation.mr) <=
+          erAssigned / Math.max(1, allocation.er));
+    if (assignMr) {
+      cell.loadout = "SM-2MR";
+      mrAssigned++;
+    } else if (erAssigned < allocation.er) {
+      cell.loadout = "SM-2ER";
+      erAssigned++;
+    }
+    if (mrAssigned >= allocation.mr && erAssigned >= allocation.er) break;
+  }
+  return {
+    mr: mrAssigned,
+    er: erAssigned,
+    other: capacity - mrAssigned - erAssigned,
+  };
+}
+function resetVlsCells() {
+  for (const bank of ["FWD", "AFT"] as const) {
+    vlsBanks[bank].lastLaunchAt = -Infinity;
+    vlsBanks[bank].lastCellIndex = -1;
+    vlsBanks[bank].minimumObservedGap = Infinity;
+    vlsBanks[bank].launchHistory.length = 0;
+    vlsBanks[bank].damageCenters.length = 0;
+    vlsBanks[bank].trappedRounds = 0;
+  }
+  for (const cell of vlsCells) {
+    cell.pending = null;
+    cell.phase = "ready";
+    cell.closeTo = "ready";
+    cell.phaseSince = 0;
+    cell.lid.rotation.z = 0;
+  }
+}
+function createVlsLaunchEffect(origin: THREE.Vector3) {
+  const group = new THREE.Group(),
+    flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.55, 4.8, 12, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd36a,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    ),
+    light = new THREE.PointLight(0xff9b45, 13, 55),
+    smoke: THREE.Mesh[] = [];
+  flame.rotation.z = Math.PI;
+  flame.position.y = 2.15;
+  light.position.y = 1.2;
+  group.add(flame, light);
+  for (let n = 0; n < 12; n++) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 7, 5),
+      new THREE.MeshBasicMaterial({
+        color: 0xb7c0bd,
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+      }),
+    );
+    puff.position.set(
+      Math.sin(n * 2.4) * 0.35,
+      0.1 + n * 0.08,
+      Math.cos(n * 1.7) * 0.35,
+    );
+    smoke.push(puff);
+    group.add(puff);
+  }
+  group.position.copy(origin);
+  scene.add(group);
+  vlsLaunchEffects.push({ group, flame, smoke, light, age: 0 });
+}
+function updateVlsLaunchEffects(dt: number) {
+  for (let index = vlsLaunchEffects.length - 1; index >= 0; index--) {
+    const effect = vlsLaunchEffects[index];
+    effect.age += dt;
+    const age = effect.age;
+    effect.flame.scale.set(
+      0.8 + Math.sin(age * 35) * 0.12,
+      Math.max(0.15, 1 - age * 1.7),
+      0.8 + Math.sin(age * 31) * 0.12,
+    );
+    (effect.flame.material as THREE.MeshBasicMaterial).opacity = Math.max(
+      0,
+      0.9 - age * 1.7,
+    );
+    effect.light.intensity = Math.max(0, 13 - age * 20);
+    effect.smoke.forEach((puff, n) => {
+      const spread = age * (1.1 + n * 0.045);
+      puff.position.x = Math.sin(n * 2.4) * spread;
+      puff.position.z = Math.cos(n * 1.7) * spread;
+      puff.position.y = 0.2 + age * (1.3 + n * 0.08);
+      puff.scale.setScalar(0.45 + age * (1.6 + n * 0.04));
+      (puff.material as THREE.MeshBasicMaterial).opacity = Math.max(
+        0,
+        0.28 - age * 0.16,
+      );
+    });
+    if (age > 2.1) {
+      scene.remove(effect.group);
+      vlsLaunchEffects.splice(index, 1);
+    }
+  }
+}
+function updateVlsCells(dt: number) {
+  if (activeShip.launcher.kind !== "mk41") return;
+  const config = activeShip.launcher;
+  for (const cell of vlsCells) {
+    const health = subsystemHealth(
+        cell.bank === "FWD" ? "mk10Forward" : "mk10Aft",
+      ),
+      bank = vlsBanks[cell.bank],
+      sequenceInterval = config.sequenceInterval / (0.35 + 0.65 * health);
+    if (cell.pending && cell.pending.target.phase === "destroyed") {
+      changeAmmo(cell.pending.weapon, 1);
+      cell.pending = null;
+      cell.closeTo = "ready";
+      cell.phase = "closing";
+      cell.phaseSince = elapsed;
+      log(
+        `MK 41 ${cell.bank} CELL ${cell.index + 1} TASK CANCEL / TARGET DESTROYED / ROUND RETAINED`,
+      );
+    }
+    if (cell.pending && health <= 0.05) {
+      cell.pending = null;
+      cell.closeTo = "disabled";
+      cell.phase = "closing";
+      cell.phaseSince = elapsed;
+      if (cell.loadout !== "OTHER") bank.trappedRounds++;
+      log(
+        `MK 41 ${cell.bank} CASUALTY / CELL ${cell.index + 1} ABORT / ROUND TRAPPED`,
+      );
+    }
+    if (cell.phase === "opening") {
+      cell.lid.rotation.z = moveToward(
+        cell.lid.rotation.z,
+        Math.PI * 0.52,
+        dt * 4.8,
+      );
+      if (
+        cell.lid.rotation.z >= Math.PI * 0.5 &&
+        cell.pending &&
+        elapsed - bank.lastLaunchAt >= sequenceInterval
+      ) {
+        const origin = new THREE.Vector3(),
+          up = new THREE.Vector3(0, 1, 0),
+          gap = elapsed - bank.lastLaunchAt;
+        if (Number.isFinite(gap))
+          bank.minimumObservedGap = Math.min(bank.minimumObservedGap, gap);
+        bank.lastLaunchAt = elapsed;
+        bank.lastCellIndex = cell.index;
+        bank.launchHistory.push(cell.index + 1);
+        cell.origin.getWorldPosition(origin);
+        up.applyQuaternion(
+          defender.getWorldQuaternion(new THREE.Quaternion()),
+        ).normalize();
+        const interceptor = launchInterceptor(
+          cell.pending.target,
+          cell.pending.weapon,
+          `MK 41 ${cell.bank}`,
+          `CELL ${String(cell.index + 1).padStart(2, "0")}`,
+          origin,
+          up,
+        );
+        interceptor.mesh.userData.vlsLaunch = true;
+        interceptor.mesh.userData.verticalDirection = up.clone();
+        createVlsLaunchEffect(origin);
+        cell.pending = null;
+        cell.closeTo = "spent";
+        cell.phase = "launching";
+        cell.phaseSince = elapsed;
+        log(
+          `MK 41 ${cell.bank} CELL ${cell.index + 1} / ${cell.loadout} HOT LAUNCH / VERTICAL BOOST / SEQUENCE ${sequenceInterval.toFixed(2)}s`,
+        );
+      }
+    } else if (cell.phase === "launching" && elapsed - cell.phaseSince > 0.6) {
+      cell.phase = "closing";
+      cell.phaseSince = elapsed;
+    } else if (cell.phase === "closing") {
+      cell.lid.rotation.z = moveToward(cell.lid.rotation.z, 0, dt * 3.6);
+      if (cell.lid.rotation.z <= 0.01) {
+        cell.lid.rotation.z = 0;
+        cell.phase = cell.closeTo;
+      }
+    }
+  }
+  const readyMr = vlsCells.filter(
+      (cell) => cell.loadout === "SM-2MR" && cell.phase === "ready",
+    ).length,
+    readyEr = vlsCells.filter(
+      (cell) => cell.loadout === "SM-2ER" && cell.phase === "ready",
+    ).length,
+    pendingMr = vlsCells.filter(
+      (cell) => cell.loadout === "SM-2MR" && !!cell.pending,
+    ).length,
+    pendingEr = vlsCells.filter(
+      (cell) => cell.loadout === "SM-2ER" && !!cell.pending,
+    ).length;
+  canvas.dataset.vlsFwdMinLaunchGap = Number.isFinite(
+    vlsBanks.FWD.minimumObservedGap,
+  )
+    ? vlsBanks.FWD.minimumObservedGap.toFixed(2)
+    : "";
+  canvas.dataset.vlsAftMinLaunchGap = Number.isFinite(
+    vlsBanks.AFT.minimumObservedGap,
+  )
+    ? vlsBanks.AFT.minimumObservedGap.toFixed(2)
+    : "";
+  canvas.dataset.vlsFwdLastCell = String(vlsBanks.FWD.lastCellIndex + 1 || "");
+  canvas.dataset.vlsAftLastCell = String(vlsBanks.AFT.lastCellIndex + 1 || "");
+  canvas.dataset.vlsFwdLaunchHistory = vlsBanks.FWD.launchHistory.join(",");
+  canvas.dataset.vlsAftLaunchHistory = vlsBanks.AFT.launchHistory.join(",");
+  canvas.dataset.vlsMrReady = String(readyMr);
+  canvas.dataset.vlsErReady = String(readyEr);
+  canvas.dataset.vlsMrPending = String(pendingMr);
+  canvas.dataset.vlsErPending = String(pendingEr);
+  canvas.dataset.vlsMrAvailable = String(sm2Ammo);
+  canvas.dataset.vlsErAvailable = String(sm2erAmmo);
+  canvas.dataset.vlsOtherLoaded = String(
+    vlsCells.filter((cell) => cell.loadout === "OTHER").length,
+  );
+  canvas.dataset.vlsSpent = String(
+    vlsCells.filter((cell) => cell.phase === "spent").length,
+  );
+  canvas.dataset.vlsDisabledFwd = String(
+    vlsCells.filter((cell) => cell.bank === "FWD" && cell.phase === "disabled")
+      .length,
+  );
+  canvas.dataset.vlsDisabledAft = String(
+    vlsCells.filter((cell) => cell.bank === "AFT" && cell.phase === "disabled")
+      .length,
+  );
+  canvas.dataset.vlsTrappedFwd = String(vlsBanks.FWD.trappedRounds);
+  canvas.dataset.vlsTrappedAft = String(vlsBanks.AFT.trappedRounds);
+  canvas.dataset.vlsReturning = String(
+    vlsCells.filter(
+      (cell) => cell.phase === "closing" && cell.closeTo === "ready",
+    ).length,
+  );
+}
+function separateBooster(interceptor: Interceptor) {
+  const booster = interceptor.mesh.userData.booster as THREE.Group | undefined;
+  if (!booster || interceptor.mesh.userData.boosterSeparated) return;
+  interceptor.mesh.userData.boosterSeparated = true;
+  scene.attach(booster);
+  const light = new THREE.PointLight(0xffb45b, 5, 18);
+  light.position.copy(booster.position);
+  scene.add(light);
+  boosterDebris.push({
+    mesh: booster,
+    velocity: interceptor.velocity
+      .clone()
+      .multiplyScalar(0.62)
+      .add(new THREE.Vector3(0, -1.4, 0)),
+    spin: new THREE.Vector3(0.8, 0.35, 0.55),
+    light,
+    age: 0,
+  });
+  log(`${interceptor.weapon} BOOSTER SEPARATION`);
+}
+function updateBoosterDebris(dt: number) {
+  for (let index = boosterDebris.length - 1; index >= 0; index--) {
+    const debris = boosterDebris[index];
+    debris.age += dt;
+    debris.velocity.y -= 1.8 * dt;
+    debris.mesh.position.addScaledVector(debris.velocity, dt);
+    debris.mesh.rotation.x += debris.spin.x * dt;
+    debris.mesh.rotation.y += debris.spin.y * dt;
+    debris.mesh.rotation.z += debris.spin.z * dt;
+    debris.light.position.copy(debris.mesh.position);
+    debris.light.intensity = Math.max(0, 5 - debris.age * 4);
+    if (debris.age > 5 || debris.mesh.position.y < -0.5) {
+      scene.remove(debris.mesh, debris.light);
+      boosterDebris.splice(index, 1);
+    }
+  }
+}
+function createChaffVisual(color: number) {
+  const group = new THREE.Group(),
+    material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+  for (let n = 0; n < 28; n++) {
+    const flake = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.025, 0.42),
+      material,
+    );
+    const seed = n * 2.399;
+    flake.position.set(
+      Math.sin(seed) * 1.8,
+      Math.cos(seed * 1.37) * 0.8,
+      Math.sin(seed * 0.73) * 1.8,
+    );
+    flake.rotation.set(seed, seed * 0.7, seed * 1.3);
+    group.add(flake);
+  }
+  return group;
+}
+function deployChaff(source: Missile) {
+  const group = createChaffVisual(0xffe8a8);
+  group.position.copy(source.mesh.position);
+  scene.add(group);
+  const position = group.position,
+    velocity = source.velocity
+      .clone()
+      .multiplyScalar(0.22)
+      .add(new THREE.Vector3(0.18, 0.05, -0.12));
+  chaffClouds.push({
+    mesh: group,
+    position,
+    velocity,
+    age: 0,
+    rcs: 2.8,
+    initialRcs: 2.8,
+    source,
+    side: "threat",
+    serial: ++chaffSerial,
+  });
+  source.mesh.userData.chaffDeployed = true;
+  log(`${source.kind} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`);
+}
+function deployShipChaff(threat: Missile) {
+  const health = subsystemHealth("srboc");
+  if (
+    !srbocEnabled ||
+    health <= 0.05 ||
+    srbocRounds <= 0 ||
+    elapsed - lastSrboc < 4 / Math.max(0.3, health)
+  )
+    return false;
+  const relative = threat.mesh.position
+      .clone()
+      .sub(defender.position)
+      .setY(0)
+      .normalize(),
+    offset = new THREE.Vector3(-relative.z, 0, relative.x).multiplyScalar(22),
+    side = srbocRounds % 2 === 0 ? 1 : -1,
+    start = defender.localToWorld(new THREE.Vector3(0, 8, side * 4.8)),
+    burst = defender.position
+      .clone()
+      .add(offset)
+      .add(new THREE.Vector3(0, 8, 0)),
+    control = start
+      .clone()
+      .lerp(burst, 0.5)
+      .add(new THREE.Vector3(0, 15, 0)),
+    mesh = new THREE.Group();
+  const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.25, 1.6, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xdce4dc,
+        emissive: 0x5b7f78,
+        emissiveIntensity: 0.8,
+        metalness: 0.48,
+        roughness: 0.35,
+      }),
+    ),
+    flare = new THREE.Mesh(
+      new THREE.ConeGeometry(0.38, 2.2, 10, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0x8ffff0,
+        transparent: true,
+        opacity: 0.78,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    ),
+    core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 8, 6),
+      new THREE.MeshBasicMaterial({
+        color: 0xe5fff8,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    ),
+    glow = new THREE.PointLight(0x9fffe8, 8, 28);
+  flare.position.y = -1.65;
+  core.position.y = -0.75;
+  mesh.add(body, flare, core, glow);
+  mesh.position.copy(start);
+  const trail = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([start]),
+    new THREE.LineBasicMaterial({
+      color: 0xa8fff0,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  trail.userData.history = [start.clone()];
+  scene.add(mesh, trail);
+  srbocRoundsInFlight.push({
+    mesh,
+    trail,
+    start,
+    control,
+    burst,
+    burstVelocity: offset
+      .clone()
+      .normalize()
+      .multiplyScalar(1.5)
+      .add(new THREE.Vector3(-0.18, 0.03, 0.12)),
+    age: 0,
+    flightTime: 1.15 / Math.max(0.55, health),
+  });
+  srbocRounds--;
+  lastSrboc = elapsed;
+  log(
+    `MK 36 SRBOC LAUNCH / ${srbocRounds} ROUNDS / HEALTH ${Math.round(health * 100)}%`,
+  );
+  return true;
+}
+function updateCountermeasures(dt: number) {
+  for (let index = srbocRoundsInFlight.length - 1; index >= 0; index--) {
+    const round = srbocRoundsInFlight[index];
+    round.age += dt;
+    const t = Math.min(1, round.age / round.flightTime),
+      u = 1 - t,
+      position = round.start
+        .clone()
+        .multiplyScalar(u * u)
+        .add(round.control.clone().multiplyScalar(2 * u * t))
+        .add(round.burst.clone().multiplyScalar(t * t)),
+      tangent = round.control
+        .clone()
+        .sub(round.start)
+        .multiplyScalar(2 * u)
+        .add(
+          round.burst
+            .clone()
+            .sub(round.control)
+            .multiplyScalar(2 * t),
+        )
+        .normalize();
+    round.mesh.position.copy(position);
+    round.mesh.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      tangent,
+    );
+    const history = round.trail.userData.history as THREE.Vector3[];
+    if (
+      !history.length ||
+      history[history.length - 1].distanceTo(position) > 0.6
+    ) {
+      history.push(position.clone());
+      if (history.length > 22) history.shift();
+      round.trail.geometry.dispose();
+      round.trail.geometry = new THREE.BufferGeometry().setFromPoints(history);
+    }
+    if (t >= 1) {
+      scene.remove(round.mesh, round.trail);
+      const group = createChaffVisual(0x9feaff);
+      group.position.copy(round.burst);
+      scene.add(group);
+      chaffClouds.push({
+        mesh: group,
+        position: group.position,
+        velocity: round.burstVelocity,
+        age: 0,
+        rcs: 7.5,
+        initialRcs: 7.5,
+        source: null,
+        side: "ship",
+        serial: ++chaffSerial,
+      });
+      srbocRoundsInFlight.splice(index, 1);
+      log(`MK 36 SRBOC AIRBURST / CHAFF RCS 7.5`);
+    }
+  }
+  for (let index = chaffClouds.length - 1; index >= 0; index--) {
+    const cloud = chaffClouds[index];
+    cloud.age += dt;
+    cloud.position.addScaledVector(cloud.velocity, dt);
+    cloud.velocity.multiplyScalar(Math.pow(0.96, dt));
+    cloud.mesh.rotation.y += dt * 0.18;
+    cloud.mesh.scale.setScalar(1 + cloud.age * 0.22);
+    cloud.rcs = Math.max(0.1, cloud.initialRcs * (1 - cloud.age / 14));
+    cloud.mesh.children.forEach((o) => {
+      if (o instanceof THREE.Mesh)
+        (o.material as THREE.MeshBasicMaterial).opacity = Math.max(
+          0,
+          0.42 - cloud.age / 30,
+        );
+    });
+    if (cloud.age > 14) {
+      scene.remove(cloud.mesh);
+      chaffClouds.splice(index, 1);
+    }
+  }
+}
+function createExplosion(position: THREE.Vector3) {
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(2.2, 2),
+    new THREE.MeshBasicMaterial({
+      color: 0xffc45e,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  core.position.copy(position);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(3.2, 0.22, 10, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0xff7138,
+      transparent: true,
+      opacity: 0.78,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  ring.position.copy(position);
+  ring.quaternion.copy(camera.quaternion);
+  const light = new THREE.PointLight(0xff6a22, 18, 95);
+  light.position.copy(position);
+  scene.add(core, ring, light);
+  explosions.push({ core, ring, light, age: 0 });
+}
+function createShipDamage(
+  worldPosition: THREE.Vector3,
+  severity: number,
+  localOverride?: THREE.Vector3,
+) {
+  const local =
+      localOverride?.clone() ?? defender.worldToLocal(worldPosition.clone()),
+    side = local.z >= 0 ? 1 : -1,
+    group = new THREE.Group();
+  local.x = THREE.MathUtils.clamp(local.x, -24, 24);
+  local.y = Math.max(6.3, local.y);
+  local.z = side * Math.max(3.75, Math.abs(local.z));
+  group.position.copy(local);
+  group.rotation.y = side < 0 ? Math.PI : 0;
+  const scorch = new THREE.Mesh(
+    new THREE.CircleGeometry(2.2, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0x120d0b,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    }),
+  );
+  group.add(scorch);
+  const fire = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.15, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xff6b24,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  fire.position.set(0, 1, 0.2);
+  group.add(fire);
+  const smoke: THREE.Mesh[] = [];
+  for (let i = 0; i < 6; i++) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.85, 7, 5),
+      new THREE.MeshBasicMaterial({
+        color: 0x667174,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+      }),
+    );
+    smoke.push(puff);
+    group.add(puff);
+  }
+  const light = new THREE.PointLight(0xff5a24, 5 + severity * 0.1, 28);
+  light.position.set(0, 1.2, 0.6);
+  group.add(light);
+  defender.add(group);
+  shipDamageEffects.push({
+    group,
+    fire,
+    smoke,
+    light,
+    seed: shipDamageEffects.length * 2.37 + 0.4,
+  });
+  (defender.userData.hullMat as THREE.MeshStandardMaterial).color.lerp(
+    new THREE.Color(0x2a2423),
+    Math.min(0.45, severity / 100),
+  );
+}
+function updateSubsystemPanel() {
+  let damaged = 0,
+    failed = 0;
+  for (const system of subsystemList) {
+    if (system.health < 99.5) damaged++;
+    if (system.health <= 5) failed++;
+    const row = subsystemPanel.querySelector<HTMLElement>(
+      `[data-system="${system.id}"]`,
+    );
+    if (!row) continue;
+    row.classList.toggle(
+      "damaged",
+      system.health < 99.5 && system.health >= 65,
+    );
+    row.classList.toggle("degraded", system.health < 65 && system.health > 5);
+    row.classList.toggle("failed", system.health <= 5);
+    (row.querySelector("i") as HTMLElement).style.width = `${system.health}%`;
+    (row.querySelector("b") as HTMLElement).textContent =
+      system.health <= 5 ? "FAIL" : String(Math.round(system.health));
+  }
+  const summary = subsystemPanel.querySelector("#damageSummary")!;
+  summary.textContent = failed
+    ? `${failed} FAILED / ${damaged} DAMAGED`
+    : damaged
+      ? `${damaged} SYSTEMS DAMAGED`
+      : "ALL SYSTEMS NOMINAL";
+  subsystemPanel.classList.toggle("alert", damaged > 0);
+}
+function subsystemRows() {
+  return subsystemList
+    .map(
+      (system) =>
+        `<div class="subsystem-row" data-system="${system.id}"><span>${system.label}</span><div><i></i></div><b>100</b></div>`,
+    )
+    .join("");
+}
+function configureShip(shipClass: ShipClass) {
+  if (activeShip.id === shipClass) return;
+  const definition = SHIP_DEFINITIONS.get(shipClass);
+  if (!definition) return;
+  const position = defender.position.clone(),
+    rotation = defender.rotation.clone();
+  scene.remove(defender);
+  activeShip = definition;
+  defender = activeShip.build();
+  if (activeShip.fixedSensorFaces)
+    defender.userData.fixedSensorFaceHealth = createFaceHealth(
+      activeShip.fixedSensorFaces,
+    );
+  defender.position.copy(position);
+  defender.rotation.copy(rotation);
+  defender.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+  scene.add(defender);
+  mk10Launchers =
+    activeShip.launcher.kind === "mk10"
+      ? [
+          makeMk10State("AFT", defender.userData.launcher, Math.PI),
+          makeMk10State("FORWARD", defender.userData.forwardLauncher, Math.PI),
+        ]
+      : [];
+  vlsCells =
+    activeShip.launcher.kind === "mk41"
+      ? (
+          defender.userData.vlsCells as {
+            lid: THREE.Group;
+            origin: THREE.Object3D;
+            index: number;
+            bank: "FWD" | "AFT";
+          }[]
+        ).map((cell) => ({
+          ...cell,
+          phase: "ready" as const,
+          closeTo: "ready" as const,
+          phaseSince: 0,
+          pending: null,
+          loadout: "OTHER" as const,
+        }))
+      : [];
+  if (activeShip.launcher.kind === "mk41")
+    configureVlsLoadout(activeShip.ammo.sm2mr, activeShip.ammo.sm2er);
+  for (const system of subsystemList) {
+    system.label = activeShip.subsystemLabels[system.id];
+    system.position.copy(activeShip.subsystemPositions[system.id]);
+    system.health = 100;
+  }
+  combatPicture.setSensors(activeShip.sensors);
+  const grid = subsystemPanel.querySelector(".subsystem-grid")!;
+  grid.innerHTML = subsystemRows();
+  updateSubsystemPanel();
+  (document.querySelector("#shipBadge") as HTMLElement).textContent =
+    activeShip.hullNumber;
+  (document.querySelector("#shipName") as HTMLElement).textContent =
+    activeShip.name;
+  (document.querySelector("#shipRole") as HTMLElement).textContent =
+    activeShip.role;
+  (document.querySelector("#radarName") as HTMLElement).textContent =
+    activeShip.sensors.find((sensor) => sensor.threeDimensional)?.name ??
+    activeShip.sensors[0].name;
+  const pick = document.querySelector("#pickShip") as HTMLButtonElement | null;
+  if (pick) pick.textContent = `PICK ${activeShip.name} ON RADAR`;
+  log(
+    `SHIP SELECT / ${activeShip.name} ${activeShip.hullNumber} / ${activeShip.era} / ${activeShip.launcher.displayName}`,
+  );
+}
+function damageSubsystem(
+  id: SubsystemId,
+  amount: number,
+  secondary = false,
+  approachBearing = 0,
+) {
+  const system = subsystems[id],
+    before = system.health;
+  system.health = Math.max(0, system.health - amount);
+  if (Math.round(before) === Math.round(system.health)) return;
+  const state =
+    system.health <= 5
+      ? "DESTROYED"
+      : system.health < 35
+        ? "CRITICAL"
+        : system.health < 65
+          ? "DEGRADED"
+          : "DAMAGED";
+  log(
+    `${system.label} ${state} / ${Math.round(before)} -> ${Math.round(system.health)}${secondary ? " / FRAGMENTATION" : ""}`,
+  );
+  const sensorFace =
+      id === activeShip.fixedSensorFaces?.subsystemId
+        ? damageFixedSensorFace(approachBearing, amount)
+        : -1,
+    faceModels = defender.userData.sensorFaceModels as
+      | THREE.Group[]
+      | undefined,
+    side = Math.sin((shipDamageEffects.length + 1) * 4.17) >= 0 ? 1 : -1,
+    visualPosition =
+      sensorFace >= 0 && faceModels?.[sensorFace]
+        ? faceModels[sensorFace].position.clone()
+        : system.position.clone();
+  if (sensorFace < 0)
+    visualPosition.z = side * Math.max(3.8, Math.abs(visualPosition.z));
+  createShipDamage(
+    defender.localToWorld(visualPosition.clone()),
+    amount * 0.55,
+    visualPosition,
+  );
+  if (id === "mk10Aft" || id === "mk10Forward") {
+    if (activeShip.launcher.kind === "mk41")
+      applyVlsBankDamage(id === "mk10Aft" ? "AFT" : "FWD", system.health / 100);
+    else if (system.health <= 5) {
+      const launcher = mk10Launchers[id === "mk10Aft" ? 0 : 1];
+      if (launcher?.pending) {
+        changeAmmo(launcher.pending.weapon, 1);
+        launcher.pending = null;
+      }
+      if (launcher) {
+        launcher.phase = "returning";
+        launcher.reloadRail = -1;
+        launcher.phaseSince = elapsed;
+      }
+    }
+  }
+  updateSubsystemPanel();
+}
+function applySubsystemDamage(missile: Missile, severity: number) {
+  const id = missiles.indexOf(missile) + 1,
+    seed = (value: number) => {
+      const raw =
+        Math.sin(id * 12.9898 + leakers * 78.233 + value * 37.719) * 43758.5453;
+      return raw - Math.floor(raw);
+    },
+    originLocal = defender.worldToLocal(missile.history[0].clone()),
+    approachBearing = Math.atan2(-originLocal.z, originLocal.x),
+    approachBias = THREE.MathUtils.clamp(originLocal.x * 0.07, -18, 18),
+    impactX = THREE.MathUtils.clamp(
+      approachBias +
+        missile.aimOffset.x * 4 +
+        THREE.MathUtils.lerp(-5, 5, seed(1)),
+      -24,
+      24,
+    ),
+    zones: SubsystemId[] =
+      impactX > 14
+        ? ["mk10Forward", "ciws", "spg55"]
+        : impactX > 4
+          ? ["sps48", "spg55", "ecm", "ciws"]
+          : impactX > -7
+            ? ["spg55", "ecm", "propulsion", "sps48"]
+            : impactX > -16
+              ? ["sps49", "srboc", "propulsion", "spg55"]
+              : ["mk10Aft", "srboc", "ciws", "sps49"],
+    primary = zones[Math.floor(seed(2) * zones.length)],
+    secondary = zones.filter((id) => id !== primary)[
+      Math.floor(seed(3) * (zones.length - 1))
+    ];
+  damageSubsystem(
+    primary,
+    severity * (0.78 + seed(4) * 0.5),
+    false,
+    approachBearing,
+  );
+  if (secondary)
+    damageSubsystem(
+      secondary,
+      severity * (0.18 + seed(5) * 0.18),
+      true,
+      approachBearing,
+    );
+  log(
+    `DAMAGE CONTROL / ${impactX > 8 ? "FORWARD" : impactX < -8 ? "AFT" : "AMIDSHIPS"} HIT / ${subsystems[primary].label} PRIMARY`,
+  );
+}
+function flashCombat(kind: "intercept" | "impact") {
+  combatFlash.className = "combat-flash";
+  void combatFlash.offsetWidth;
+  combatFlash.classList.add(kind);
+}
+function destroyMissileVisual(
+  missile: Missile,
+  effect: "intercept" | "impact",
+) {
+  if (!explodedTargets.has(missile)) {
+    explodedTargets.add(missile);
+    createExplosion(missile.mesh.position.clone());
+  }
+  flashCombat(effect);
+}
+function ciwsTracer(target: THREE.Vector3, origin: THREE.Vector3) {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([origin.clone(), target.clone()]),
+    new THREE.LineBasicMaterial({
+      color: 0xffef9a,
+      transparent: true,
+      opacity: 0.9,
+    }),
+  );
+  scene.add(line);
+  setTimeout(() => {
+    scene.remove(line);
+    line.geometry.dispose();
+    (line.material as THREE.Material).dispose();
+  }, 110);
+}
+addMissile(new THREE.Vector3(-85, 18, -210));
+addMissile(new THREE.Vector3(0, 28, -240));
+addMissile(new THREE.Vector3(80, 14, -220));
+let running = true,
+  elapsed = 0,
+  simAccumulator = 0,
+  last = performance.now(),
+  ammo = 6,
+  sm2Ammo = 12,
+  sm2erAmmo = 8,
+  selectedWeapon: WeaponType = "RIM-67",
+  autoFire = true,
+  radarEnabled = true,
+  timeScale = 1,
+  selectedTargetId = 1,
+  hullIntegrity = 100,
+  ciwsEnabled = true,
+  ciwsRounds = 1200,
+  lastCiwsShot = -10,
+  nextSamLaunch = 0,
+  leakers = 0,
+  missionEnded = false,
+  maxSamChannels = 3,
+  maxIlluminators = 2,
+  searchWidth = 360,
+  doctrine: EngagementDoctrine = "SSLS",
+  chaffEnabled = true,
+  ecmEnabled = true,
+  shipEcmEnabled = true,
+  srbocEnabled = true,
+  srbocRounds = 12,
+  lastSrboc = -20;
+let dragging = false,
+  px = 0,
+  py = 0,
+  az = 0.65,
+  el = 0.48,
+  dist = 210,
+  cinematic = false,
+  waveFrame = 0,
+  viewMode: 1 | 2 | 3 | 4 = 2;
+let shipSpeedKnots = 0,
+  shipDesiredHeading = 0,
+  nextShipDecision = 0,
+  shipManeuverThreatId = 0;
+let aarSnapshots: AarSnapshot[] = [],
+  aarEvents: AarEvent[] = [],
+  nextAarSnapshot = 0,
+  aarReplayTimer: number | undefined;
+const phaseEl = document.querySelector("#phase")!,
+  clockEl = document.querySelector("#clock")!,
+  targetState = document.querySelector("#targetState")!,
+  feed = document.querySelector("#feed")!,
+  ammoEl = document.querySelector("#ammo")!,
+  weaponEnvelope = document.querySelector("#weaponEnvelope")!,
+  threatName = document.querySelector("#threatName")!,
+  threatRange = document.querySelector("#threatRange")!,
+  threatAltitude = document.querySelector("#threatAltitude")!,
+  trackQuality = document.querySelector("#trackQuality")!,
+  threatTti = document.querySelector("#threatTti")!,
+  seekerState = document.querySelector("#seekerState")!,
+  ewState = document.querySelector("#ewState")!,
+  qualityFill = document.querySelector("#qualityFill") as HTMLElement;
+const targetMarker = document.querySelector("#targetMarker") as HTMLElement,
+  targetMarkerLabel = document.querySelector(
+    "#targetMarkerLabel",
+  ) as HTMLElement,
+  combatFlash = document.querySelector("#combatFlash") as HTMLElement;
+const controls = document.createElement("div");
+controls.className = "combat-controls";
+controls.style.cssText =
+  "position:fixed;left:34px;bottom:150px;display:flex;gap:8px;z-index:8";
+document.body.appendChild(controls);
+const subsystemPanel = document.createElement("section");
+subsystemPanel.className = "subsystem-panel";
+subsystemPanel.innerHTML = `<header><b>DAMAGE CONTROL</b><span id="damageSummary">ALL SYSTEMS NOMINAL</span></header><div class="subsystem-grid">${subsystemRows()}</div>`;
+document.body.appendChild(subsystemPanel);
+updateSubsystemPanel();
+const resultPanel = document.createElement("div");
+resultPanel.className = "result-panel aar-panel";
+resultPanel.style.display = "none";
+document.body.appendChild(resultPanel);
+let placementMode: false | "enemy" | "ship" = false;
+const sandbox = document.createElement("div");
+sandbox.style.cssText =
+  "position:fixed;inset:0;margin:auto;width:470px;height:430px;background:#071923f5;border:1px solid #4ac0b8;color:#d5edf0;z-index:30;padding:28px;font:12px Arial;letter-spacing:1px";
+sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType"><option>P-500</option><option>P-700</option><option>Kh-22</option></select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.2" max="500" step="0.1" value="1.2"></label><label>CENTER X<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
+sandbox
+  .querySelectorAll("input,select")
+  .forEach(
+    (e: any) =>
+      (e.style.cssText =
+        "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px"),
+  );
+document.body.appendChild(sandbox);
+running = false;
+missiles.forEach((m) => {
+  m.mesh.visible = false;
+  m.path.visible = false;
+});
+sandbox.className = "sandbox-panel";
+function numberInput(id: string) {
+  return Number((sandbox.querySelector(id) as HTMLInputElement).value);
+}
+const pickPlacement = document.createElement("button");
+pickPlacement.textContent = "PICK FORMATION CENTER ON RADAR";
+pickPlacement.style.cssText =
+  "margin-top:12px;width:100%;border:1px solid #547d82;background:#0a2229;color:#9fd3d1;padding:8px;cursor:pointer";
+sandbox.insertBefore(pickPlacement, sandbox.querySelector("#sbStart"));
+pickPlacement.onclick = () => {
+  placementMode = "enemy";
+  pickPlacement.textContent = "CLICK TACTICAL RADAR...";
+};
+const pickShip = document.createElement("button");
+pickShip.id = "pickShip";
+pickShip.textContent = `PICK ${activeShip.name} ON RADAR`;
+pickShip.style.cssText = pickPlacement.style.cssText;
+sandbox.insertBefore(pickShip, sandbox.querySelector("#sbStart"));
+pickShip.onclick = () => {
+  placementMode = "ship";
+  pickShip.textContent = "CLICK TACTICAL RADAR...";
+};
+const patternWrap = document.createElement("label");
+patternWrap.innerHTML =
+  'LAUNCH PATTERN<select id="sbPattern"><option value="RIPPLE">RIPPLE / ONE BY ONE</option><option value="SALVO">SALVO / SIMULTANEOUS</option><option value="WAVES">WAVES / GROUPS OF FOUR</option></select>';
+patternWrap.style.cssText = "display:block;margin-top:12px";
+sandbox.insertBefore(patternWrap, pickPlacement);
+const patternSelect = patternWrap.querySelector("select") as HTMLSelectElement;
+patternSelect.style.cssText =
+  "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+patternSelect.remove(2);
+patternSelect.onchange = () => {
+  if (patternSelect.value === "SALVO")
+    (sandbox.querySelector("#sbInterval") as HTMLInputElement).value = "0";
+};
+sandbox.style.height = "570px";
+const sandboxGrid = sandbox.querySelector('div[style*="grid"]')!;
+for (const [label, id, value] of [
+  ["SHIP X", "sbShipX", "0"],
+  ["SHIP Z", "sbShipZ", "40"],
+]) {
+  const field = document.createElement("label");
+  field.textContent = label;
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "number";
+  input.value = value;
+  input.style.cssText =
+    "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+  field.appendChild(input);
+  sandboxGrid.appendChild(field);
+}
+sandbox.style.height = "640px";
+const shipField = document.createElement("label"),
+  shipOptions = SHIP_CATALOG.map(
+    (ship) =>
+      `<option value="${ship.id}">${ship.name} / ${ship.hullNumber} / ${ship.launcher.displayName}</option>`,
+  ).join("");
+shipField.innerHTML = `DEFENDING SHIP<select id="sbShip">${shipOptions}</select>`;
+const shipSelect = shipField.querySelector("select") as HTMLSelectElement;
+shipSelect.style.cssText =
+  "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+sandboxGrid.insertBefore(shipField, sandboxGrid.firstChild);
+shipSelect.onchange = () => {
+  configureShip(shipSelect.value as ShipClass);
+  const defaults = activeShip.ammo;
+  (sandbox.querySelector("#sbRim") as HTMLInputElement).value = String(
+    defaults.rim67,
+  );
+  (sandbox.querySelector("#sbSm2") as HTMLInputElement).value = String(
+    defaults.sm2mr,
+  );
+  (sandbox.querySelector("#sbSm2er") as HTMLInputElement).value = String(
+    defaults.sm2er,
+  );
+  (sandbox.querySelector("#sbCiws") as HTMLInputElement).value = String(
+    defaults.ciws,
+  );
+  (sandbox.querySelector("#sbChannels") as HTMLInputElement).value = String(
+    defaults.channels,
+  );
+  (sandbox.querySelector("#sbIlluminators") as HTMLInputElement).value = String(
+    defaults.illuminators,
+  );
+  (sandbox.querySelector("#sbLauncherFwdHealth") as HTMLInputElement).value =
+    "100";
+  (sandbox.querySelector("#sbLauncherAftHealth") as HTMLInputElement).value =
+    "100";
+  (sandbox.querySelector("#sbWeapon") as HTMLSelectElement).value =
+    defaults.rim67 > 0 ? "RIM-67" : defaults.sm2mr > 0 ? "SM-2MR" : "SM-2ER";
+};
+for (const [label, id, value, max] of [
+  ["RIM-67 MAGAZINE", "sbRim", "6", "48"],
+  ["SM-2MR MAGAZINE", "sbSm2", "12", "96"],
+  ["SM-2ER MAGAZINE", "sbSm2er", "8", "64"],
+  ["CIWS ROUNDS", "sbCiws", "1200", "6000"],
+]) {
+  const field = document.createElement("label");
+  field.textContent = label;
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "number";
+  input.min = "0";
+  input.max = max;
+  input.value = value;
+  input.style.cssText =
+    "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+  field.appendChild(input);
+  sandboxGrid.appendChild(field);
+}
+sandbox.style.height = "810px";
+const channelField = document.createElement("label");
+channelField.textContent = "SAM FIRE CHANNELS";
+const channelInput = document.createElement("input");
+channelInput.id = "sbChannels";
+channelInput.type = "number";
+channelInput.min = "1";
+channelInput.max = "8";
+channelInput.value = "3";
+channelInput.style.cssText =
+  "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+channelField.appendChild(channelInput);
+sandboxGrid.appendChild(channelField);
+const illuminatorField = document.createElement("label");
+illuminatorField.textContent = "TERMINAL ILLUMINATORS";
+const illuminatorInput = channelInput.cloneNode() as HTMLInputElement;
+illuminatorInput.id = "sbIlluminators";
+illuminatorInput.max = "4";
+illuminatorInput.value = "2";
+illuminatorField.appendChild(illuminatorInput);
+sandboxGrid.appendChild(illuminatorField);
+for (const [label, id] of [
+  ["FWD LAUNCHER HEALTH", "sbLauncherFwdHealth"],
+  ["AFT LAUNCHER HEALTH", "sbLauncherAftHealth"],
+]) {
+  const field = document.createElement("label");
+  field.textContent = label;
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "number";
+  input.min = "0";
+  input.max = "100";
+  input.value = "100";
+  input.style.cssText = channelInput.style.cssText;
+  field.appendChild(input);
+  sandboxGrid.appendChild(field);
+}
+const wave2Type = document.createElement("label");
+wave2Type.innerHTML =
+  'SECOND WAVE TYPE<select id="sbType2"><option value="NONE">NONE</option><option>P-500</option><option>P-700</option><option>Kh-22</option></select>';
+const wave2Select = wave2Type.querySelector("select") as HTMLSelectElement;
+wave2Select.style.cssText =
+  "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+sandboxGrid.appendChild(wave2Type);
+for (const [label, id, value, max] of [
+  ["SECOND WAVE COUNT", "sbCount2", "4", "12"],
+  ["SECOND WAVE DELAY", "sbDelay2", "10", "60"],
+]) {
+  const field = document.createElement("label");
+  field.textContent = label;
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "number";
+  input.min = "0";
+  input.max = max;
+  input.value = value;
+  input.style.cssText =
+    "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+  field.appendChild(input);
+  sandboxGrid.appendChild(field);
+}
+sandbox.style.height = "950px";
+sandbox.style.maxHeight = "calc(100vh - 48px)";
+sandbox.style.overflowY = "auto";
+sandbox.style.boxSizing = "border-box";
+const presets = document.createElement("div");
+presets.style.cssText = "display:flex;gap:7px;margin-top:12px";
+sandbox.insertBefore(presets, patternWrap);
+function presetButton(
+  text: string,
+  kind: EnemyType,
+  count: number,
+  interval: number,
+  altitude: number,
+  spread: number,
+  range: number,
+) {
+  const b = document.createElement("button");
+  b.textContent = text;
+  b.style.cssText =
+    "flex:1;border:1px solid #3d6f73;background:#09232a;color:#9fd3d1;padding:7px;font-size:9px;cursor:pointer";
+  b.onclick = () => {
+    (sandbox.querySelector("#sbType") as HTMLSelectElement).value = kind;
+    (sandbox.querySelector("#sbCount") as HTMLInputElement).value =
+      String(count);
+    (sandbox.querySelector("#sbInterval") as HTMLInputElement).value =
+      String(interval);
+    (sandbox.querySelector("#sbAltitude") as HTMLInputElement).value =
+      String(altitude);
+    (sandbox.querySelector("#sbSpread") as HTMLInputElement).value =
+      String(spread);
+    (sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(-range);
+  };
+  presets.appendChild(b);
+}
+presetButton("SEA SKIMMER", "P-500", 6, 1.5, 1.2, 140, 600);
+presetButton("SATURATION", "P-700", 16, 0, 2.6, 260, 750);
+presetButton("HIGH SPEED", "Kh-22", 8, 2, 360, 190, 1000);
+radarCanvas.addEventListener("pointerdown", (e) => {
+  if (!placementMode) return;
+  e.stopPropagation();
+  const rect = radarCanvas.getBoundingClientRect(),
+    px = ((e.clientX - rect.left) / rect.width) * radarCanvas.width,
+    py = ((e.clientY - rect.top) / rect.height) * radarCanvas.height,
+    x = Math.round((px - radarCanvas.width / 2) / RADAR_PIXELS_PER_WORLD_UNIT),
+    z = Math.round((py - radarCanvas.height / 2) / RADAR_PIXELS_PER_WORLD_UNIT);
+  if (placementMode === "ship") {
+    (sandbox.querySelector("#sbShipX") as HTMLInputElement).value = String(x);
+    (sandbox.querySelector("#sbShipZ") as HTMLInputElement).value = String(z);
+    pickShip.textContent = `SHIP SET / X ${x} / Z ${z}`;
+  } else {
+    (sandbox.querySelector("#sbX") as HTMLInputElement).value = String(x);
+    (sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(z);
+    pickPlacement.textContent = `CENTER SET / X ${x} / Z ${z}`;
+  }
+  placementMode = false;
+});
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "pointerdown",
+  () => {
+    missiles.forEach((m) => {
+      const line = m.mesh.userData.seekerLine as THREE.Line | undefined;
+      if (line) {
+        scene.remove(line);
+        line.geometry.dispose();
+      }
+    });
+  },
+  true,
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "pointerdown",
+  () => {
+    if (aarReplayTimer !== undefined) clearInterval(aarReplayTimer);
+    aarReplayTimer = undefined;
+    aarSnapshots = [];
+    aarEvents = [];
+    nextAarSnapshot = 0;
+    resultPanel.style.display = "none";
+  },
+  true,
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).onclick = () => {
+  missiles.forEach((m) => {
+    scene.remove(m.mesh, m.path);
+    m.path.geometry.dispose();
+  });
+  missiles.length = 0;
+  interceptors.forEach((i) => scene.remove(i.mesh));
+  interceptors.length = 0;
+  combatPicture.reset();
+  lastTrackClasses.clear();
+  lastAltitudeState.clear();
+  explodedTargets.clear();
+  explosions.forEach((e) => scene.remove(e.core, e.ring, e.light));
+  explosions.length = 0;
+  shipDamageEffects.forEach((effect) => defender.remove(effect.group));
+  shipDamageEffects.length = 0;
+  boosterDebris.forEach((debris) => scene.remove(debris.mesh, debris.light));
+  boosterDebris.length = 0;
+  (defender.userData.hullMat as THREE.MeshStandardMaterial).color.set(
+    activeShip.hullColor,
+  );
+  subsystemList.forEach((system) => (system.health = 100));
+  fixedSensorFaceHealth()?.fill(1);
+  updateSubsystemPanel();
+  elapsed = 0;
+  last = performance.now();
+  ammo = activeShip.ammo.rim67;
+  sm2Ammo = activeShip.ammo.sm2mr;
+  sm2erAmmo = activeShip.ammo.sm2er;
+  hullIntegrity = 100;
+  ciwsRounds = activeShip.ammo.ciws;
+  missionEnded = false;
+  selectedWeapon = (sandbox.querySelector("#sbWeapon") as HTMLSelectElement)
+    .value as WeaponType;
+  const kind = (sandbox.querySelector("#sbType") as HTMLSelectElement)
+      .value as EnemyType,
+    count = Math.max(1, Math.min(24, numberInput("#sbCount"))),
+    interval = Math.max(0, numberInput("#sbInterval")),
+    altitude = numberInput("#sbAltitude"),
+    cx = numberInput("#sbX"),
+    cz = numberInput("#sbZ"),
+    spread = numberInput("#sbSpread");
+  for (let i = 0; i < count; i++) {
+    const offset = count === 1 ? 0 : (i / (count - 1) - 0.5) * spread;
+    addMissile(
+      new THREE.Vector3(
+        cx + offset,
+        altitude + Math.sin(i) * 5,
+        cz - Math.abs(offset) * 0.12,
+      ),
+      kind,
+      i * interval,
+    );
+  }
+  selectedTargetId = 1;
+  searchWidth = 360;
+  combatPicture.setSearch(
+    360,
+    Math.atan2(cx - numberInput("#sbShipX"), cz - numberInput("#sbShipZ")),
+  );
+  searchButton.textContent = "SEARCH: 360 DEG";
+  slewButton.textContent = "SLEW: SELECTED";
+  missiles[0].mesh.userData.selection.visible = true;
+  weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
+  ammoEl.textContent = `RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;
+  sandbox.style.display = "none";
+  running = true;
+  log(
+    `SANDBOX START / ${activeShip.hullNumber} / ${count} x ${kind} / ${interval}s INTERVAL`,
+  );
+};
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "pointerdown",
+  () => {
+    interceptors.forEach((i) => {
+      i.illuminationBeam.visible = false;
+      scene.remove(i.illuminationBeam, i.guidancePath);
+      i.guidancePath.geometry.dispose();
+    });
+    illuminators.forEach((state, index) => {
+      state.target = null;
+      state.lastTargetId = 0;
+      state.azimuth = index < 2 ? 0 : Math.PI;
+    });
+    explosions.forEach((e) => scene.remove(e.core, e.ring, e.light));
+    engagements.clear();
+    simAccumulator = 0;
+    nextSamLaunch = 0;
+    leakers = 0;
+    launcherCycle = 0;
+    resetMk10Launchers();
+    resetVlsCells();
+    const x = numberInput("#sbShipX"),
+      z = numberInput("#sbShipZ");
+    defender.position.set(x, 0, z);
+    wake.position.set(x - 28, 0.22, z);
+  },
+  true,
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "pointerdown",
+  () => {
+    shipSpeedKnots = 0;
+    shipDesiredHeading = 0;
+    nextShipDecision = 0;
+    shipManeuverThreatId = 0;
+    defender.rotation.y = 0;
+    wake.rotation.y = 0;
+    wakeLineMat.opacity = 0.08;
+  },
+  true,
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "pointerdown",
+  () => {
+    chaffClouds.forEach((c) => scene.remove(c.mesh));
+    chaffClouds.length = 0;
+    srbocRoundsInFlight.forEach((round) =>
+      scene.remove(round.mesh, round.trail),
+    );
+    srbocRoundsInFlight.length = 0;
+    chaffSerial = 0;
+    srbocRounds = 12;
+    lastSrboc = -20;
+  },
+  true,
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "pointerdown",
+  () => {
+    vlsLaunchEffects.forEach((effect) => scene.remove(effect.group));
+    vlsLaunchEffects.length = 0;
+  },
+  true,
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "click",
+  () =>
+    setTimeout(() => {
+      const requestedRim = Math.max(0, Math.min(48, numberInput("#sbRim"))),
+        requestedMr = Math.max(0, Math.min(96, numberInput("#sbSm2"))),
+        requestedEr = Math.max(0, Math.min(64, numberInput("#sbSm2er")));
+      if (activeShip.launcher.kind === "mk41") {
+        const loaded = configureVlsLoadout(requestedMr, requestedEr);
+        ammo = 0;
+        sm2Ammo = loaded.mr;
+        sm2erAmmo = loaded.er;
+        if (selectedWeapon === "RIM-67") {
+          selectedWeapon = sm2Ammo > 0 ? "SM-2MR" : "SM-2ER";
+          weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
+        }
+        log(
+          `MK 41 LOAD PLAN / ${loaded.mr} SM-2MR / ${loaded.er} SM-2ER / ${loaded.other} OTHER CELLS`,
+        );
+      } else {
+        ammo = requestedRim;
+        sm2Ammo = requestedMr;
+        sm2erAmmo = requestedEr;
+      }
+      const forwardHealth = THREE.MathUtils.clamp(
+          numberInput("#sbLauncherFwdHealth"),
+          0,
+          100,
+        ),
+        aftHealth = THREE.MathUtils.clamp(
+          numberInput("#sbLauncherAftHealth"),
+          0,
+          100,
+        );
+      if (forwardHealth < 100)
+        damageSubsystem("mk10Forward", 100 - forwardHealth);
+      if (aftHealth < 100) damageSubsystem("mk10Aft", 100 - aftHealth);
+      ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
+      maxSamChannels = Math.max(1, Math.min(8, numberInput("#sbChannels")));
+      maxIlluminators = Math.max(
+        1,
+        Math.min(4, numberInput("#sbIlluminators")),
+      );
+      ammoEl.textContent = `RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;
+    }, 0),
+);
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
+  "click",
+  () =>
+    setTimeout(() => {
+      const kind2 = wave2Select.value as EnemyType | "NONE";
+      if (kind2 === "NONE") return;
+      const count = Math.max(0, Math.min(12, numberInput("#sbCount2"))),
+        delay = Math.max(0, numberInput("#sbDelay2")),
+        cx = numberInput("#sbX"),
+        cz = numberInput("#sbZ"),
+        altitude = numberInput("#sbAltitude"),
+        spread = numberInput("#sbSpread");
+      for (let i = 0; i < count; i++) {
+        const offset =
+          count === 1 ? 0 : (i / (count - 1) - 0.5) * spread * 0.75;
+        addMissile(
+          new THREE.Vector3(
+            cx + offset,
+            kind2 === "Kh-22" ? Math.max(45, altitude) : altitude,
+            cz - 50,
+          ),
+          kind2,
+          delay + i * 0.6,
+        );
+      }
+      log(`SECOND WAVE / ${count} x ${kind2} / T+${delay}s`);
+    }, 0),
+);
+function classifyAarEvent(text: string): AarCategory {
+  if (
+    /INTERCEPT|SOFT KILL|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(
+      text,
+    )
+  )
+    return "effect";
+  if (/LAUNCH|CIWS WINDOW|SRBOC/.test(text)) return "fire";
+  if (/OODA MANEUVER/.test(text)) return "maneuver";
+  if (
+    /SEEKER|DATALINK|SPG-55|SPG-62|ILLUMIN|CHAFF|ECM|LOCK TRANSFER/.test(text)
+  )
+    return "guidance";
+  if (/TRACK|RADAR|SENSOR|CORRELATION/.test(text)) return "sensor";
+  return "system";
+}
+function captureAarSnapshot(force = false) {
+  if (!force && elapsed + 1e-6 < nextAarSnapshot) return;
+  const snapshot: AarSnapshot = {
+    time: elapsed,
+    ship: {
+      x: defender.position.x,
+      z: defender.position.z,
+      heading: defender.rotation.y,
+      hull: hullIntegrity,
+    },
+    missiles: missiles
+      .filter((m) => elapsed >= m.launchAt)
+      .map((m, id) => ({
+        id: id + 1,
+        x: m.mesh.position.x,
+        z: m.mesh.position.z,
+        phase: m.phase,
+        kind: m.kind,
+      })),
+    interceptors: interceptors
+      .map((i, id) => ({ i, id }))
+      .filter((x) => x.i.mesh.visible)
+      .map((x) => ({
+        id: x.id + 1,
+        x: x.i.mesh.position.x,
+        z: x.i.mesh.position.z,
+        weapon: x.i.weapon,
+        targetId: missiles.indexOf(x.i.target) + 1,
+      })),
+    chaff: chaffClouds.map((c) => ({
+      x: c.position.x,
+      z: c.position.z,
+      side: c.side,
+    })),
+  };
+  if (
+    force &&
+    aarSnapshots.length &&
+    Math.abs(aarSnapshots[aarSnapshots.length - 1].time - elapsed) < 0.01
+  )
+    aarSnapshots[aarSnapshots.length - 1] = snapshot;
+  else aarSnapshots.push(snapshot);
+  nextAarSnapshot = elapsed + 0.25;
+}
+function aarTime(time: number) {
+  return `${String(Math.floor(time / 60)).padStart(2, "0")}:${String(Math.floor(time % 60)).padStart(2, "0")}.${Math.floor((time % 1) * 10)}`;
+}
+function renderAarFrame(index: number) {
+  const canvas = resultPanel.querySelector(
+      "#aarCanvas",
+    ) as HTMLCanvasElement | null,
+    slider = resultPanel.querySelector("#aarSlider") as HTMLInputElement | null,
+    label = resultPanel.querySelector("#aarTime") as HTMLElement | null;
+  if (!canvas || !slider || !label || !aarSnapshots.length) return;
+  index = THREE.MathUtils.clamp(Math.round(index), 0, aarSnapshots.length - 1);
+  slider.value = String(index);
+  const snapshot = aarSnapshots[index],
+    ctx = canvas.getContext("2d")!,
+    w = canvas.width,
+    h = canvas.height,
+    points = aarSnapshots.flatMap((s) => [
+      { x: s.ship.x, z: s.ship.z },
+      ...s.missiles,
+      ...s.interceptors,
+    ]),
+    minX = Math.min(...points.map((p) => p.x)),
+    maxX = Math.max(...points.map((p) => p.x)),
+    minZ = Math.min(...points.map((p) => p.z)),
+    maxZ = Math.max(...points.map((p) => p.z)),
+    spanX = Math.max(80, maxX - minX),
+    spanZ = Math.max(80, maxZ - minZ),
+    scale = Math.min((w - 80) / spanX, (h - 70) / spanZ),
+    centerX = (minX + maxX) / 2,
+    centerZ = (minZ + maxZ) / 2,
+    map = (p: { x: number; z: number }) => ({
+      x: w / 2 + (p.x - centerX) * scale,
+      y: h / 2 + (p.z - centerZ) * scale,
+    });
+  ctx.fillStyle = "#06151b";
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(77,151,153,.16)";
+  ctx.lineWidth = 1;
+  for (let x = 20; x < w; x += 40) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  for (let y = 20; y < h; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+  const missileIds = [...new Set(snapshot.missiles.map((m) => m.id))];
+  for (const id of missileIds) {
+    ctx.strokeStyle = "rgba(239,100,84,.42)";
+    ctx.beginPath();
+    let started = false;
+    for (let s = 0; s <= index; s += 2) {
+      const state = aarSnapshots[s].missiles.find((m) => m.id === id);
+      if (!state) continue;
+      const p = map(state);
+      if (!started) {
+        ctx.moveTo(p.x, p.y);
+        started = true;
+      } else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
+  for (let id = 1; id <= interceptors.length; id++) {
+    ctx.strokeStyle = "rgba(112,220,239,.32)";
+    ctx.beginPath();
+    let started = false;
+    for (let s = 0; s <= index; s += 2) {
+      const state = aarSnapshots[s].interceptors.find((i) => i.id === id);
+      if (!state) continue;
+      const p = map(state);
+      if (!started) {
+        ctx.moveTo(p.x, p.y);
+        started = true;
+      } else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
+  for (const cloud of snapshot.chaff) {
+    const p = map(cloud);
+    ctx.strokeStyle = cloud.side === "ship" ? "#71ddd7" : "#e4c66f";
+    ctx.globalAlpha = 0.72;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  for (const interceptor of snapshot.interceptors) {
+    const p = map(interceptor);
+    ctx.fillStyle = "#8de9f3";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const missile of snapshot.missiles) {
+    const p = map(missile);
+    ctx.strokeStyle = missile.phase === "destroyed" ? "#713f3b" : "#ef6454";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - 5);
+    ctx.lineTo(p.x + 5, p.y);
+    ctx.lineTo(p.x, p.y + 5);
+    ctx.lineTo(p.x - 5, p.y);
+    ctx.closePath();
+    ctx.stroke();
+    if (missile.phase !== "destroyed") {
+      ctx.fillStyle = "#eaa39b";
+      ctx.font = "10px Consolas";
+      ctx.fillText(`T${missile.id}`, p.x + 8, p.y - 7);
+    }
+  }
+  const ship = map(snapshot.ship),
+    fx = Math.cos(snapshot.ship.heading),
+    fz = -Math.sin(snapshot.ship.heading);
+  ctx.fillStyle = snapshot.ship.hull > 0 ? "#69d6ce" : "#925249";
+  ctx.beginPath();
+  ctx.moveTo(ship.x + fx * 12, ship.y + fz * 12);
+  ctx.lineTo(ship.x - fx * 7 + fz * 6, ship.y - fz * 7 - fx * 6);
+  ctx.lineTo(ship.x - fx * 7 - fz * 6, ship.y - fz * 7 + fx * 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(105,214,206,.28)";
+  ctx.beginPath();
+  ctx.arc(ship.x, ship.y, 20, 0, Math.PI * 2);
+  ctx.stroke();
+  label.textContent = `T+${aarTime(snapshot.time)} / HULL ${snapshot.ship.hull}% / ${snapshot.missiles.filter((m) => m.phase !== "destroyed").length} THREATS`;
+  const eventButtons = [
+    ...resultPanel.querySelectorAll<HTMLButtonElement>(".aar-event"),
+  ];
+  let active = -1;
+  aarEvents.forEach((event, eventIndex) => {
+    if (event.time <= snapshot.time + 0.01) active = eventIndex;
+  });
+  eventButtons.forEach((button, eventIndex) =>
+    button.classList.toggle("current", eventIndex === active),
+  );
+  if (active >= 0) eventButtons[active]?.scrollIntoView({ block: "nearest" });
+}
+function showAar(outcome: string, score: number) {
+  const samShots = aarEvents.filter((e) =>
+      /^(RIM-67|SM-2MR|SM-2ER) .* LAUNCH/.test(e.text),
+    ).length,
+    hardKills = aarEvents.filter((e) =>
+      / INTERCEPT |CIWS KILL/.test(e.text),
+    ).length,
+    softKills = aarEvents.filter((e) => /SOFT KILL/.test(e.text)).length,
+    impacts = aarEvents.filter((e) => / IMPACT /.test(e.text)).length;
+  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
+  const eventList = resultPanel.querySelector("#aarEvents")!;
+  aarEvents.forEach((event, eventIndex) => {
+    const button = document.createElement("button");
+    button.className = `aar-event ${event.category}`;
+    button.innerHTML = `<time>${aarTime(event.time)}</time><span></span>`;
+    (button.querySelector("span") as HTMLElement).textContent = event.text;
+    button.onclick = () => {
+      const snapshotIndex = aarSnapshots.reduce(
+        (best, s, index) =>
+          Math.abs(s.time - event.time) <
+          Math.abs(aarSnapshots[best].time - event.time)
+            ? index
+            : best,
+        0,
+      );
+      renderAarFrame(snapshotIndex);
+    };
+    button.dataset.index = String(eventIndex);
+    eventList.appendChild(button);
+  });
+  const slider = resultPanel.querySelector("#aarSlider") as HTMLInputElement,
+    play = resultPanel.querySelector("#aarPlay") as HTMLButtonElement;
+  slider.oninput = () => renderAarFrame(Number(slider.value));
+  (resultPanel.querySelector("#aarStart") as HTMLButtonElement).onclick = () =>
+    renderAarFrame(0);
+  (resultPanel.querySelector("#aarEnd") as HTMLButtonElement).onclick = () =>
+    renderAarFrame(aarSnapshots.length - 1);
+  play.onclick = () => {
+    if (aarReplayTimer !== undefined) {
+      clearInterval(aarReplayTimer);
+      aarReplayTimer = undefined;
+      play.textContent = "PLAY";
+      return;
+    }
+    if (Number(slider.value) >= aarSnapshots.length - 1) renderAarFrame(0);
+    play.textContent = "PAUSE";
+    aarReplayTimer = window.setInterval(() => {
+      const next = Number(slider.value) + 1;
+      if (next >= aarSnapshots.length) {
+        clearInterval(aarReplayTimer);
+        aarReplayTimer = undefined;
+        play.textContent = "PLAY";
+        return;
+      }
+      renderAarFrame(next);
+    }, 90);
+  };
+  (resultPanel.querySelector("#aarClose") as HTMLButtonElement).onclick =
+    () => {
+      if (aarReplayTimer !== undefined) clearInterval(aarReplayTimer);
+      aarReplayTimer = undefined;
+      resultPanel.style.display = "none";
+    };
+  (resultPanel.querySelector("#restartMission") as HTMLButtonElement).onclick =
+    () => location.reload();
+  resultPanel.style.display = "flex";
+  renderAarFrame(aarSnapshots.length - 1);
+}
+function augmentAarSubsystemSummary() {
+  const metrics = resultPanel.querySelector(".aar-metrics");
+  if (!metrics) return;
+  const heading = resultPanel.querySelector(".aar-top small");
+  if (heading) heading.textContent = `AFTER ACTION REVIEW / ${activeShip.name}`;
+  const operational = subsystemList.filter(
+      (system) => system.health > 5,
+    ).length,
+    average = Math.round(
+      subsystemList.reduce((sum, system) => sum + system.health, 0) /
+        subsystemList.length,
+    ),
+    metric = document.createElement("span");
+  metric.innerHTML = `SYSTEMS<b>${operational}/${subsystemList.length} / ${average}%</b>`;
+  metrics.appendChild(metric);
+}
+function finishMission(victory: boolean) {
+  if (missionEnded) return;
+  missionEnded = true;
+  running = false;
+  captureAarSnapshot(true);
+  const systemAverage =
+      subsystemList.reduce((sum, system) => sum + system.health, 0) /
+      subsystemList.length,
+    score = Math.max(
+      0,
+      Math.round(
+        hullIntegrity * 8 +
+          systemAverage * 2 +
+          ammo * 150 +
+          sm2Ammo * 100 +
+          ciwsRounds / 10 -
+          Math.max(0, elapsed - 20) * 5,
+      ),
+    ),
+    outcome = victory
+      ? leakers === 0
+        ? "AIRSPACE SECURED"
+        : `RAID SURVIVED / ${leakers} LEAKER${leakers === 1 ? "" : "S"}`
+      : `${activeShip.name} DISABLED`;
+  showAar(outcome, score);
+  augmentAarSubsystemSummary();
+}
+function controlButton(label: string, action: () => void) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText =
+    "border:1px solid #438e91;background:#071923dd;color:#a8dddd;padding:8px 11px;font:10px Arial;letter-spacing:1px;cursor:pointer";
+  b.onclick = action;
+  controls.appendChild(b);
+  return b;
+}
+const autoButton = controlButton("AUTO FIRE: ON", () => {
+  autoFire = !autoFire;
+  autoButton.textContent = `AUTO FIRE: ${autoFire ? "ON" : "OFF"}`;
+});
+const doctrineButton = controlButton("DOCTRINE: SS-L-S", () => {
+  doctrine =
+    doctrine === "SSLS" ? "SINGLE" : doctrine === "SINGLE" ? "DOUBLE" : "SSLS";
+  doctrineButton.textContent = `DOCTRINE: ${doctrine === "SSLS" ? "SS-L-S" : doctrine}`;
+  log(
+    `ENGAGEMENT DOCTRINE / ${doctrine === "SSLS" ? "SHOOT-SHOOT-LOOK-SHOOT" : doctrine}`,
+  );
+});
+const radarButton = controlButton("RADAR: ACTIVE", () => {
+  radarEnabled = !radarEnabled;
+  radarButton.textContent = `RADAR: ${radarEnabled ? "ACTIVE" : "SILENT"}`;
+  log(radarEnabled ? "RADAR EMISSION RESTORED" : "EMCON / RADAR SILENT");
+});
+function slewSearchToSelected() {
+  const track = combatPicture.trackForTarget(selectedTargetId);
+  if (!track) {
+    log(`SENSOR SLEW INHIBIT / TARGET ${selectedTargetId} UNAVAILABLE`);
+    return false;
+  }
+  const bearing = Math.atan2(
+    track.position.x - defender.position.x,
+    track.position.z - defender.position.z,
+  );
+  combatPicture.setSearch(searchWidth, bearing);
+  log(
+    `SENSOR AXIS / TRACK ${track.id} / ${Math.round(THREE.MathUtils.radToDeg(bearing))} DEG`,
+  );
+  return true;
+}
+const searchButton = controlButton("SEARCH: 360 DEG", () => {
+  searchWidth = searchWidth === 360 ? 120 : searchWidth === 120 ? 60 : 360;
+  const current = combatPicture.getSearchState();
+  combatPicture.setSearch(searchWidth, current.bearing);
+  if (searchWidth < 360) slewSearchToSelected();
+  searchButton.textContent = `SEARCH: ${searchWidth} DEG`;
+  const state = combatPicture.getSearchState(),
+    primary =
+      activeShip.sensors.find((sensor) => sensor.threeDimensional) ??
+      activeShip.sensors[0],
+    phased = primary.scanMode === "phased-array";
+  log(
+    phased && searchWidth < 360
+      ? `RADAR RESOURCE / ${primary.name} ELECTRONIC SECTOR ${searchWidth} DEG / QUALITY x1.50 / 360 DEG BACKGROUND SEARCH`
+      : `RADAR RESOURCE / ${searchWidth} DEG / REVISIT x${state.revisitMultiplier.toFixed(2)}${searchWidth < 360 ? " / QUALITY x1.50" : ""}`,
+  );
+});
+const slewButton = controlButton("SLEW: SELECTED", () => {
+  slewSearchToSelected();
+  slewButton.textContent = `SLEW: TRACK ${selectedTargetId}`;
+});
+const ciwsButton = controlButton("CIWS: AUTO", () => {
+  ciwsEnabled = !ciwsEnabled;
+  ciwsButton.textContent = `CIWS: ${ciwsEnabled ? "AUTO" : "HOLD"}`;
+});
+const chaffButton = controlButton("THREAT CHAFF: ON", () => {
+  chaffEnabled = !chaffEnabled;
+  chaffButton.textContent = `THREAT CHAFF: ${chaffEnabled ? "ON" : "OFF"}`;
+});
+const ecmButton = controlButton("THREAT ECM: ON", () => {
+  ecmEnabled = !ecmEnabled;
+  ecmButton.textContent = `THREAT ECM: ${ecmEnabled ? "ON" : "OFF"}`;
+});
+const shipEcmButton = controlButton("SHIP ECM: AUTO", () => {
+  shipEcmEnabled = !shipEcmEnabled;
+  shipEcmButton.textContent = `SHIP ECM: ${shipEcmEnabled ? "AUTO" : "HOLD"}`;
+});
+const srbocButton = controlButton("SRBOC: AUTO", () => {
+  srbocEnabled = !srbocEnabled;
+  srbocButton.textContent = `SRBOC: ${srbocEnabled ? "AUTO" : "HOLD"}`;
+});
+const weaponButton = controlButton("WEAPON: RIM-67", () => {
+  const weapons: WeaponType[] = ["RIM-67", "SM-2MR", "SM-2ER"];
+  selectedWeapon =
+    weapons[(weapons.indexOf(selectedWeapon) + 1) % weapons.length];
+  weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
+  ammoEl.textContent = `RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;
+});
+const targetButton = controlButton("TARGET: 1", () => {
+  const live = missiles
+    .map((m, i) => ({ m, id: i + 1 }))
+    .filter((x) => x.m.phase !== "destroyed");
+  if (!live.length) return;
+  const current = live.findIndex((x) => x.id === selectedTargetId);
+  selectedTargetId = live[(current + 1) % live.length].id;
+  targetButton.textContent = `TARGET: ${selectedTargetId}`;
+  slewButton.textContent = `SLEW: TRACK ${selectedTargetId}`;
+  missiles.forEach(
+    (m, i) =>
+      (m.mesh.userData.selection.visible =
+        i + 1 === selectedTargetId && m.phase !== "destroyed"),
+  );
+});
+const fireButton = controlButton("LAUNCH SAM", () => {
+  const pending = pendingLauncherRequests(),
+    active = interceptors.filter((i) => i.mesh.visible).length + pending.length,
+    track = combatPicture.trackForTarget(selectedTargetId),
+    target = missiles[selectedTargetId - 1],
+    available =
+      selectedWeapon === "RIM-67"
+        ? ammo
+        : selectedWeapon === "SM-2MR"
+          ? sm2Ammo
+          : sm2erAmmo,
+    profile = weaponProfiles[selectedWeapon];
+  if (!running) {
+    log("LAUNCH INHIBIT / SIMULATION PAUSED");
+    return;
+  }
+  if (elapsed < nextSamLaunch) {
+    log("LAUNCH INHIBIT / MK 10 LAUNCHER CYCLING");
+    return;
+  }
+  if (active >= maxSamChannels) {
+    log(`LAUNCH INHIBIT / CHANNELS ${active}/${maxSamChannels}`);
+    return;
+  }
+  if (available <= 0) {
+    log("LAUNCH INHIBIT / MAGAZINE EMPTY");
+    return;
+  }
+  if (!target || target.phase === "destroyed") {
+    log("LAUNCH INHIBIT / TARGET INVALID");
+    return;
+  }
+  if (!track) {
+    log(`LAUNCH INHIBIT / TRACK ${selectedTargetId} LOST`);
+    return;
+  }
+  if (!track.altitudeKnown) {
+    log(`LAUNCH INHIBIT / TRACK ${track.id} 2D WARNING ONLY`);
+    return;
+  }
+  if (track.solutionQuality < 0.45) {
+    log(
+      `LAUNCH INHIBIT / FIRE CONTROL SOLUTION ${Math.round(track.solutionQuality * 100)}%`,
+    );
+    return;
+  }
+  if (track.age > 2.2) {
+    log(`LAUNCH INHIBIT / TRACK ${track.id} STALE`);
+    return;
+  }
+  const assigned =
+      interceptors.filter((i) => i.mesh.visible && i.target === target).length +
+      pending.filter((request) => request.target === target).length,
+    required = defensiveShotRequirement(target, track.quality);
+  if (assigned >= required) {
+    log(
+      required === 0
+        ? "LAUNCH INHIBIT / DOCTRINE LOOK"
+        : `LAUNCH INHIBIT / SALVO COMPLETE ${assigned}/${required}`,
+    );
+    return;
+  }
+  const range = target.mesh.position.distanceTo(defender.position);
+  if (range < profile.minRange || range > profile.maxRange) {
+    log(
+      `LAUNCH INHIBIT / ${selectedWeapon} ENVELOPE ${(profile.minRange / 10).toFixed(1)}-${(profile.maxRange / 10).toFixed(1)} km`,
+    );
+    return;
+  }
+  if (queueInterceptorLaunch(target, selectedWeapon)) {
+    nextSamLaunch = elapsed + 0.12;
+    changeAmmo(selectedWeapon, -1);
+  }
+});
+const speedButton = controlButton("TIME: 1X", () => {
+  timeScale = timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1;
+  speedButton.textContent = `TIME: ${timeScale}X`;
+});
+controlButton("SCENARIO SETUP", () => {
+  running = false;
+  sandbox.style.display = "block";
+});
+missiles[0].mesh.userData.selection.visible = true;
+function log(s: string) {
+  s = s
+    .replaceAll("SPS-48E", activeShip.subsystemLabels.sps48)
+    .replaceAll("SPS-49", activeShip.subsystemLabels.sps49)
+    .replaceAll("SPG-55", activeShip.subsystemLabels.spg55);
+  aarEvents.push({ time: elapsed, text: s, category: classifyAarEvent(s) });
+  if (aarEvents.length > 2000) aarEvents.shift();
+  const d = document.createElement("div");
+  d.textContent = s;
+  feed.prepend(d);
+  while (feed.children.length > 8) {
+    const removable = [...feed.children]
+      .reverse()
+      .find(
+        (child) =>
+          !/(CORRELATION BREAK|FIRE CONTROL RESET|DOCTRINE LOOK|OODA MANEUVER|SPG-55|SPG-62|SEEKER|CHAFF|ECM|DECOY|DAMAGE CONTROL|DAMAGE ISOLATION|TRAPPED|DAMAGED|DEGRADED|CRITICAL|DESTROYED)/.test(
+            child.textContent ?? "",
+          ),
+      );
+    (removable ?? feed.lastChild)?.remove();
+  }
+}
+function updateShipManeuver(dt: number) {
+  const forward = new THREE.Vector3(1, 0, 0).applyAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      defender.rotation.y,
+    ),
+    tracks = [...combatPicture.tracks.values()]
+      .filter((track) => {
+        const missile = missiles[track.sourceId - 1];
+        return (
+          missile &&
+          missile.phase !== "destroyed" &&
+          track.quality > 0.08 &&
+          track.age < 4
+        );
+      })
+      .sort(
+        (a, b) =>
+          a.position.distanceTo(defender.position) /
+            Math.max(1, missiles[a.sourceId - 1].velocity.length()) -
+          b.position.distanceTo(defender.position) /
+            Math.max(1, missiles[b.sourceId - 1].velocity.length()),
+      ),
+    threat = tracks[0],
+    threatRange = threat?.position.distanceTo(defender.position) ?? Infinity;
+  if (elapsed >= nextShipDecision) {
+    nextShipDecision = elapsed + 1;
+    if (threat && threatRange < 500) {
+      const axis = threat.position
+          .clone()
+          .sub(defender.position)
+          .setY(0)
+          .normalize(),
+        left = new THREE.Vector3(-axis.z, 0, axis.x),
+        right = left.clone().negate(),
+        beam = forward.dot(left) >= forward.dot(right) ? left : right;
+      shipDesiredHeading = Math.atan2(-beam.z, beam.x);
+      if (shipManeuverThreatId !== threat.sourceId) {
+        shipManeuverThreatId = threat.sourceId;
+        log(`OODA MANEUVER / BEAM TRACK ${threat.id} / FULL POWER`);
+      }
+    } else shipManeuverThreatId = 0;
+  }
+  const propulsion = subsystemHealth("propulsion"),
+    maximumKnots = 30 * propulsion * Math.max(0.45, hullIntegrity / 100),
+    targetKnots = threat && threatRange < 500 ? maximumKnots : 0,
+    speedStep =
+      (targetKnots > shipSpeedKnots ? 2 : 1.25) *
+      (0.25 + 0.75 * propulsion) *
+      dt;
+  shipSpeedKnots = THREE.MathUtils.clamp(
+    shipSpeedKnots +
+      Math.sign(targetKnots - shipSpeedKnots) *
+        Math.min(Math.abs(targetKnots - shipSpeedKnots), speedStep),
+    0,
+    maximumKnots,
+  );
+  const headingError = Math.atan2(
+      Math.sin(shipDesiredHeading - defender.rotation.y),
+      Math.cos(shipDesiredHeading - defender.rotation.y),
+    ),
+    turnRate =
+      THREE.MathUtils.degToRad(1.6) *
+      (0.35 + (0.65 * shipSpeedKnots) / 30) *
+      (0.2 + 0.8 * propulsion);
+  defender.rotation.y += THREE.MathUtils.clamp(
+    headingError,
+    -turnRate * dt,
+    turnRate * dt,
+  );
+  const updatedForward = new THREE.Vector3(1, 0, 0).applyAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    defender.rotation.y,
+  );
+  defender.position.addScaledVector(
+    updatedForward,
+    shipSpeedKnots * 0.005144 * dt,
+  );
+  wake.rotation.y = defender.rotation.y;
+  wake.position.copy(defender.position).addScaledVector(updatedForward, -28);
+  wake.position.y = 0.22;
+  wakeLineMat.opacity = 0.08 + (0.28 * shipSpeedKnots) / 30;
+}
+function updateShipStatus() {
+  const active =
+      interceptors.filter((i) => i.mesh.visible).length +
+      pendingLauncherRequests().length,
+    illuminatedMissiles = interceptors.filter(
+      (i) => i.mesh.visible && i.illuminated,
+    ).length,
+    shipClouds = chaffClouds.filter((c) => c.side === "ship").length,
+    forward = new THREE.Vector3(1, 0, 0).applyAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      defender.rotation.y,
+    ),
+    heading =
+      (THREE.MathUtils.radToDeg(Math.atan2(forward.x, -forward.z)) + 360) % 360,
+    directorCount = (defender.userData.directors as THREE.Group[]).length,
+    effectiveIlluminators = Math.min(
+      maxIlluminators,
+      directorCount,
+      Math.ceil(directorCount * subsystemHealth("spg55")),
+    ),
+    activeIlluminators = illuminators
+      .slice(0, effectiveIlluminators)
+      .filter((state) => state.target?.illuminated).length,
+    queue = illuminators
+      .slice(0, effectiveIlluminators)
+      .map((state) =>
+        state.target
+          ? `T${String(missiles.indexOf(state.target.target) + 1).padStart(2, "0")}`
+          : "--",
+      )
+      .join("/");
+  canvas.dataset.illuminatorsAvailable = String(effectiveIlluminators);
+  canvas.dataset.illuminatorsActive = String(activeIlluminators);
+  canvas.dataset.illuminatedMissiles = String(illuminatedMissiles);
+  canvas.dataset.illuminationQueue = queue;
+  document.querySelector("#shipState")!.textContent =
+    `HULL ${hullIntegrity}% / ${shipSpeedKnots.toFixed(0)} KT / HDG ${heading.toFixed(0).padStart(3, "0")} / CH ${active}/${maxSamChannels} / ILL ${activeIlluminators}/${effectiveIlluminators} / SRBOC ${srbocRounds} / CIWS ${ciwsRounds} / ${queue || "--"}`;
+}
+log("16:42:08  NTU combat system initialized");
+log("16:42:11  SURFACE SEARCH RADAR — CONTACTS ACQUIRED");
+function updateCamera() {
+  if (cinematic) az += 0.0018;
+  let focus: THREE.Vector3;
+  if (viewMode === 1)
+    focus = defender.position.clone().add(new THREE.Vector3(0, 9, 0));
+  else if (viewMode === 4) {
+    const interceptor = interceptors.find((item) => item.mesh.visible),
+      incoming = missiles[selectedTargetId - 1];
+    focus =
+      interceptor?.mesh.position.clone() ??
+      (incoming?.mesh.visible
+        ? incoming.mesh.position.clone()
+        : defender.position.clone().add(new THREE.Vector3(0, 9, 0)));
+  } else if (viewMode === 3) {
+    const track = combatPicture.trackForTarget(selectedTargetId);
+    focus = track
+      ? defender.position.clone().lerp(track.position, 0.52)
+      : defender.position.clone().add(new THREE.Vector3(0, 8, -80));
+  } else
+    focus = new THREE.Vector3(defender.position.x, 8, defender.position.z - 80);
+  const x = Math.cos(el) * Math.sin(az) * dist,
+    z = Math.cos(el) * Math.cos(az) * dist;
+  camera.position.set(focus.x + x, focus.y + Math.sin(el) * dist, focus.z + z);
+  camera.lookAt(focus);
+}
+function angleDifference(a: number, b: number) {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+}
+type MissileForwardAxis = "+Y" | "-Z";
+function setMissileAttitude(
+  model: THREE.Object3D,
+  direction: THREE.Vector3,
+  axis: MissileForwardAxis,
+  bank: number,
+) {
+  const previousAttitude = (
+      model.userData.attitudeQuaternion as THREE.Quaternion | undefined
+    )?.clone(),
+    forward = direction.clone().normalize(),
+    worldUp = new THREE.Vector3(0, 1, 0),
+    previousUp =
+      (model.userData.attitudeUp as THREE.Vector3 | undefined)?.clone() ??
+      (axis === "+Y" ? new THREE.Vector3(1, 0, 0) : worldUp.clone());
+  const projectedWorldUp = worldUp.addScaledVector(
+      forward,
+      -worldUp.dot(forward),
+    ),
+    projectedPrevious = previousUp.addScaledVector(
+      forward,
+      -previousUp.dot(forward),
+    );
+  let dorsal: THREE.Vector3;
+  if (projectedWorldUp.lengthSq() > 0.015) {
+    projectedWorldUp.normalize();
+    dorsal =
+      projectedPrevious.lengthSq() > 0.001
+        ? projectedPrevious.normalize().lerp(projectedWorldUp, 0.22).normalize()
+        : projectedWorldUp;
+  } else if (projectedPrevious.lengthSq() > 0.001)
+    dorsal = projectedPrevious.normalize();
+  else
+    dorsal = new THREE.Vector3(1, 0, 0)
+      .addScaledVector(forward, -forward.x)
+      .normalize();
+  const right = forward.clone().cross(dorsal).normalize();
+  dorsal.copy(right).cross(forward).normalize();
+  model.userData.attitudeUp = dorsal.clone();
+  const basis = new THREE.Matrix4();
+  if (axis === "+Y") basis.makeBasis(right, forward, dorsal);
+  else basis.makeBasis(right, dorsal, forward.clone().negate());
+  model.quaternion.setFromRotationMatrix(basis);
+  const localForward =
+    axis === "+Y" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, -1);
+  if (bank)
+    model.quaternion.multiply(
+      new THREE.Quaternion().setFromAxisAngle(localForward, bank),
+    );
+  const renderedForward = localForward
+      .applyQuaternion(model.quaternion)
+      .normalize(),
+    error = THREE.MathUtils.radToDeg(renderedForward.angleTo(forward)),
+    step = previousAttitude
+      ? THREE.MathUtils.radToDeg(previousAttitude.angleTo(model.quaternion))
+      : 0;
+  model.userData.attitudeErrorDeg = error;
+  model.userData.attitudeQuaternion = model.quaternion.clone();
+  model.userData.maxAttitudeStepDeg = Math.max(
+    model.userData.maxAttitudeStepDeg ?? 0,
+    step,
+  );
+  canvas.dataset[
+    axis === "+Y" ? "interceptorAttitudeError" : "incomingAttitudeError"
+  ] = error.toFixed(4);
+  canvas.dataset[
+    axis === "+Y" ? "interceptorAttitudeStep" : "incomingAttitudeStep"
+  ] = (model.userData.maxAttitudeStepDeg as number).toFixed(3);
+}
+function aimLocal(
+  model: THREE.Object3D,
+  target: THREE.Vector3,
+  dt: number,
+  yawRate: number,
+  pitchRate: number,
+) {
+  const local = model.parent!.worldToLocal(target.clone()).sub(model.position),
+    desiredYaw = Math.atan2(-local.z, local.x),
+    yawStep = yawRate * dt;
+  model.rotation.y += THREE.MathUtils.clamp(
+    angleDifference(desiredYaw, model.rotation.y),
+    -yawStep,
+    yawStep,
+  );
+  const pivot = model.userData.elevationPivot as THREE.Group | undefined;
+  if (!pivot) return;
+  const desiredPitch = THREE.MathUtils.clamp(
+      Math.atan2(local.y, Math.hypot(local.x, local.z)),
+      THREE.MathUtils.degToRad(-8),
+      THREE.MathUtils.degToRad(72),
+    ),
+    pitchStep = pitchRate * dt;
+  pivot.rotation.z += THREE.MathUtils.clamp(
+    desiredPitch - pivot.rotation.z,
+    -pitchStep,
+    pitchStep,
+  );
+}
+function updateShipWeaponVisuals(dt: number) {
+  const sps48 = subsystemHealth("sps48"),
+    sps49 = subsystemHealth("sps49"),
+    spg55 = subsystemHealth("spg55");
+  if (!defender.userData.radar.userData.static)
+    defender.userData.radar.rotation.y += dt * 0.8 * sps48;
+  defender.userData.sps49.rotation.y -= dt * 0.5 * sps49;
+  if (!defender.userData.fireControl.userData.static)
+    defender.userData.fireControl.rotation.y =
+      Math.sin(elapsed * 0.7) * 0.3 * spg55;
+  const faceConfig = activeShip.fixedSensorFaces,
+    faces = fixedSensorFaceHealth(),
+    faceModels = defender.userData.sensorFaceModels as
+      | THREE.Group[]
+      | undefined;
+  if (faceConfig && faces && faceModels) {
+    faceModels.forEach((model, index) => {
+      const material = (model.userData.panel as THREE.Mesh)
+          .material as THREE.MeshStandardMaterial,
+        health = faces[index];
+      material.color
+        .copy(new THREE.Color(faceConfig.damagedColor))
+        .lerp(new THREE.Color(faceConfig.healthyColor), health);
+      material.emissive.setHex(
+        health < 0.35 ? faceConfig.criticalEmissive : 0x000000,
+      );
+      material.emissiveIntensity = (1 - health) * 0.85;
+    });
+    canvas.dataset.sensorFaceHealth = faces
+      .map((health) => Math.round(health * 100))
+      .join(",");
+    canvas.dataset.sensorWeakestFace =
+      faceConfig.labels[faces.indexOf(Math.min(...faces))];
+  }
+  const directors = defender.userData.directors as THREE.Group[];
+  directors.forEach((director, index) => {
+    const state = illuminators[index],
+      target = state?.target?.target;
+    if (target && target.phase !== "destroyed" && spg55 > 0.05)
+      aimLocal(
+        director,
+        target.mesh.position,
+        dt,
+        THREE.MathUtils.degToRad(55) * (0.25 + 0.75 * spg55),
+        THREE.MathUtils.degToRad(38) * (0.25 + 0.75 * spg55),
+      );
+    else {
+      const stow = director.userData.stowHeading as number,
+        pivot = director.userData.elevationPivot as THREE.Group;
+      director.rotation.y += THREE.MathUtils.clamp(
+        angleDifference(stow, director.rotation.y),
+        -dt * 0.22 * spg55,
+        dt * 0.22 * spg55,
+      );
+      pivot.rotation.z = THREE.MathUtils.lerp(
+        pivot.rotation.z,
+        0,
+        Math.min(1, dt * 1.5),
+      );
+    }
+  });
+  const ciwsHealth = subsystemHealth("ciws");
+  for (const mount of [
+    { model: defender.getObjectByName("ciwsFore"), heading: Math.PI / 2 },
+    { model: defender.getObjectByName("ciwsAft"), heading: -Math.PI / 2 },
+  ]) {
+    if (!mount.model) continue;
+    const candidate = missiles
+      .filter((m) => {
+        if (
+          m.phase === "destroyed" ||
+          !m.mesh.visible ||
+          m.mesh.position.distanceTo(defender.position) >= 24
+        )
+          return false;
+        const worldRelative = m.mesh.position.clone().sub(defender.position),
+          relative = defender.worldToLocal(m.mesh.position.clone()),
+          bearing = Math.atan2(relative.x, relative.z),
+          closing = -m.velocity.dot(worldRelative.normalize());
+        return (
+          closing > 0.5 &&
+          Math.abs(angleDifference(bearing, mount.heading)) <=
+            THREE.MathUtils.degToRad(105)
+        );
+      })
+      .sort(
+        (a, b) =>
+          a.mesh.position.distanceTo(defender.position) -
+          b.mesh.position.distanceTo(defender.position),
+      )[0];
+    if (candidate && ciwsHealth > 0.05)
+      aimLocal(
+        mount.model,
+        candidate.mesh.position,
+        dt,
+        THREE.MathUtils.degToRad(70) * ciwsHealth,
+        THREE.MathUtils.degToRad(55) * ciwsHealth,
+      );
+    else {
+      const pivot = mount.model.userData.elevationPivot as
+        | THREE.Group
+        | undefined;
+      if (pivot)
+        pivot.rotation.z = THREE.MathUtils.lerp(
+          pivot.rotation.z,
+          0,
+          Math.min(1, dt * 2),
+        );
+    }
+  }
+}
+function updateShipVisualLod() {
+  const range = camera.position.distanceTo(defender.position),
+    near = range < 270,
+    medium = range >= 270 && range < 340,
+    low = range >= 340;
+  (defender.userData.highDetail as THREE.Group).visible = near;
+  (defender.userData.mediumDetail as THREE.Group).visible = medium;
+  (defender.userData.lowDetail as THREE.Group).visible = low;
+  (defender.userData.detail as THREE.Object3D[]).forEach(
+    (object) => (object.visible = !low),
+  );
+}
+function updateShipLights() {
+  const lights = defender.userData.navigationLights as THREE.PointLight[],
+    bulbs = defender.userData.lightBulbs as THREE.Mesh[],
+    pulse = 0.9 + Math.sin(elapsed * 2.6) * 0.1;
+  lights.forEach(
+    (light, index) => (light.intensity = (index < 2 ? 3 : 2.2) * pulse),
+  );
+  bulbs.forEach((bulb, index) =>
+    bulb.scale.setScalar((index < 2 ? 1.15 : 1) * pulse),
+  );
+  const beam = defender.userData.radar.userData.searchBeam as THREE.Mesh,
+    material = beam.material as THREE.MeshBasicMaterial,
+    health = subsystemHealth("sps48");
+  beam.visible =
+    radarEnabled &&
+    health > 0.05 &&
+    camera.position.distanceTo(defender.position) < 340;
+  material.opacity = 0.012 + 0.028 * health;
+}
+function scheduleIlluminators(candidates: Interceptor[], dt: number) {
+  const health = subsystemHealth("spg55"),
+    active = candidates.filter(
+      (i) => i.mesh.visible && i.target.phase !== "destroyed",
+    ),
+    directorCount = (defender.userData.directors as THREE.Group[]).length,
+    limit =
+      health <= 0.05
+        ? 0
+        : Math.min(
+            maxIlluminators,
+            directorCount,
+            Math.max(1, Math.ceil(directorCount * health)),
+          );
+  illuminators.forEach((state, index) => {
+    if (index >= limit || !state.target || !active.includes(state.target))
+      state.target = null;
+  });
+  for (const interceptor of active) {
+    if (
+      illuminators.some(
+        (state) =>
+          state.target === interceptor ||
+          state.target?.target === interceptor.target,
+      )
+    )
+      continue;
+    const targetLocal = defender.worldToLocal(
+        interceptor.target.mesh.position.clone(),
+      ),
+      bearing = Math.atan2(-targetLocal.z, targetLocal.x);
+    const free = illuminators
+      .slice(0, limit)
+      .filter((state) => !state.target)
+      .sort(
+        (a, b) =>
+          Math.abs(angleDifference(bearing, a.azimuth)) -
+          Math.abs(angleDifference(bearing, b.azimuth)),
+      )[0];
+    if (free) {
+      free.target = interceptor;
+      const id = missiles.indexOf(interceptor.target) + 1;
+      if (free.lastTargetId !== id) {
+        free.lastTargetId = id;
+        log(`SPG-55 ${free.id} TASK / TRACK ${id} / SLEWING`);
+      }
+    }
+  }
+  const slewRate = THREE.MathUtils.degToRad(55) * (0.25 + 0.75 * health);
+  const capturedTargets = new Map<Missile, number>();
+  for (const [index, state] of illuminators.slice(0, limit).entries()) {
+    const interceptor = state.target;
+    if (!interceptor) continue;
+    const targetLocal = defender.worldToLocal(
+        interceptor.target.mesh.position.clone(),
+      ),
+      desired = Math.atan2(-targetLocal.z, targetLocal.x),
+      delta = angleDifference(desired, state.azimuth);
+    state.azimuth += THREE.MathUtils.clamp(
+      delta,
+      -slewRate * dt,
+      slewRate * dt,
+    );
+    const captured = Math.abs(delta) < THREE.MathUtils.degToRad(14);
+    if (captured) capturedTargets.set(interceptor.target, index);
+    interceptor.illuminated = captured;
+    interceptor.illuminationBeam.visible = captured;
+  }
+  for (const interceptor of active) {
+    const directorIndex = capturedTargets.get(interceptor.target);
+    if (directorIndex === undefined) continue;
+    interceptor.illuminated = true;
+    interceptor.illuminationBeam.visible = true;
+    const director = (defender.userData.directors as THREE.Group[])[
+        directorIndex
+      ],
+      feed = director.userData.feedTip as THREE.Object3D,
+      origin = new THREE.Vector3();
+    feed.getWorldPosition(origin);
+    interceptor.illuminationBeam.geometry.dispose();
+    interceptor.illuminationBeam.geometry =
+      new THREE.BufferGeometry().setFromPoints([
+        origin,
+        interceptor.target.mesh.position.clone(),
+      ]);
+  }
+  for (const interceptor of interceptors)
+    if (!active.includes(interceptor)) {
+      interceptor.illuminated = false;
+      interceptor.illuminationBeam.visible = false;
+    }
+}
+function updateCiws() {
+  const health = subsystemHealth("ciws");
+  if (
+    !ciwsEnabled ||
+    health <= 0.05 ||
+    ciwsRounds <= 0 ||
+    elapsed - lastCiwsShot < 0.55 / Math.max(0.4, health)
+  )
+    return;
+  const mounts = [
+    {
+      name: "FORE",
+      model: defender.getObjectByName("ciwsFore"),
+      heading: Math.PI / 2,
+    },
+    {
+      name: "AFT",
+      model: defender.getObjectByName("ciwsAft"),
+      heading: -Math.PI / 2,
+    },
+  ].filter((mount) => mount.model);
+  const candidates = missiles
+    .filter(
+      (m) =>
+        m.phase !== "destroyed" &&
+        m.mesh.position.distanceTo(defender.position) < 15,
+    )
+    .map((m) => {
+      const worldRelative = m.mesh.position.clone().sub(defender.position),
+        relative = defender.worldToLocal(m.mesh.position.clone()),
+        bearing = Math.atan2(relative.x, relative.z),
+        closingSpeed = -m.velocity.dot(worldRelative.clone().normalize()),
+        mount = mounts
+          .map((x) => ({
+            ...x,
+            delta: Math.abs(angleDifference(bearing, x.heading)),
+          }))
+          .sort((a, b) => a.delta - b.delta)[0];
+      return { m, bearing, closingSpeed, mount };
+    })
+    .filter(
+      (x) =>
+        x.closingSpeed > 0.5 && x.mount.delta <= THREE.MathUtils.degToRad(105),
+    )
+    .sort(
+      (a, b) =>
+        a.m.mesh.position.distanceTo(defender.position) / a.closingSpeed -
+        b.m.mesh.position.distanceTo(defender.position) / b.closingSpeed,
+    );
+  const target = candidates[0];
+  if (!target) {
+    const nearby = missiles.filter(
+        (m) =>
+          m.phase !== "destroyed" &&
+          m.mesh.position.distanceTo(defender.position) < 15,
+      ),
+      approaching = nearby.some((m) => {
+        const relative = m.mesh.position.clone().sub(defender.position);
+        return -m.velocity.dot(relative.normalize()) > 0.5;
+      });
+    if (nearby.length) {
+      lastCiwsShot = elapsed;
+      log(
+        approaching ? "CIWS HOLD / BLIND SECTOR" : "CIWS HOLD / TARGET OPENING",
+      );
+    }
+    return;
+  }
+  const range = target.m.mesh.position.distanceTo(defender.position),
+    tti = range / target.closingSpeed,
+    bursts = Math.max(1, Math.floor(tti / 0.55));
+  if (tti < 0.35) {
+    lastCiwsShot = elapsed;
+    log(
+      `CIWS HOLD / WINDOW CLOSED / ${target.m.kind} / ${tti.toFixed(2)}s / ${target.mount.name}`,
+    );
+    return;
+  }
+  const mountModel = defender.getObjectByName(
+      target.mount.name === "FORE" ? "ciwsFore" : "ciwsAft",
+    ),
+    localAim = mountModel?.parent
+      ?.worldToLocal(target.m.mesh.position.clone())
+      .sub(mountModel.position),
+    desiredTraverse = localAim ? Math.atan2(-localAim.z, localAim.x) : 0,
+    traverseError = mountModel
+      ? angleDifference(desiredTraverse, mountModel.rotation.y)
+      : 0;
+  if (mountModel)
+    mountModel.rotation.y += THREE.MathUtils.clamp(
+      traverseError,
+      -THREE.MathUtils.degToRad(70) * 0.55 * health,
+      THREE.MathUtils.degToRad(70) * 0.55 * health,
+    );
+  if (Math.abs(traverseError) > THREE.MathUtils.degToRad(12)) {
+    lastCiwsShot = elapsed;
+    log(
+      `CIWS SLEWING / ${target.mount.name} / ${Math.round(THREE.MathUtils.radToDeg(Math.abs(traverseError)))} DEG`,
+    );
+    return;
+  }
+  lastCiwsShot = elapsed;
+  ciwsRounds = Math.max(0, ciwsRounds - 60);
+  const mountOrigin = new THREE.Vector3();
+  target.mount.model!.getWorldPosition(mountOrigin);
+  mountOrigin.y += 1.2;
+  ciwsTracer(target.m.mesh.position, mountOrigin);
+  const saturation = Math.max(1, candidates.length),
+    basePk =
+      (Math.max(0.08, 0.46 / saturation) -
+        (target.m.kind === "P-500"
+          ? 0.1
+          : target.m.kind === "P-700"
+            ? 0.16
+            : 0.3)) *
+      (0.25 + 0.75 * health),
+    singlePk =
+      target.m.kind === "Kh-22"
+        ? Math.min(0.14, basePk)
+        : Math.max(0.04, basePk),
+    windowFactor = Math.min(1.35, 0.75 + bursts * 0.12),
+    pk = Math.min(0.72, singlePk * windowFactor),
+    roll = Math.abs(Math.sin(elapsed * 31.7 + ciwsRounds * 0.013));
+  log(
+    `CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / PK ${Math.round(pk * 100)}% / ${target.mount.name}`,
+  );
+  if (roll < pk) {
+    target.m.phase = "destroyed";
+    target.m.mesh.visible = false;
+    destroyMissileVisual(target.m, "intercept");
+    log(
+      `CIWS KILL / ${target.mount.name} / PK ${Math.round(pk * 100)}% / ${ciwsRounds} ROUNDS`,
+    );
+  } else
+    log(
+      `CIWS MISS / ${target.mount.name} / PK ${Math.round(pk * 100)}% / ${ciwsRounds} ROUNDS`,
+    );
+}
+setInterval(
+  () =>
+    interceptors.forEach((i) => {
+      if (i.mesh.userData.seeker)
+        i.mesh.userData.seeker.visible =
+          i.weapon === "RIM-67" &&
+          !!i.mesh.userData.seekerOn &&
+          i.mesh.visible &&
+          i.target.phase !== "destroyed" &&
+          i.mesh.position.distanceTo(i.target.mesh.position) <
+            weaponProfiles[i.weapon].terminalRange;
+    }),
+  50,
+);
+setInterval(() => {
+  const live = missiles.filter((m) => m.phase !== "destroyed").length,
+    engagedTargets = new Set(
+      interceptors.filter((i) => i.mesh.visible).map((i) => i.target),
+    ).size,
+    tracks = [...combatPicture.tracks.values()].filter(
+      (track) => missiles[track.sourceId - 1]?.phase !== "destroyed",
+    ).length;
+  targetState.textContent =
+    live > 0
+      ? `${live} THREATS / ${tracks} TRACKS / ${engagedTargets} ENGAGED`
+      : "AIRSPACE CLEAR";
+}, 120);
+setInterval(() => {
+  if (missiles[selectedTargetId - 1]?.phase === "destroyed") {
+    const next = missiles.findIndex((m) => m.phase !== "destroyed");
+    if (next >= 0) {
+      selectedTargetId = next + 1;
+      targetButton.textContent = `TARGET: ${selectedTargetId}`;
+    }
+  }
+  missiles.forEach(
+    (m, i) =>
+      (m.mesh.userData.selection.visible =
+        i + 1 === selectedTargetId &&
+        m.phase !== "destroyed" &&
+        !!combatPicture.trackForTarget(i + 1)),
+  );
+}, 120);
+setInterval(() => {
+  explosions.forEach((e) => {
+    e.age += 0.05;
+    e.core.scale.setScalar(1 + e.age * 3.4);
+    e.ring.scale.setScalar(1 + e.age * 5.8);
+    e.ring.quaternion.copy(camera.quaternion);
+    (e.core.material as THREE.MeshBasicMaterial).opacity = Math.max(
+      0,
+      0.92 - e.age / 1.45,
+    );
+    (e.ring.material as THREE.MeshBasicMaterial).opacity = Math.max(
+      0,
+      0.78 - e.age / 1.15,
+    );
+    e.light.intensity = Math.max(0, 18 - e.age * 14);
+    if (e.age > 1.5) {
+      e.core.visible = false;
+      e.ring.visible = false;
+      e.light.visible = false;
+    }
+  });
+}, 50);
+setInterval(() => {
+  if (!radarCtx) return;
+  const w = radarCanvas.width,
+    h = radarCanvas.height,
+    cx = w / 2,
+    cy = h / 2;
+  radarCtx.clearRect(0, 0, w, h);
+  radarCtx.fillStyle = "#061923";
+  radarCtx.fillRect(0, 0, w, h);
+  radarCtx.strokeStyle = "#2d7f83";
+  radarCtx.globalAlpha = 0.65;
+  for (const r of [35, 70, 105]) {
+    radarCtx.beginPath();
+    radarCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    radarCtx.stroke();
+  }
+  radarCtx.setLineDash([4, 4]);
+  for (const [weapon, color] of [
+    ["SM-2MR", "#d7aa55"],
+    ["RIM-67", "#65cfd0"],
+  ] as const) {
+    radarCtx.strokeStyle = color;
+    radarCtx.globalAlpha = weapon === selectedWeapon ? 0.72 : 0.32;
+    radarCtx.beginPath();
+    radarCtx.arc(
+      cx,
+      cy,
+      weaponProfiles[weapon].maxRange * RADAR_PIXELS_PER_WORLD_UNIT,
+      0,
+      Math.PI * 2,
+    );
+    radarCtx.stroke();
+  }
+  radarCtx.setLineDash([]);
+  radarCtx.beginPath();
+  radarCtx.moveTo(cx, cy);
+  radarCtx.lineTo(
+    cx + Math.cos(elapsed * 0.8) * 110,
+    cy + Math.sin(elapsed * 0.8) * 110,
+  );
+  radarCtx.strokeStyle = "#78e1c8";
+  radarCtx.globalAlpha = 0.65;
+  radarCtx.stroke();
+  radarCtx.globalAlpha = 1;
+  radarCtx.fillStyle = "#78e1c8";
+  radarCtx.fillRect(cx - 3, cy - 3, 6, 6);
+  for (const track of combatPicture.tracks.values()) {
+    const missile = missiles[track.sourceId - 1];
+    if (!missile || missile.phase === "destroyed") continue;
+    const x =
+        cx +
+        (track.position.x - defender.position.x) * RADAR_PIXELS_PER_WORLD_UNIT,
+      y =
+        cy +
+        (track.position.z - defender.position.z) * RADAR_PIXELS_PER_WORLD_UNIT,
+      color =
+        track.quality > 0.7
+          ? "#ff5148"
+          : track.quality > 0.25
+            ? "#ffb347"
+            : "#bd78ff",
+      uncertainty = Math.max(
+        2,
+        (track.uncertainty / 100) * RADAR_PIXELS_PER_WORLD_UNIT,
+      );
+    radarCtx.strokeStyle = color;
+    radarCtx.globalAlpha = 0.28;
+    radarCtx.beginPath();
+    radarCtx.arc(x, y, uncertainty, 0, Math.PI * 2);
+    radarCtx.stroke();
+    radarCtx.globalAlpha = 0.95;
+    radarCtx.beginPath();
+    radarCtx.moveTo(x - 5, y);
+    radarCtx.lineTo(x + 5, y);
+    radarCtx.moveTo(x, y - 5);
+    radarCtx.lineTo(x, y + 5);
+    radarCtx.stroke();
+    if (lastTrackClasses.get(track.id) !== track.classification) {
+      lastTrackClasses.set(track.id, track.classification);
+      log(
+        `TRACK ${track.id} ${track.classification.toUpperCase()} · UNCERTAINTY ${(track.uncertainty / 1000).toFixed(1)} km`,
+      );
+    }
+  }
+  radarCtx.globalAlpha = 1;
+  interceptors.forEach((i) => {
+    if (!i.mesh.visible) return;
+    const x =
+        cx +
+        (i.mesh.position.x - defender.position.x) * RADAR_PIXELS_PER_WORLD_UNIT,
+      y =
+        cy +
+        (i.mesh.position.z - defender.position.z) * RADAR_PIXELS_PER_WORLD_UNIT;
+    radarCtx.fillStyle = "#a4ecff";
+    radarCtx.beginPath();
+    radarCtx.arc(x, y, 3, 0, Math.PI * 2);
+    radarCtx.fill();
+  });
+}, 100);
+setInterval(() => {
+  if (!radarCtx) return;
+  const state = combatPicture.getSearchState(),
+    cx = radarCanvas.width / 2,
+    cy = radarCanvas.height / 2;
+  if (state.focused) {
+    const angle = Math.PI / 2 - state.bearing,
+      half = THREE.MathUtils.degToRad(state.width / 2);
+    radarCtx.fillStyle = "#45c6bd";
+    radarCtx.globalAlpha = 0.1;
+    radarCtx.beginPath();
+    radarCtx.moveTo(cx, cy);
+    radarCtx.arc(cx, cy, 110, angle - half, angle + half);
+    radarCtx.closePath();
+    radarCtx.fill();
+    radarCtx.strokeStyle = "#63d7cf";
+    radarCtx.globalAlpha = 0.5;
+    radarCtx.stroke();
+  }
+  for (const track of combatPicture.tracks.values()) {
+    if (!track.altitudeKnown) {
+      const x =
+          cx +
+          (track.position.x - defender.position.x) *
+            RADAR_PIXELS_PER_WORLD_UNIT,
+        y =
+          cy +
+          (track.position.z - defender.position.z) *
+            RADAR_PIXELS_PER_WORLD_UNIT;
+      radarCtx.strokeStyle = "#78a7ff";
+      radarCtx.globalAlpha = 0.95;
+      radarCtx.strokeRect(x - 5, y - 5, 10, 10);
+    }
+    if (lastAltitudeState.get(track.id) !== track.altitudeKnown) {
+      lastAltitudeState.set(track.id, track.altitudeKnown);
+      log(
+        `TRACK ${track.id} / ${track.altitudeKnown ? "SPS-48E 3D FIRE CONTROL" : "SPS-49 2D WARNING ONLY"}`,
+      );
+    }
+  }
+  radarCtx.globalAlpha = 1;
+}, 100);
+function updateCombat(dt: number) {
+  updateCiws();
+  updateBoosterDebris(dt);
+  updateVlsLaunchEffects(dt);
+  updateCountermeasures(dt);
+  const primaryDefinition =
+      activeShip.sensors.find((sensor) => sensor.threeDimensional) ??
+      activeShip.sensors[0],
+    primarySensor = primaryDefinition.name,
+    secondarySensor =
+      activeShip.sensors.find((sensor) => !sensor.threeDimensional)?.name ??
+      activeShip.sensors[1]?.name ??
+      primarySensor,
+    aspectHealth =
+      activeShip.fixedSensorFaces?.sensorName === primarySensor
+        ? { [primarySensor]: fixedSensorAspectHealth }
+        : {};
+  combatPicture.update(
+    elapsed,
+    dt,
+    radarEnabled
+      ? missiles
+          .map((m, i) => ({ m, i }))
+          .filter((x) => elapsed >= x.m.launchAt && x.m.phase !== "destroyed")
+          .map((x) => ({
+            id: x.i + 1,
+            position: x.m.mesh.position,
+            velocity: x.m.velocity,
+            altitude: x.m.mesh.position.y * 50,
+            rcs: x.m.rcs,
+          }))
+      : [],
+    {
+      [primarySensor]: subsystemHealth("sps48"),
+      [secondarySensor]: subsystemHealth("sps49"),
+    },
+    defender.position,
+    aspectHealth,
+  );
+  const radarState = combatPicture.getSearchState(),
+    primaryTracks = [...combatPicture.tracks.values()].filter((track) =>
+      track.sensorContributors.includes(primarySensor),
+    ),
+    outsideFocus = radarState.focused
+      ? primaryTracks.filter(
+          (track) =>
+            track.age <= primaryDefinition.baseInterval * 2.2 &&
+            Math.abs(
+              angleDifference(
+                Math.atan2(
+                  track.position.x - defender.position.x,
+                  track.position.z - defender.position.z,
+                ),
+                radarState.bearing,
+              ),
+            ) > THREE.MathUtils.degToRad(radarState.width / 2),
+        ).length
+      : 0;
+  canvas.dataset.radarScanMode = primaryDefinition.scanMode ?? "mechanical";
+  canvas.dataset.radarPrimaryTracks = String(primaryTracks.length);
+  canvas.dataset.radarBackgroundTracks = String(outsideFocus);
+  updateShipManeuver(dt);
+  if (activeShip.launcher.kind === "mk10") updateMk10Launchers(dt);
+  else updateVlsCells(dt);
+  combatPicture.drainEvents().forEach((event) => log(event));
+  const activeInterceptors = interceptors.filter((i) => i.mesh.visible),
+    pending = pendingLauncherRequests(),
+    active = activeInterceptors.length + pending.length,
+    assignments = new Map<Missile, number>();
+  activeInterceptors.forEach((i) =>
+    assignments.set(i.target, (assignments.get(i.target) ?? 0) + 1),
+  );
+  pending.forEach((request) =>
+    assignments.set(request.target, (assignments.get(request.target) ?? 0) + 1),
+  );
+  const best = [...combatPicture.tracks.values()]
+    .filter((t) => {
+      const missile = missiles[t.sourceId - 1];
+      return (
+        missile &&
+        missile.phase !== "destroyed" &&
+        t.altitudeKnown &&
+        t.solutionQuality >= 0.45 &&
+        t.age < 2.2 &&
+        (assignments.get(missile) ?? 0) <
+          defensiveShotRequirement(missile, t.quality)
+      );
+    })
+    .sort(
+      (a, b) =>
+        missileThreatScore(missiles[b.sourceId - 1], b.quality) -
+        missileThreatScore(missiles[a.sourceId - 1], a.quality),
+    )[0];
+  const terminalSm2 = activeInterceptors
+    .filter(
+      (i) =>
+        i.weapon.startsWith("SM-2") &&
+        i.target.phase !== "destroyed" &&
+        i.mesh.position.distanceTo(i.target.mesh.position) <
+          weaponProfiles[i.weapon].terminalRange,
+    )
+    .sort(
+      (a, b) =>
+        a.mesh.position.distanceTo(a.target.mesh.position) -
+        b.mesh.position.distanceTo(b.target.mesh.position),
+    );
+  scheduleIlluminators(terminalSm2, 0.05);
+  updateShipStatus();
+  const selected = missiles[selectedTargetId - 1],
+    selectedTrack = combatPicture.trackForTarget(selectedTargetId);
+  if (selected && selected.phase !== "destroyed") {
+    const range = selected.mesh.position.distanceTo(defender.position),
+      profile = weaponProfiles[selectedWeapon],
+      inRange = range >= profile.minRange && range <= profile.maxRange,
+      fireControl = !!selectedTrack?.altitudeKnown,
+      solutionReady = (selectedTrack?.solutionQuality ?? 0) >= 0.45,
+      envelopeState = !fireControl
+        ? "NO 3D SOLUTION"
+        : !solutionReady
+          ? `FC BUILD ${Math.round((selectedTrack?.solutionQuality ?? 0) * 100)}%`
+          : range < profile.minRange
+            ? "INSIDE MIN RANGE / CIWS"
+            : range > profile.maxRange
+              ? "OUT OF ENVELOPE"
+              : "IN RANGE";
+    threatName.textContent = `TRACK ${selectedTrack ? String(selectedTrack.id).padStart(2, "0") : "--"} / ${selectedTrack?.classification === "classified" ? selected.kind : (selectedTrack?.classification.toUpperCase() ?? "PENDING ID")}`;
+    threatRange.textContent = `${(range / 10).toFixed(1)} km`;
+    threatAltitude.textContent = selectedTrack
+      ? fireControl
+        ? `${Math.round(selectedTrack.altitudeEstimate)} m / +/-${Math.round(selectedTrack.altitudeUncertainty)} m`
+        : "2D / ALTITUDE UNKNOWN"
+      : "NO DATA";
+    trackQuality.textContent = selectedTrack
+      ? `TQ ${Math.round(selectedTrack.quality * 100)}% / FC ${Math.round(selectedTrack.solutionQuality * 100)}% ${selectedTrack.solutionTime.toFixed(1)}s / ${selectedTrack.sensorContributors.map((s) => s.replace("AN/", "")).join("+")}`
+      : "NO DATA";
+    threatTti.textContent = `${Math.max(0, Math.round(range / Math.max(1, selected.velocity.length())))} s`;
+    qualityFill.style.width = `${Math.round((selectedTrack?.solutionQuality ?? 0) * 100)}%`;
+    weaponEnvelope.textContent = `${selectedWeapon} / ${envelopeState}`;
+    weaponEnvelope.className =
+      fireControl && solutionReady && inRange ? "in-range" : "out-range";
+  }
+  if (
+    running &&
+    autoFire &&
+    elapsed > 2 &&
+    elapsed >= nextSamLaunch &&
+    (ammo > 0 || sm2Ammo > 0 || sm2erAmmo > 0) &&
+    active < maxSamChannels &&
+    best
+  ) {
+    const target = missiles[best.sourceId - 1],
+      range = target.mesh.position.distanceTo(defender.position),
+      rim = weaponProfiles["RIM-67"],
+      mr = weaponProfiles["SM-2MR"],
+      er = weaponProfiles["SM-2ER"],
+      rimOk = ammo > 0 && range >= rim.minRange && range <= rim.maxRange,
+      mrOk = sm2Ammo > 0 && range >= mr.minRange && range <= mr.maxRange,
+      erOk = sm2erAmmo > 0 && range >= er.minRange && range <= er.maxRange;
+    if (rimOk || mrOk || erOk) {
+      selectedWeapon =
+        mrOk && range < mr.maxRange * 0.8
+          ? "SM-2MR"
+          : rimOk
+            ? "RIM-67"
+            : "SM-2ER";
+      if (queueInterceptorLaunch(target, selectedWeapon)) {
+        nextSamLaunch = elapsed + 0.12;
+        changeAmmo(selectedWeapon, -1);
+      } else nextSamLaunch = elapsed + 1;
+      weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
+    }
+  }
+  interceptors.forEach((i) => {
+    if (!i.mesh.visible) return;
+    if (i.target.phase === "destroyed") {
+      settleEngagement(i, "cancel");
+      i.mesh.visible = false;
+      i.illuminationBeam.visible = false;
+      return;
+    }
+    const profile = weaponProfiles[i.weapon];
+    i.age += dt;
+    if (i.age >= profile.boost) separateBooster(i);
+    const range = i.mesh.position.distanceTo(i.target.mesh.position),
+      speed = Math.max(1, i.velocity.length()),
+      expectedInterceptorSpeed = Math.max(speed, profile.maxSpeed * 0.58),
+      timeToGo = Math.min(
+        4,
+        range / (expectedInterceptorSpeed + i.target.velocity.length()),
+      ),
+      terminal = range < profile.terminalRange,
+      trackId = missiles.indexOf(i.target) + 1;
+    i.commandPoint.addScaledVector(i.commandVelocity, dt);
+    if (!terminal && elapsed >= i.nextDatalink) {
+      const track = combatPicture.trackForTarget(trackId);
+      if (
+        track &&
+        track.altitudeKnown &&
+        track.age < 2.2 &&
+        track.quality > 0.08
+      ) {
+        const delay = 0.2 + (1 - track.quality) * 0.85,
+          solution = track.position
+            .clone()
+            .addScaledVector(track.velocity, delay + timeToGo * 0.65);
+        i.commandPoint.lerp(solution, 0.68);
+        i.commandVelocity.lerp(track.velocity, 0.6);
+        i.datalinkValid = true;
+        i.nextDatalink = elapsed + 0.38 + (1 - track.quality) * 1.05;
+      } else {
+        i.datalinkValid = false;
+        i.nextDatalink = elapsed + 0.55;
+      }
+    }
+    if (terminal && i.weapon === "RIM-67" && !i.mesh.userData.seekerOn) {
+      i.mesh.userData.seekerOn = true;
+      i.mesh.userData.seekerOnAt = elapsed;
+      i.mesh.userData.handoffError = i.commandPoint.distanceTo(
+        i.target.mesh.position,
+      );
+      log(
+        `RIM-67 SEEKER ON / TRACK ${trackId} / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km / HANDOFF +/-${(i.mesh.userData.handoffError / WORLD_UNITS_PER_KM).toFixed(2)} km`,
+      );
+    }
+    const seekerReady =
+      i.weapon === "RIM-67" &&
+      i.mesh.userData.seekerOn &&
+      elapsed - (i.mesh.userData.seekerOnAt ?? elapsed) >= 0.35;
+    if (terminal && seekerReady && !i.mesh.userData.seekerAcquired) {
+      const lookAngle = i.velocity
+          .clone()
+          .normalize()
+          .angleTo(
+            i.target.mesh.position.clone().sub(i.mesh.position).normalize(),
+          ),
+        fov = THREE.MathUtils.degToRad(32),
+        rangeGain = THREE.MathUtils.clamp(
+          1 - range / profile.terminalRange,
+          0,
+          1,
+        ),
+        handoffPenalty = THREE.MathUtils.clamp(
+          (i.mesh.userData.handoffError ?? 0) / (profile.terminalRange * 0.35),
+          0,
+          0.28,
+        ),
+        localContacts = missiles.filter(
+          (m) =>
+            m.phase !== "destroyed" &&
+            m !== i.target &&
+            m.mesh.position.distanceTo(i.target.mesh.position) < 20,
+        ).length,
+        competitionPenalty = Math.min(0.24, localContacts * 0.06),
+        seaClutterPenalty =
+          i.target.mesh.position.y < 1.5 &&
+          i.mesh.position.y - i.target.mesh.position.y > 4
+            ? 0.12
+            : 0,
+        aspectAngle = i.target.velocity
+          .clone()
+          .normalize()
+          .angleTo(
+            i.mesh.position.clone().sub(i.target.mesh.position).normalize(),
+          ),
+        aspectRcs = i.target.rcs * (0.62 + 0.38 * Math.sin(aspectAngle)),
+        acquisitionPk = THREE.MathUtils.clamp(
+          0.58 +
+            rangeGain * 0.3 +
+            aspectRcs * 0.06 -
+            (lookAngle / fov) * 0.18 -
+            handoffPenalty -
+            competitionPenalty -
+            seaClutterPenalty,
+          0.2,
+          0.96,
+        ),
+        acquisitionRoll = Math.abs(
+          Math.sin(trackId * 41.17 + Math.floor(i.age * 4) * 13.9),
+        );
+      if (lookAngle < fov && acquisitionRoll < acquisitionPk) {
+        i.mesh.userData.seekerAcquired = true;
+        i.mesh.userData.seekerConfidence = 0.35;
+        log(
+          `RIM-67 SEEKER CAPTURE / TRACK ${trackId} / FOV ${Math.round(THREE.MathUtils.radToDeg(lookAngle))} DEG / PK ${Math.round(acquisitionPk * 100)}% / RCS ${aspectRcs.toFixed(2)} / ${localContacts} COMPETING${seaClutterPenalty ? " / SEA CLUTTER" : ""}`,
+        );
+      }
+    }
+    if (terminal && i.weapon === "RIM-67" && i.mesh.userData.seekerAcquired) {
+      const lineOfSight = i.target.mesh.position
+          .clone()
+          .sub(i.mesh.position)
+          .normalize(),
+        trackingAngle = i.velocity.clone().normalize().angleTo(lineOfSight),
+        losRate = i.mesh.userData.lastSeekerLos
+          ? i.mesh.userData.lastSeekerLos.angleTo(lineOfSight) /
+            Math.max(dt, 0.001)
+          : 0;
+      i.mesh.userData.lastSeekerLos = lineOfSight.clone();
+      const gimbalExceeded =
+        trackingAngle > THREE.MathUtils.degToRad(45) ||
+        losRate > THREE.MathUtils.degToRad(70);
+      if (gimbalExceeded) {
+        if (i.mesh.userData.seekerBreakAt === undefined)
+          i.mesh.userData.seekerBreakAt = elapsed;
+        if (elapsed - i.mesh.userData.seekerBreakAt > 0.65) {
+          i.mesh.userData.seekerAcquired = false;
+          i.mesh.userData.seekerCoastUntil = elapsed + 0.45;
+          i.mesh.userData.seekerBreakAt = undefined;
+          log(
+            `RIM-67 SEEKER BREAK / TRACK ${trackId} / ${Math.round(THREE.MathUtils.radToDeg(trackingAngle))} DEG / RATE ${Math.round(THREE.MathUtils.radToDeg(losRate))} DPS`,
+          );
+        }
+      } else i.mesh.userData.seekerBreakAt = undefined;
+    }
+    if (i.mesh.userData.seekerAcquired) {
+      if (i.mesh.userData.seekerAimPoint)
+        i.mesh.userData.seekerAimPoint.addScaledVector(i.target.velocity, dt);
+      if (elapsed >= (i.mesh.userData.nextSeekerUpdate ?? 0)) {
+        const noise = Math.min(
+            2.2,
+            range * (0.006 + (1 - i.target.rcs) * 0.004),
+          ),
+          seed = trackId * 19.3 + Math.floor(elapsed * 8.3);
+        i.mesh.userData.seekerAimPoint = i.target.mesh.position
+          .clone()
+          .add(
+            new THREE.Vector3(
+              Math.sin(seed) * noise,
+              Math.cos(seed * 1.7) * noise * 0.35,
+              Math.sin(seed * 2.1) * noise,
+            ),
+          );
+        i.mesh.userData.seekerConfidence = Math.min(
+          1,
+          (i.mesh.userData.seekerConfidence ?? 0.35) + 0.12,
+        );
+        i.mesh.userData.nextSeekerUpdate = elapsed + 0.12;
+      }
+    }
+    const seekerCoasting =
+      i.weapon === "RIM-67" &&
+      !i.mesh.userData.seekerAcquired &&
+      elapsed < (i.mesh.userData.seekerCoastUntil ?? 0);
+    if (seekerCoasting)
+      i.mesh.userData.seekerConfidence = Math.max(
+        0.12,
+        (i.mesh.userData.seekerConfidence ?? 0.35) - dt * 0.9,
+      );
+    const nearestChaff = chaffClouds
+        .filter(
+          (c) =>
+            c.age < 12 && c.position.distanceTo(i.target.mesh.position) < 18,
+        )
+        .sort((a, b) => b.rcs - a.rcs)[0],
+      decoyProbability = nearestChaff
+        ? nearestChaff.rcs / (nearestChaff.rcs + i.target.rcs)
+        : 0,
+      decoyCaptured =
+        i.weapon.startsWith("SM-2") &&
+        terminal &&
+        !!nearestChaff &&
+        Math.abs(Math.sin(trackId * 27.1 + Math.floor(elapsed * 2))) <
+          decoyProbability,
+      ecmStrength =
+        ecmEnabled && i.weapon.startsWith("SM-2")
+          ? THREE.MathUtils.clamp(range / 320, 0, 0.65)
+          : 0,
+      ecmOffset = new THREE.Vector3(
+        Math.sin(elapsed * 3.1 + trackId) * ecmStrength * 4,
+        Math.cos(elapsed * 2.7) * ecmStrength,
+        Math.sin(elapsed * 2.3 + 1) * ecmStrength * 4,
+      );
+    i.mesh.userData.ecmStrength = ecmStrength;
+    if (
+      ecmEnabled &&
+      i.weapon.startsWith("SM-2") &&
+      terminal &&
+      range < 90 &&
+      !i.mesh.userData.burnThrough
+    ) {
+      i.mesh.userData.burnThrough = true;
+      log(
+        `${i.weapon} ECM BURN-THROUGH / TRACK ${trackId} / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+      );
+    }
+    if (decoyCaptured && !i.mesh.userData.decoyCaptured) {
+      i.mesh.userData.decoyCaptured = true;
+      log(
+        `${i.weapon} DECOY CAPTURE / CHAFF RCS ${nearestChaff.rcs.toFixed(1)}`,
+      );
+    }
+    if (!decoyCaptured) i.mesh.userData.decoyCaptured = false;
+    const terminalHoming =
+        terminal &&
+        (i.weapon === "RIM-67"
+          ? !!i.mesh.userData.seekerAcquired || seekerCoasting
+          : i.illuminated),
+      terminalAim =
+        i.weapon === "RIM-67" && i.mesh.userData.seekerAimPoint
+          ? i.mesh.userData.seekerAimPoint
+          : decoyCaptured && nearestChaff
+            ? nearestChaff.position
+            : i.target.mesh.position.clone().add(ecmOffset),
+      seekerBlend =
+        i.weapon === "RIM-67" ? (i.mesh.userData.seekerConfidence ?? 0.35) : 1,
+      aim = terminalHoming
+        ? i.commandPoint
+            .clone()
+            .lerp(
+              terminalAim
+                .clone()
+                .addScaledVector(
+                  decoyCaptured
+                    ? (nearestChaff?.velocity ?? i.target.velocity)
+                    : i.target.velocity,
+                  timeToGo * 0.8,
+                ),
+              seekerBlend,
+            )
+        : i.commandPoint.clone();
+    const seaSkimmer = i.target.kind !== "Kh-22",
+      estimatedLaunchRange = Math.min(
+        profile.maxRange,
+        range + i.distanceTraveled,
+      ),
+      loftFactor = THREE.MathUtils.clamp(
+        (estimatedLaunchRange - profile.terminalRange) /
+          Math.max(1, profile.maxRange - profile.terminalRange),
+        0,
+        1,
+      );
+    if (seaSkimmer) {
+      // Against sea skimmers, clear the launcher and pitch toward a shallow forward corridor.
+      // This is deliberately not the energy-saving loft used against the high-altitude Kh-22.
+      const launchClearance = THREE.MathUtils.smoothstep(
+        i.age,
+        0,
+        Math.min(0.65, profile.boost * 0.14),
+      );
+      const lowAltitudeCorridor =
+        i.target.mesh.position.y +
+        THREE.MathUtils.lerp(3.2, 1.8, launchClearance) +
+        loftFactor * 0.5;
+      aim.y = lowAltitudeCorridor;
+      if (!i.mesh.userData.trajectoryProfileLogged) {
+        i.mesh.userData.trajectoryProfileLogged = true;
+        log(
+          `${i.weapon} SEA-SKIMMER FORWARD INTERCEPT / ${i.target.kind} / CRUISE ALT ${Math.round(lowAltitudeCorridor * 50)} m`,
+        );
+      }
+    } else if (i.age < profile.boost)
+      aim.y = Math.max(aim.y, 20 + loftFactor * 28);
+    else if (!terminal) aim.y += Math.min(34, range * 0.16);
+    const guidanceDirection = aim.sub(i.mesh.position).normalize(),
+      verticalDirection = i.mesh.userData.verticalDirection as
+        | THREE.Vector3
+        | undefined,
+      verticalBlend = i.mesh.userData.vlsLaunch
+        ? THREE.MathUtils.smoothstep(
+            i.age,
+            seaSkimmer ? 0.06 : 0.78,
+            seaSkimmer ? 0.24 : 1.85,
+          )
+        : 1,
+      desired = verticalDirection
+        ? verticalDirection
+            .clone()
+            .lerp(guidanceDirection, verticalBlend)
+            .normalize()
+        : guidanceDirection,
+      current = i.velocity.clone().normalize(),
+      turnSign = current.clone().cross(desired).y,
+      angle = current.angleTo(desired),
+      boosterSeparated = !!i.mesh.userData.boosterSeparated,
+      massFactor = boosterSeparated ? 1 : 0.68,
+      boostTurnFactor = seaSkimmer ? 14 : 0.62,
+      turnLimit =
+        profile.turnRate *
+        dt *
+        (terminal ? 2.2 : i.age < profile.boost ? boostTurnFactor : 1) *
+        massFactor,
+      turnDemand = THREE.MathUtils.clamp(
+        angle / Math.max(0.001, turnLimit),
+        0,
+        1,
+      ),
+      blend = angle > 0 ? Math.min(1, turnLimit / angle) : 1,
+      direction = current.lerp(desired, blend).normalize(),
+      rangeFraction = Math.min(1, i.distanceTraveled / profile.maxRange),
+      commandedSpeed = profile.maxSpeed * (1 - rangeFraction * 0.1),
+      dragLoss = (0.18 + 0.72 * turnDemand) * (terminal ? 1.15 : 1) * dt,
+      nextSpeed = Math.max(
+        profile.maxSpeed * 0.28,
+        Math.min(
+          commandedSpeed,
+          speed + profile.acceleration * massFactor * dt,
+        ) - dragLoss,
+      ),
+      previousPosition = i.mesh.position.clone();
+    i.mesh.userData.energy = Math.max(
+      0,
+      (i.mesh.userData.energy ?? 1) - dragLoss * 0.028,
+    );
+    i.velocity.copy(direction.multiplyScalar(nextSpeed));
+    i.mesh.position.addScaledVector(i.velocity, dt);
+    i.distanceTraveled += nextSpeed * dt;
+    i.mesh.userData.maxAltitude = Math.max(
+      i.mesh.userData.maxAltitude ?? i.mesh.position.y,
+      i.mesh.position.y,
+    );
+    canvas.dataset.interceptorMaxAltitude = (
+      i.mesh.userData.maxAltitude as number
+    ).toFixed(2);
+    canvas.dataset.interceptorTrajectory = seaSkimmer
+      ? "low-altitude"
+      : "high-altitude";
+    const targetBank = THREE.MathUtils.clamp(turnSign * 12, -0.7, 0.7),
+      attitudeBank = THREE.MathUtils.lerp(
+        i.mesh.userData.flightBank ?? 0,
+        targetBank,
+        Math.min(1, dt * 2.8),
+      );
+    i.mesh.userData.flightBank = attitudeBank;
+    setMissileAttitude(i.mesh, direction, "+Y", attitudeBank);
+    const closestPoint = new THREE.Vector3();
+    new THREE.Line3(previousPosition, i.mesh.position).closestPointToPoint(
+      i.target.mesh.position,
+      true,
+      closestPoint,
+    );
+    const postRange = i.mesh.position.distanceTo(i.target.mesh.position),
+      interceptDistance = Math.min(
+        range,
+        postRange,
+        closestPoint.distanceTo(i.target.mesh.position),
+      );
+    if (i.history[i.history.length - 1].distanceTo(i.mesh.position) > 2.2) {
+      i.history.push(i.mesh.position.clone());
+      if (i.history.length > 140) i.history.shift();
+      i.guidancePath.geometry.dispose();
+      i.guidancePath.geometry = new THREE.BufferGeometry().setFromPoints(
+        i.history,
+      );
+    }
+    const needsIllumination = i.weapon.startsWith("SM-2") && terminal,
+      seekerConfidence = Math.round(
+        (i.mesh.userData.seekerConfidence ?? 0) * 100,
+      );
+    if (needsIllumination) {
+      if (i.illuminated) i.mesh.userData.illuminationLostAt = undefined;
+      else if (i.mesh.userData.illuminationLostAt === undefined)
+        i.mesh.userData.illuminationLostAt = elapsed;
+      if (
+        typeof i.mesh.userData.illuminationLostAt === "number" &&
+        elapsed - i.mesh.userData.illuminationLostAt > 2.5
+      ) {
+        settleEngagement(i, "miss");
+        i.mesh.visible = false;
+        i.illuminationBeam.visible = false;
+        log(
+          `${i.weapon} MISS / ${activeShip.subsystemLabels.spg55} ILLUMINATION LOST`,
+        );
+        return;
+      }
+    }
+    phaseEl.textContent =
+      i.age < profile.boost
+        ? seaSkimmer
+          ? "BOOST / LOW-ALTITUDE PROGRAM TURN"
+          : "BOOST / LOFT CLIMB"
+        : needsIllumination
+          ? i.illuminated
+            ? `TERMINAL / ${activeShip.subsystemLabels.spg55} ILLUMINATION`
+            : "TERMINAL / COASTING WITHOUT ILLUMINATION"
+          : terminal
+            ? i.mesh.userData.seekerAcquired
+              ? `TERMINAL / ACTIVE SEEKER ${seekerConfidence}%`
+              : seekerCoasting
+                ? `TERMINAL / TRACK MEMORY ${seekerConfidence}%`
+                : seekerReady
+                  ? "TERMINAL / SEEKER SEARCH"
+                  : "TERMINAL / SEEKER WARMUP"
+            : i.datalinkValid
+              ? "MIDCOURSE / DATALINK UPDATE"
+              : "MIDCOURSE / INERTIAL COAST";
+    if (
+      terminal &&
+      i.weapon === "RIM-67" &&
+      !i.mesh.userData.seekerAcquired &&
+      !seekerCoasting &&
+      elapsed - (i.mesh.userData.seekerOnAt ?? elapsed) > 3.2
+    ) {
+      settleEngagement(i, "miss");
+      i.mesh.visible = false;
+      i.illuminationBeam.visible = false;
+      log(`RIM-67 MISS / SEEKER NO CAPTURE / TRACK ${trackId}`);
+      return;
+    }
+    if (interceptDistance < 2.5) {
+      const id = missiles.indexOf(i.target) + 1,
+        trackQualityValue = combatPicture.trackForTarget(id)?.quality ?? 0.1,
+        guidanceQuality =
+          i.weapon === "RIM-67"
+            ? i.mesh.userData.seekerAcquired
+              ? Math.max(0.62, trackQualityValue)
+              : 0.15
+            : i.illuminated
+              ? Math.max(0.55, trackQualityValue)
+              : trackQualityValue,
+        saturation = missiles.filter(
+          (m) =>
+            m.phase !== "destroyed" &&
+            m.mesh.position.distanceTo(i.target.mesh.position) < 35,
+        ).length,
+        illuminationPenalty = needsIllumination && !i.illuminated ? 0.34 : 0,
+        relativeClosing = i.velocity.clone().sub(i.target.velocity),
+        lineToTarget = i.target.mesh.position
+          .clone()
+          .sub(i.mesh.position)
+          .normalize(),
+        approachCos = relativeClosing.normalize().dot(lineToTarget),
+        geometryFactor = 0.55 + 0.45 * Math.max(0, approachCos),
+        energyFactor = 0.86 + 0.14 * (i.mesh.userData.energy ?? 1);
+      const pk = Math.max(
+        0.08,
+        Math.min(
+          0.88,
+          (0.48 +
+            guidanceQuality * 0.42 -
+            saturation * 0.07 +
+            (i.weapon === "SM-2MR" ? 0.06 : 0) -
+            illuminationPenalty) *
+            geometryFactor *
+            energyFactor,
+        ),
+      );
+      const roll = Math.abs(
+        Math.sin(id * 97.13 + (ammo + sm2Ammo) * 17.7 + i.age * 3.17),
+      );
+      i.mesh.visible = false;
+      i.illuminationBeam.visible = false;
+      if (roll < pk) {
+        settleEngagement(i, "hit");
+        i.target.phase = "destroyed";
+        i.target.mesh.visible = false;
+        destroyMissileVisual(i.target, "intercept");
+        phaseEl.textContent = "TERMINAL INTERCEPT";
+        log(
+          `${i.weapon} INTERCEPT / ${(i.distanceTraveled / WORLD_UNITS_PER_KM).toFixed(1)} km / PK ${(pk * 100).toFixed(0)}% / GEOM ${(geometryFactor * 100).toFixed(0)}%${needsIllumination ? " / ILLUMINATED" : ""}`,
+        );
+      } else {
+        settleEngagement(i, "miss");
+        log(
+          `${i.weapon} MISS / PK ${(pk * 100).toFixed(0)}% / GEOM ${(geometryFactor * 100).toFixed(0)}%${illuminationPenalty ? " / NO ILLUMINATOR" : ""}`,
+        );
+      }
+      return;
+    }
+    if (terminal) {
+      const closestEver = Math.min(
+          i.mesh.userData.closestApproach ?? Infinity,
+          interceptDistance,
+        ),
+        previousRange = i.mesh.userData.previousTargetRange ?? Infinity;
+      i.mesh.userData.closestApproach = closestEver;
+      i.mesh.userData.previousTargetRange = postRange;
+      if (postRange > previousRange + 0.15 && closestEver < 8) {
+        settleEngagement(i, "miss");
+        i.mesh.visible = false;
+        i.illuminationBeam.visible = false;
+        log(
+          `${i.weapon} MISS / CPA ${(closestEver / WORLD_UNITS_PER_KM).toFixed(2)} km`,
+        );
+        return;
+      }
+    }
+    if (i.distanceTraveled > profile.maxRange) {
+      settleEngagement(i, "miss");
+      i.mesh.visible = false;
+      i.illuminationBeam.visible = false;
+      log(
+        `${i.weapon} MISS / RANGE EXHAUSTED ${(i.distanceTraveled / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+      );
+      return;
+    }
+  });
+  const launchSystemIdle =
+    activeShip.launcher.kind === "mk10"
+      ? mk10Launchers.every((launcher) => launcher.phase === "ready")
+      : vlsCells.every(
+          (cell) =>
+            !cell.pending &&
+            cell.phase !== "opening" &&
+            cell.phase !== "launching" &&
+            cell.phase !== "closing",
+        );
+  if (
+    !missionEnded &&
+    missiles.length > 0 &&
+    missiles.every((m) => m.phase === "destroyed") &&
+    hullIntegrity > 0 &&
+    launchSystemIdle
+  ) {
+    interceptors.forEach((i) => {
+      i.mesh.visible = false;
+      i.illuminationBeam.visible = false;
+    });
+    updateShipStatus();
+    finishMission(true);
+  }
+}
+function updateIncomingMissile(m: Missile, dt: number) {
+  if (m.phase === "destroyed") {
+    m.mesh.userData.seekerLine.visible = false;
+    m.mesh.userData.seekerFov.visible = false;
+    return;
+  }
+  if (elapsed < m.launchAt) {
+    m.mesh.visible = false;
+    m.path.visible = false;
+    m.mesh.userData.seekerLine.visible = false;
+    return;
+  }
+  m.mesh.visible = true;
+  m.path.visible = true;
+  m.age += dt;
+  const range = m.mesh.position.distanceTo(defender.position),
+    profile = incomingProfiles[m.kind],
+    terminalFactor = THREE.MathUtils.clamp(
+      (profile.terminalAt - range) / (profile.terminalAt * 0.72),
+      0,
+      1,
+    );
+  m.phase =
+    range < profile.terminalAt
+      ? "terminal"
+      : range < profile.terminalAt * 1.9
+        ? "midcourse"
+        : "inbound";
+  if (
+    chaffEnabled &&
+    m.phase === "terminal" &&
+    !m.mesh.userData.chaffDeployed &&
+    range < profile.terminalAt * 0.72
+  )
+    deployChaff(m);
+  if (m.phase === "terminal" && !m.mesh.userData.seekerOn) {
+    m.mesh.userData.seekerOn = true;
+    log(
+      `${m.kind} ACTIVE SEEKER ON / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+    );
+  }
+  if (
+    m.phase === "terminal" &&
+    srbocEnabled &&
+    range < 140 &&
+    !m.mesh.userData.shipDecoyCloud &&
+    (m.mesh.userData.srbocShots ?? 0) < 2 &&
+    deployShipChaff(m)
+  )
+    m.mesh.userData.srbocShots = (m.mesh.userData.srbocShots ?? 0) + 1;
+  const commandedAltitude = THREE.MathUtils.lerp(
+    profile.cruiseAltitude,
+    profile.terminalAltitude,
+    terminalFactor,
+  );
+  const weave =
+    m.kind === "P-700"
+      ? new THREE.Vector3(
+          Math.sin(m.age * 2.8) * 7 * terminalFactor,
+          0,
+          Math.cos(m.age * 2.35) * 5 * terminalFactor,
+        )
+      : m.kind === "P-500"
+        ? new THREE.Vector3(
+            Math.sin(m.age * 3.8) * 2.2 * terminalFactor,
+            0,
+            Math.cos(m.age * 3.1) * 1.4 * terminalFactor,
+          )
+        : new THREE.Vector3();
+  const availableShipChaff = chaffClouds.filter(
+    (c) =>
+      c.side === "ship" &&
+      c.age < 12 &&
+      c.position.distanceTo(defender.position) < 55,
+  );
+  const ecmHealth = subsystemHealth("ecm"),
+    previousDecoy = m.mesh.userData.shipDecoyCloud as ChaffCloud | undefined,
+    sjRatio =
+      Math.pow(profile.burnThroughRange / Math.max(1, range), 2) /
+      Math.max(0.05, ecmHealth),
+    sjDb = 10 * Math.log10(sjRatio),
+    burnThrough = !shipEcmEnabled || ecmHealth <= 0.05 || sjDb >= 0,
+    shipEcmStrength =
+      shipEcmEnabled && !burnThrough
+        ? THREE.MathUtils.clamp(-sjDb / 18, 0, 0.8) * ecmHealth
+        : 0,
+    lockedDecoy =
+      previousDecoy && availableShipChaff.includes(previousDecoy)
+        ? previousDecoy
+        : undefined;
+  const evaluated = (m.mesh.userData.evaluatedShipChaff ??=
+      new Set<number>()) as Set<number>,
+    newClouds = availableShipChaff.filter((c) => !evaluated.has(c.serial)),
+    shipChaff =
+      lockedDecoy ??
+      newClouds.sort(
+        (a, b) =>
+          b.rcs /
+            Math.pow(Math.max(4, b.position.distanceTo(m.mesh.position)), 4) -
+          a.rcs /
+            Math.pow(Math.max(4, a.position.distanceTo(m.mesh.position)), 4),
+      )[0];
+  const chaffPower = shipChaff
+      ? shipChaff.rcs /
+        Math.pow(Math.max(4, shipChaff.position.distanceTo(m.mesh.position)), 4)
+      : 0,
+    shipPower =
+      (SHIP_RADAR_RCS / Math.pow(Math.max(4, range), 4)) *
+      (1 - shipEcmStrength * 0.55),
+    deceptionPk = shipChaff
+      ? THREE.MathUtils.clamp(
+          chaffPower / (chaffPower + shipPower) + shipEcmStrength * 0.15,
+          0.05,
+          0.88,
+        )
+      : 0,
+    captureSeed = shipChaff
+      ? Math.sin(
+          (missiles.indexOf(m) + 1) * 12.9898 + shipChaff.serial * 78.233,
+        ) * 43758.5453
+      : 0,
+    captureRoll = shipChaff ? captureSeed - Math.floor(captureSeed) : 1,
+    capturedNow =
+      !burnThrough && !!shipChaff && !lockedDecoy && captureRoll < deceptionPk,
+    deceived = !burnThrough && (!!lockedDecoy || capturedNow);
+  if (shipChaff && !lockedDecoy) {
+    evaluated.add(shipChaff.serial);
+    if (!capturedNow)
+      log(
+        `${m.kind} CHAFF REJECT / PK ${Math.round(deceptionPk * 100)}% / ROLL ${Math.round(captureRoll * 100)}%`,
+      );
+  }
+  if (burnThrough) {
+    m.mesh.userData.shipDecoyCloud = undefined;
+    if (shipEcmEnabled && !m.mesh.userData.shipEcmBurnThrough) {
+      m.mesh.userData.shipEcmBurnThrough = true;
+      log(
+        `${m.kind} SHIP ECM BURN-THROUGH / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+      );
+    }
+  }
+  if (deceived && shipChaff && !lockedDecoy) {
+    m.mesh.userData.shipDecoyCloud = shipChaff;
+    log(
+      `${m.kind} LOCK TRANSFER / SRBOC CHAFF / PK ${Math.round(deceptionPk * 100)}%`,
+    );
+  }
+  m.mesh.userData.shipDecoy = deceived;
+  m.mesh.userData.ewState = deceived
+    ? "CHAFF LOCK"
+    : shipEcmStrength > 0
+      ? `J/S +${Math.round(-sjDb)} dB`
+      : burnThrough && shipEcmEnabled
+        ? `S/J +${Math.round(sjDb)} dB`
+        : "CLEAR";
+  m.mesh.userData.seekerState =
+    m.phase === "terminal" ? (deceived ? "FALSE TARGET" : "ACTIVE") : "STANDBY";
+  const ecmOffset = new THREE.Vector3(
+      Math.sin(m.age * 2.1) * shipEcmStrength * 8,
+      0,
+      Math.cos(m.age * 1.7) * shipEcmStrength * 8,
+    ),
+    aimBase =
+      deceived && shipChaff
+        ? shipChaff.position
+        : defender.position.clone().add(ecmOffset),
+    aimPoint = aimBase
+      .clone()
+      .add(m.aimOffset)
+      .add(weave)
+      .add(new THREE.Vector3(0, commandedAltitude, 0));
+  const seekerFov = m.mesh.userData.seekerFov as THREE.Mesh,
+    seekerLine = m.mesh.userData.seekerLine as THREE.Line,
+    seekerVisible =
+      m.phase === "terminal" && missiles.indexOf(m) + 1 === selectedTargetId,
+    seekerColor = deceived
+      ? 0xffcf55
+      : shipEcmStrength > 0
+        ? 0x5ee5dc
+        : 0xff5b4d;
+  seekerFov.visible = seekerVisible;
+  seekerLine.visible = seekerVisible;
+  (seekerFov.material as THREE.MeshBasicMaterial).color.setHex(seekerColor);
+  (seekerLine.material as THREE.LineBasicMaterial).color.setHex(seekerColor);
+  if (seekerVisible) {
+    seekerLine.geometry.dispose();
+    seekerLine.geometry = new THREE.BufferGeometry().setFromPoints([
+      m.mesh.position.clone(),
+      aimBase.clone().add(new THREE.Vector3(0, commandedAltitude, 0)),
+    ]);
+  }
+  const desired = aimPoint.sub(m.mesh.position).normalize();
+  if (deceived) m.mesh.userData.everDecoyed = true;
+  const current = m.velocity.clone().normalize();
+  const turnSign = current.clone().cross(desired).y;
+  const angle = current.angleTo(desired),
+    maxTurn =
+      THREE.MathUtils.degToRad(profile.turnRate * (1 + terminalFactor * 0.75)) *
+      dt;
+  const blend = angle > 0 ? Math.min(1, maxTurn / angle) : 1;
+  const direction = current.lerp(desired, blend).normalize();
+  const targetSpeed = THREE.MathUtils.lerp(
+    profile.cruiseSpeed,
+    profile.terminalSpeed,
+    terminalFactor,
+  );
+  const speed = THREE.MathUtils.lerp(
+    m.velocity.length(),
+    targetSpeed,
+    Math.min(1, dt * 0.55),
+  );
+  m.velocity.copy(direction.multiplyScalar(speed));
+  m.mesh.position.addScaledVector(m.velocity, dt);
+  m.bank = THREE.MathUtils.lerp(
+    m.bank,
+    THREE.MathUtils.clamp(turnSign * 8, -0.62, 0.62),
+    Math.min(1, dt * 2.4),
+  );
+  setMissileAttitude(m.mesh, m.velocity, "-Z", m.bank);
+  if (m.mesh.userData.seaMist)
+    m.mesh.userData.seaMist.visible =
+      m.kind !== "Kh-22" && m.phase === "terminal" && m.mesh.position.y < 1.25;
+  if (m.mesh.userData.shockCone)
+    m.mesh.userData.shockCone.visible =
+      m.kind === "Kh-22" && m.phase === "terminal";
+  if (
+    m.history.length === 0 ||
+    m.mesh.position.distanceTo(m.history[m.history.length - 1]) > 3
+  ) {
+    m.history.push(m.mesh.position.clone());
+    if (m.history.length > 90) m.history.shift();
+    m.path.geometry.dispose();
+    m.path.geometry = new THREE.BufferGeometry().setFromPoints(m.history);
+  }
+  const postShipRange = m.mesh.position.distanceTo(defender.position),
+    closestShipRange = Math.min(
+      m.mesh.userData.closestShipRange ?? Infinity,
+      postShipRange,
+    );
+  m.mesh.userData.closestShipRange = closestShipRange;
+  m.mesh.userData.previousShipRange = postShipRange;
+  if (
+    m.mesh.userData.everDecoyed &&
+    postShipRange > closestShipRange + 4 &&
+    closestShipRange < profile.terminalAt &&
+    closestShipRange > 6
+  ) {
+    m.phase = "destroyed";
+    m.mesh.visible = false;
+    log(
+      `${m.kind} SOFT KILL / SRBOC DECOY / CPA ${(closestShipRange / WORLD_UNITS_PER_KM).toFixed(2)} km`,
+    );
+    return;
+  }
+  if (postShipRange < 6) {
+    const nearestSam = interceptors
+      .filter((i) => i.mesh.visible)
+      .reduce(
+        (best, i) =>
+          Math.min(best, i.mesh.position.distanceTo(m.mesh.position)),
+        Infinity,
+      );
+    m.phase = "destroyed";
+    m.mesh.visible = false;
+    leakers++;
+    hullIntegrity = Math.max(0, hullIntegrity - profile.damage);
+    createShipDamage(m.mesh.position, profile.damage);
+    applySubsystemDamage(m, profile.damage);
+    destroyMissileVisual(m, "impact");
+    log(
+      `${m.kind} IMPACT / ${profile.damage}% DAMAGE / SAM ${Number.isFinite(nearestSam) ? (nearestSam / WORLD_UNITS_PER_KM).toFixed(1) + " km" : "NONE"} / HULL ${hullIntegrity}%`,
+    );
+    updateShipStatus();
+    if (hullIntegrity <= 0) {
+      phaseEl.textContent = `${activeShip.name} DISABLED`;
+      finishMission(false);
+    }
+  }
+}
+function updateTargetMarker() {
+  const selected = missiles[selectedTargetId - 1],
+    track = combatPicture.trackForTarget(selectedTargetId);
+  seekerState.textContent = selected?.mesh.userData.seekerState ?? "STANDBY";
+  ewState.textContent = selected?.mesh.userData.ewState ?? "CLEAR";
+  seekerState.className =
+    selected?.mesh.userData.seekerState === "FALSE TARGET" ? "ew-warning" : "";
+  ewState.className =
+    selected?.mesh.userData.ewState === "ECM JAMMED"
+      ? "ew-active"
+      : selected?.mesh.userData.ewState === "CHAFF LOCK"
+        ? "ew-warning"
+        : "";
+  if (
+    !selected ||
+    selected.phase === "destroyed" ||
+    elapsed < selected.launchAt ||
+    !track
+  ) {
+    targetMarker.style.display = "none";
+    return;
+  }
+  const projected = track.position.clone().project(camera),
+    behind = projected.z < -1 || projected.z > 1,
+    rawX = (projected.x * 0.5 + 0.5) * innerWidth,
+    rawY = (-projected.y * 0.5 + 0.5) * innerHeight,
+    margin = innerWidth < 560 ? 28 : 46,
+    safeTop = innerWidth < 560 ? 250 : 76,
+    safeBottom = innerWidth < 560 ? 220 : 110,
+    centerX = innerWidth * 0.5,
+    centerY = innerHeight * 0.5,
+    angle = Math.atan2(rawY - centerY, rawX - centerX),
+    displayX = behind
+      ? centerX + Math.cos(angle + Math.PI) * innerWidth
+      : centerX + Math.cos(angle) * innerWidth,
+    displayY = behind
+      ? centerY + Math.sin(angle + Math.PI) * innerHeight
+      : centerY + Math.sin(angle) * innerHeight,
+    x = Math.max(
+      margin,
+      Math.min(innerWidth - margin, behind ? displayX : rawX),
+    ),
+    y = Math.max(
+      safeTop,
+      Math.min(innerHeight - safeBottom, behind ? displayY : rawY),
+    ),
+    offscreen =
+      behind ||
+      rawX < margin ||
+      rawX > innerWidth - margin ||
+      rawY < safeTop ||
+      rawY > innerHeight - safeBottom,
+    range = track.position.distanceTo(defender.position),
+    tti = Math.max(0, Math.round(range / Math.max(1, track.velocity.length())));
+  targetMarker.style.display = "block";
+  targetMarker.style.left = `${x}px`;
+  targetMarker.style.top = `${y}px`;
+  targetMarker.style.setProperty(
+    "--bearing",
+    `${Math.atan2((behind ? displayY : rawY) - centerY, (behind ? displayX : rawX) - centerX)}rad`,
+  );
+  targetMarker.classList.toggle("offscreen", offscreen);
+  targetMarker.classList.toggle("right-edge", x > innerWidth - 180);
+  targetMarkerLabel.textContent = `T${String(track.id).padStart(2, "0")} ${track.classification === "classified" ? selected.kind : track.classification.toUpperCase()} / ${tti}s / ±${(track.uncertainty / 1000).toFixed(1)}km`;
+}
+function tick(now: number) {
+  const realDt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (running) {
+    simAccumulator += realDt * timeScale;
+    while (simAccumulator >= 0.05 && running) {
+      elapsed += 0.05;
+      updateCombat(0.05);
+      missiles.forEach((m) => updateIncomingMissile(m, 0.05));
+      captureAarSnapshot();
+      simAccumulator -= 0.05;
+    }
+    const activeMissiles = missiles.filter(
+        (m) => m.phase !== "destroyed" && elapsed >= m.launchAt,
+      ),
+      live = activeMissiles.length,
+      distances = activeMissiles.map((m) =>
+        m.mesh.position.distanceTo(defender.position),
+      );
+    document.querySelector("#targetCount")!.textContent =
+      `${live} ACTIVE / ${missiles.filter((m) => m.phase !== "destroyed").length - live} RESERVE / ${distances.length ? (Math.max(...distances) / 10).toFixed(1) : "0.0"} km`;
+  }
+  for (let i = 0; i < seaPositions.count; i++) {
+    const p = i * 3,
+      x = seaBase[p],
+      y = seaBase[p + 1];
+    seaPositions.setZ(
+      i,
+      Math.sin(x * 0.026 + elapsed * 0.72) * 0.48 +
+        Math.sin(y * 0.019 - elapsed * 0.54) * 0.34 +
+        Math.sin((x + y) * 0.011 + elapsed * 0.31) * 0.2,
+    );
+  }
+  seaPositions.needsUpdate = true;
+  if (++waveFrame % 8 === 0) seaGeometry.computeVertexNormals();
+  const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
+    ewThreat = missiles.some((m) => m.mesh.visible && m.phase === "terminal"),
+    ecmHealth = subsystemHealth("ecm");
+  if (ewPulse) {
+    ewPulse.visible = shipEcmEnabled && ecmHealth > 0.05 && ewThreat;
+    ewPulse.children.forEach((ring, index) => {
+      const phase = (elapsed * 0.72 + index / 3) % 1,
+        material = (ring as THREE.Mesh).material;
+      if (material instanceof THREE.MeshBasicMaterial) {
+        ring.scale.setScalar(0.55 + phase * 0.8);
+        material.opacity = 0.2 * (1 - phase) * ecmHealth;
+      }
+    });
+  }
+  missiles.forEach((m, index) => {
+    if (!m.mesh.visible) return;
+    const selection = m.mesh.userData.selection as THREE.Mesh | undefined;
+    if (selection?.visible) {
+      const parentWorld = m.mesh.getWorldQuaternion(new THREE.Quaternion());
+      selection.quaternion.copy(
+        parentWorld.invert().multiply(camera.quaternion),
+      );
+    }
+    const pulse = 0.88 + Math.sin(elapsed * 19 + index * 1.7) * 0.12;
+    (m.mesh.userData.exhaust as THREE.Mesh | undefined)?.scale.set(1, pulse, 1);
+    (m.mesh.userData.hotCore as THREE.Mesh | undefined)?.scale.setScalar(
+      0.9 + pulse * 0.12,
+    );
+    (m.mesh.userData.seaMist as THREE.Mesh | undefined)?.scale.set(
+      1 + pulse * 0.12,
+      1 + pulse * 0.28,
+      1 + pulse * 0.12,
+    );
+    const shock = m.mesh.userData.shockCone as THREE.Mesh | undefined;
+    if (shock)
+      (shock.material as THREE.MeshBasicMaterial).opacity =
+        0.09 + pulse * 0.035;
+  });
+  clockEl.textContent = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(Math.floor(elapsed % 60)).padStart(2, "0")}`;
+  updateShipWeaponVisuals(realDt);
+  updateCamera();
+  updateShipVisualLod();
+  updateShipLights();
+  defender.userData.smokePuffs?.forEach((puff: THREE.Mesh, index: number) => {
+    const life = (elapsed * 0.22 + index / 9) % 1;
+    puff.position.set(
+      -4 - life * 7,
+      15 + life * 11,
+      Math.sin(index * 2.1 + life * 4) * 0.8,
+    );
+    puff.scale.setScalar(0.55 + life * 2.1);
+    (puff.material as THREE.MeshBasicMaterial).opacity = 0.13 * (1 - life);
+  });
+  if (defender.userData.flag) {
+    const flagPositions = defender.userData.flag.geometry.attributes
+      .position as THREE.BufferAttribute;
+    for (let i = 0; i < flagPositions.count; i++) {
+      const x = flagPositions.getX(i),
+        y = flagPositions.getY(i),
+        free = -x / 3.8;
+      flagPositions.setZ(
+        i,
+        Math.sin(elapsed * 5 + x * 2.8 + y * 0.7) * 0.34 * free,
+      );
+    }
+    flagPositions.needsUpdate = true;
+  }
+  shipDamageEffects.forEach((effect) => {
+    effect.fire.scale.setScalar(
+      0.8 + Math.sin(elapsed * 13 + effect.seed) * 0.22,
+    );
+    effect.light.intensity = 3.5 + Math.sin(elapsed * 17 + effect.seed) * 1.5;
+    effect.smoke.forEach((puff, index) => {
+      const life =
+        (elapsed * 0.28 + index / effect.smoke.length + effect.seed) % 1;
+      puff.position.set(
+        -life * 2,
+        1 + life * 9,
+        Math.sin(effect.seed + index * 1.7) * 0.7,
+      );
+      puff.scale.setScalar(0.5 + life * 2.4);
+      (puff.material as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - life);
+    });
+  });
+  updateTargetMarker();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-canvas.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY}); addEventListener('pointerup',()=>dragging=false); addEventListener('pointermove',e=>{if(!dragging)return;az-=(e.clientX-px)*.006;el=Math.max(.15,Math.min(1.2,el+(e.clientY-py)*.005));px=e.clientX;py=e.clientY}); canvas.addEventListener('wheel',e=>{dist=Math.max(70,Math.min(360,dist+e.deltaY*.12))}); addEventListener('keydown',e=>{if(e.code==='Space')running=!running;if(e.key.toLowerCase()==='r')location.reload()});
-addEventListener('keydown',e=>{if(e.key==='1'){cinematic=false;viewMode=1;az=.8;el=.32;dist=125;}if(e.key==='2'){cinematic=false;viewMode=2;az=.65;el=.48;dist=210;}if(e.key==='3'){cinematic=false;viewMode=3;az=.15;el=.25;dist=260;}if(e.key==='4'){cinematic=false;viewMode=4;az=.8;el=.18;dist=28;}if(e.key.toLowerCase()==='c')cinematic=!cinematic;});
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+canvas.addEventListener("pointerdown", (e) => {
+  dragging = true;
+  px = e.clientX;
+  py = e.clientY;
+});
+addEventListener("pointerup", () => (dragging = false));
+addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  az -= (e.clientX - px) * 0.006;
+  el = Math.max(0.15, Math.min(1.2, el + (e.clientY - py) * 0.005));
+  px = e.clientX;
+  py = e.clientY;
+});
+canvas.addEventListener("wheel", (e) => {
+  dist = Math.max(70, Math.min(360, dist + e.deltaY * 0.12));
+});
+addEventListener("keydown", (e) => {
+  if (e.code === "Space") running = !running;
+  if (e.key.toLowerCase() === "r") location.reload();
+});
+addEventListener("keydown", (e) => {
+  if (e.key === "1") {
+    cinematic = false;
+    viewMode = 1;
+    az = 0.8;
+    el = 0.32;
+    dist = 125;
+  }
+  if (e.key === "2") {
+    cinematic = false;
+    viewMode = 2;
+    az = 0.65;
+    el = 0.48;
+    dist = 210;
+  }
+  if (e.key === "3") {
+    cinematic = false;
+    viewMode = 3;
+    az = 0.15;
+    el = 0.25;
+    dist = 260;
+  }
+  if (e.key === "4") {
+    cinematic = false;
+    viewMode = 4;
+    az = 0.8;
+    el = 0.18;
+    dist = 28;
+  }
+  if (e.key.toLowerCase() === "c") cinematic = !cinematic;
+});

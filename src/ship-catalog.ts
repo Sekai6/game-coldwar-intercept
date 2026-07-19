@@ -1,0 +1,63 @@
+import * as THREE from "three";
+import { DEFAULT_SENSORS } from "./sim";
+import {
+  buildTiconderoga,
+  TICONDEROGA_METADATA,
+  type ShipDefinition,
+} from "./ships";
+
+export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
+  id: "long-beach",
+  name: "USS LONG BEACH",
+  hullNumber: "CGN-9",
+  era: "NTU 1980s",
+  role: "NUCLEAR GUIDED MISSILE CRUISER",
+  hullColor: 0x4b5a59,
+  launcher: {
+    kind: "mk10",
+    displayName: "MK 10",
+    compatibleWeapons: ["RIM-67", "SM-2MR", "SM-2ER"],
+    azimuthRateDeg: 55,
+    elevationRateDeg: 25,
+    reloadSeconds: 1.8,
+  },
+  sensors: DEFAULT_SENSORS,
+  subsystemLabels: {
+    sps48: "AN/SPS-48E",
+    sps49: "AN/SPS-49",
+    spg55: "AN/SPG-55",
+    mk10Aft: "MK 10 AFT",
+    mk10Forward: "MK 10 FWD",
+    ciws: "CIWS",
+    ecm: "AN/SLQ-32",
+    srboc: "MK 36 SRBOC",
+    propulsion: "PROPULSION",
+  },
+  subsystemPositions: {
+    sps48: new THREE.Vector3(1, 24, 0),
+    sps49: new THREE.Vector3(-7, 23, 0),
+    spg55: new THREE.Vector3(8, 13, 0),
+    mk10Aft: new THREE.Vector3(-23, 7, 0),
+    mk10Forward: new THREE.Vector3(23, 7, 0),
+    ciws: new THREE.Vector3(13, 8, 0),
+    ecm: new THREE.Vector3(2.5, 16, 3.2),
+    srboc: new THREE.Vector3(0, 8, 4),
+    propulsion: new THREE.Vector3(-4, 6, 0),
+  },
+  ammo: {
+    rim67: 6,
+    sm2mr: 12,
+    sm2er: 8,
+    ciws: 1200,
+    channels: 3,
+    illuminators: 2,
+  },
+};
+
+export function createShipCatalog(buildLongBeach: () => THREE.Group) {
+  const ships: ShipDefinition[] = [
+    { ...LONG_BEACH_METADATA, build: buildLongBeach },
+    { ...TICONDEROGA_METADATA, build: buildTiconderoga },
+  ];
+  return { ships, byId: new Map(ships.map((ship) => [ship.id, ship])) };
+}
