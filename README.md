@@ -2,7 +2,7 @@
 
 # NTU Intercept
 
-**以 USS Long Beach (CGN-9) 为核心的三维舰队防空与反舰导弹拦截沙盘**
+**可选 USS Long Beach (CGN-9) 与 USS Lake Champlain (CG-57) 的三维舰队防空与反舰导弹拦截沙盘**
 
 [![中文文档](https://img.shields.io/badge/文档-中文-2f8f8b?style=for-the-badge)](README.md)
 [![English Documentation](https://img.shields.io/badge/Docs-English-334155?style=for-the-badge)](README_EN.md)
@@ -63,7 +63,7 @@
 <a id="项目概览"></a>
 ## 1. 项目概览
 
-NTU Intercept 是一个基于 Three.js 的浏览器三维战斗沙盘。玩家控制经过 New Threat Upgrade 思路抽象的 USS Long Beach (CGN-9)，面对 P-500、P-700 和 Kh-22 来袭武器，管理传感器、火控通道、Mk 10 发射架、舰空导弹、电子战、箔条和 CIWS。
+NTU Intercept 是一个基于 Three.js 的浏览器三维战斗沙盘。玩家可选择采用 Mk 10 双臂发射架的 USS Long Beach (CGN-9)，或采用 Mk 41 VLS 与 AEGIS/SPY-1B 的 USS Lake Champlain (CG-57)，面对 P-500、P-700 和 Kh-22 来袭武器并管理完整防空链路。
 
 战斗重点不是简单的“目标进入圆圈后按概率消失”，而是让拦截结果由一条可观察的作战链路产生：
 
@@ -428,6 +428,8 @@ CIWS 只处理非常接近的存活目标：
 
 <a id="三维表现"></a>
 ## 13. 三维表现与舰船模型
+
+场景设置中可以切换两艘程序化舰船。CG-57 按参考照片重建了细长的 Spruance 系舰体、前后 61 单元 Mk 41 阵列、四面八边形 SPY-1 阵面、双上层建筑、双桅/排烟组、机库、飞行甲板与前后 Mk 45 炮。Mk 41 使用独立舱盖和一次性单元状态，发射过程为开盖、热发射垂直爬升、延迟程序转弯、关盖并标记已用单元。
 
 舰船是针对 USS Long Beach 外形特征程序化生成的模型，包括：
 

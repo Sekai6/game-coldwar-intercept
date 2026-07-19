@@ -2,7 +2,7 @@
 
 # NTU Intercept
 
-**A 3D naval air-defense and anti-ship missile interception sandbox centered on USS Long Beach (CGN-9)**
+**A 3D naval air-defense and anti-ship missile interception sandbox with selectable USS Long Beach (CGN-9) and USS Lake Champlain (CG-57)**
 
 [![Chinese Documentation](https://img.shields.io/badge/文档-中文-334155?style=for-the-badge)](README.md)
 [![English Documentation](https://img.shields.io/badge/Docs-English-2f8f8b?style=for-the-badge)](README_EN.md)
@@ -63,7 +63,7 @@
 <a id="overview"></a>
 ## 1. Overview
 
-NTU Intercept is a Three.js browser-based 3D combat sandbox. The player controls a game abstraction of the New Threat Upgrade-era USS Long Beach (CGN-9) against P-500, P-700, and Kh-22 raids while managing sensors, fire-control channels, Mk 10 launchers, SAMs, electronic warfare, chaff, and CIWS.
+NTU Intercept is a Three.js browser-based 3D combat sandbox. The player can select the Mk 10-equipped USS Long Beach (CGN-9) or the AEGIS/SPY-1B and Mk 41-equipped USS Lake Champlain (CG-57) against P-500, P-700, and Kh-22 raids while managing the complete air-defense chain.
 
 The combat model is not a simple “target enters a circle and disappears on a dice roll.” Results emerge from an observable engagement chain:
 
@@ -428,6 +428,8 @@ The `DAMAGE CONTROL` panel shows continuous health for all nine entries. Below 6
 
 <a id="presentation"></a>
 ## 13. 3D Presentation and Ship Model
+
+Scenario setup now selects between two procedural ships. CG-57 follows the supplied reference photograph with a slender Spruance-derived hull, forward and aft 61-cell Mk 41 banks, four octagonal SPY-1 faces, separated superstructure blocks, twin mast/exhaust groups, hangar, flight deck, and fore/aft Mk 45 guns. Mk 41 cells have independent hatches and one-shot state; launch sequencing opens the hatch, performs a hot vertical departure, delays the programmed turn, closes the hatch, and marks the cell spent.
 
 USS Long Beach is represented by a procedural model built around recognizable features:
 

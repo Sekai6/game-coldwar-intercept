@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export type TrackQuality = 'unknown' | 'suspect' | 'classified';
-export type SensorName = 'AN/SPS-48E' | 'AN/SPS-49';
+export type SensorName = string;
 export type SensorHealth = Partial<Record<SensorName,number>>;
 export interface Track {
   id:number;
@@ -25,8 +25,8 @@ export interface Track {
 export interface SearchState { width:number; bearing:number; focused:boolean; revisitMultiplier:number; }
 
 type TargetReturn={id:number;position:THREE.Vector3;velocity:THREE.Vector3;altitude:number;rcs:number};
-type SensorDefinition={name:SensorName;threeDimensional:boolean;baseInterval:number;maxRange:number;radarHeight:number;precision:number};
-const SENSORS:SensorDefinition[]=[
+export type SensorDefinition={name:SensorName;threeDimensional:boolean;baseInterval:number;maxRange:number;radarHeight:number;precision:number};
+export const DEFAULT_SENSORS:SensorDefinition[]=[
   {name:'AN/SPS-48E',threeDimensional:true,baseInterval:.75,maxRange:650,radarHeight:36,precision:1},
   {name:'AN/SPS-49',threeDimensional:false,baseInterval:1.15,maxRange:1050,radarHeight:42,precision:.72}
 ];
@@ -38,9 +38,12 @@ export class CombatPicture {
   private nextTrackId=1;
   private events:string[]=[];
   private lastTrackForSource=new Map<number,number>();
-  private nextScan=new Map<SensorName,number>(SENSORS.map(sensor=>[sensor.name,0]));
+  private sensors:SensorDefinition[];
+  private nextScan:Map<SensorName,number>;
   private searchWidth=360;
   private searchBearing=0;
+  constructor(sensors:SensorDefinition[]=DEFAULT_SENSORS){this.sensors=sensors.map(sensor=>({...sensor}));this.nextScan=new Map(this.sensors.map(sensor=>[sensor.name,0]));}
+  setSensors(sensors:SensorDefinition[]){this.sensors=sensors.map(sensor=>({...sensor}));this.reset();}
   private rand(){this.rng=(this.rng*1664525+1013904223)>>>0;return this.rng/0xffffffff;}
   private radarHorizon(aMeters:number,bMeters:number){return 41.2*(Math.sqrt(Math.max(0,aMeters))+Math.sqrt(Math.max(0,bMeters)));}
   private angleDelta(a:number,b:number){return Math.atan2(Math.sin(a-b),Math.cos(a-b));}
@@ -48,12 +51,12 @@ export class CombatPicture {
   private associate(position:THREE.Vector3,velocity:THREE.Vector3,revisit:number,claimed:Set<number>){let best:Track|undefined,bestScore=1;for(const track of this.tracks.values()){if(claimed.has(track.id))continue;const predicted=track.position.clone().addScaledVector(track.velocity,track.age),dx=predicted.x-position.x,dz=predicted.z-position.z,deviation=Math.hypot(dx,dz),gate=Math.max(8,track.uncertainty/100*1.6+velocity.length()*revisit*1.8),score=deviation/gate;if(score<bestScore){best=track;bestScore=score;}}return best;}
   setSearch(width:number,bearing=this.searchBearing){this.searchWidth=THREE.MathUtils.clamp(width,60,360);this.searchBearing=Math.atan2(Math.sin(bearing),Math.cos(bearing));}
   getSearchState():SearchState{return{width:this.searchWidth,bearing:this.searchBearing,focused:this.searchWidth<360,revisitMultiplier:this.searchWidth/360};}
-  reset(){this.tracks.clear();this.nextScan=new Map(SENSORS.map(sensor=>[sensor.name,0]));this.nextTrackId=1;this.events=[];this.lastTrackForSource.clear();this.rng=0x41c64e6d;}
+  reset(){this.tracks.clear();this.nextScan=new Map(this.sensors.map(sensor=>[sensor.name,0]));this.nextTrackId=1;this.events=[];this.lastTrackForSource.clear();this.rng=0x41c64e6d;}
   drainEvents(){return this.events.splice(0);}
   update(now:number,dt:number,targets:TargetReturn[],radarHealth:number|SensorHealth=1,sensorPosition=new THREE.Vector3()){
     for(const track of this.tracks.values()){track.age+=dt;track.quality=Math.max(0,track.quality-dt*.008);track.uncertainty+=dt*95;track.altitudeUncertainty+=dt*18;if(now-track.lastAltitudeUpdate>4)track.altitudeKnown=false;if(track.altitudeKnown&&track.age<1.5){track.solutionTime+=dt;track.solutionQuality=THREE.MathUtils.clamp(track.solutionQuality+dt*(.16+track.quality*.3),0,1);}else{track.solutionTime=0;track.solutionQuality=Math.max(0,track.solutionQuality-dt*.16);}}
     const focusGain=this.searchWidth<360?1.5:1;
-    for(const sensor of SENSORS){
+    for(const sensor of this.sensors){
       const health=typeof radarHealth==='number'?radarHealth:radarHealth[sensor.name]??1;if(health<=.04)continue;
       if(now<(this.nextScan.get(sensor.name)??0))continue;
       const revisit=Math.max(.14,sensor.baseInterval*this.searchWidth/360/Math.max(.25,health));
