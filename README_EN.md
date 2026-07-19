@@ -30,7 +30,7 @@
   - [Scenario Editor](#scenario-editor)
 - [4. Simulation Loop and Time](#simulation-loop)
 - [5. Sensors and Tracks](#sensors-and-tracks)
-  - [AN/SPS-48E and AN/SPS-49](#radar-model)
+  - [Mechanical Scan and AN/SPY-1B Phased Array](#radar-model)
   - [Detection Probability and Horizon](#detection-model)
   - [Association, Error, and Fire-Control Solutions](#track-model)
 - [6. Incoming Weapon Model](#incoming-weapons)
@@ -44,6 +44,7 @@
   - [Doctrine](#doctrine)
   - [Channels and Assignment](#fire-channels)
 - [9. Mk 10 Twin-Arm Launchers](#mk10-launchers)
+  - [Mk 41 Vertical-Launch Sequencer](#mk41-sequencer)
 - [10. Electronic Warfare and Decoys](#electronic-warfare)
   - [Threat ECM and Chaff](#threat-ew)
   - [Shipboard AN/SLQ-32 ECM](#ship-ecm)
@@ -203,14 +204,15 @@ Visual radar rotation, sea animation, fire, smoke, and some HUD updates are inde
 ## 5. Sensors and Tracks
 
 <a id="radar-model"></a>
-### AN/SPS-48E and AN/SPS-49
+### Mechanical Scan and AN/SPY-1B Phased Array
 
 | Radar | Dimension | Base Revisit | Game Max Range | Altitude | Primary Role |
 |---|---:|---:|---:|---|---|
 | AN/SPS-48E | 3D | 0.75 s | 65 km | Yes | Altitude and fire-control solutions |
 | AN/SPS-49 | 2D | 1.15 s | 105 km | No | Long-range warning and horizontal tracks |
+| AN/SPY-1B | 3D phased array | 0.42 s | 82 km | Yes | Multifunction search, tracking, and fire-control solutions |
 
-Focused 60°/120° search shortens revisit time and improves measurement quality, but only covers targets near the current search axis. SPS-49 can create early 2D warning tracks but cannot independently satisfy the altitude requirement for SAM fire.
+Focused 60°/120° search shortens revisit time and improves measurement quality. AN/SPS-48E and AN/SPS-49 use the mechanical-scan model, so antenna time committed to a focused sector does not refresh targets outside it. CG-57's four fixed AN/SPY-1B arrays use a separate electronic-scan model: the focused sector receives fast revisits while a slower schedule preserves 360-degree background surveillance. Concentrating fire-control resources therefore does not make the ship blind everywhere else. SPS-49 can create early 2D warning tracks but cannot independently satisfy the altitude requirement for SAM fire.
 
 <a id="detection-model"></a>
 ### Detection Probability and Radar Horizon
@@ -348,6 +350,18 @@ READY -> SLEWING -> FIRING -> RETURNING -> LOADING -> READY
 6. The fired rail’s visible round moves from the loading position back onto the rail; the next cycle alternates arms.
 7. A destroyed target or prolonged track loss during slew cancels the request, refunds ammunition, and returns the mount.
 8. Damage slows slew and reload; health at or below 5% prevents new tasking.
+
+<a id="mk41-sequencer"></a>
+### Mk 41 Vertical-Launch Sequencer
+
+CG-57's forward and aft Mk 41 banks are independent launch resources that may work in parallel, while each bank has its own ignition sequencer:
+
+- A cell proceeds through hatch opening, hot launch, exhaust clearance, and hatch closing, then remains permanently spent.
+- Successive ignitions in one bank obey a game-scaled minimum interval; bank damage lengthens that interval.
+- A cell that is opening or hot launching creates a temporary one-cell safety boundary around itself.
+- Adjacent cells are hard-inhibited while exhaust from the previous launch remains near the deck; allocation prefers cells farther from the previous launch.
+- Tasks alternate between banks and may transfer when one bank is damaged, busy, or has no safely available cell.
+- Runtime diagnostics record each bank's observed minimum ignition interval and launch-cell history so salvo safety constraints can be verified.
 
 <a id="electronic-warfare"></a>
 ## 10. Electronic Warfare and Decoys

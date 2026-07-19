@@ -56,7 +56,7 @@ export function buildTiconderoga(){
 
 export const TICONDEROGA_METADATA:Omit<ShipDefinition,'build'>={
  id:'ticonderoga',name:'USS LAKE CHAMPLAIN',hullNumber:'CG-57',era:'1990s AEGIS',role:'AEGIS AIR DEFENSE CRUISER',launcherKind:'mk41',
- sensors:[{name:'AN/SPY-1B',threeDimensional:true,baseInterval:.42,maxRange:820,radarHeight:32,precision:1.12},{name:'AN/SPS-49',threeDimensional:false,baseInterval:1.05,maxRange:1100,radarHeight:38,precision:.75}],
+ sensors:[{name:'AN/SPY-1B',threeDimensional:true,baseInterval:.42,maxRange:820,radarHeight:32,precision:1.12,scanMode:'phased-array'},{name:'AN/SPS-49',threeDimensional:false,baseInterval:1.05,maxRange:1100,radarHeight:38,precision:.75,scanMode:'mechanical'}],
  subsystemLabels:{sps48:'AN/SPY-1B',sps49:'AN/SPS-49',spg55:'AN/SPG-62',mk10Aft:'MK 41 AFT',mk10Forward:'MK 41 FWD',ciws:'PHALANX CIWS',ecm:'AN/SLQ-32',srboc:'MK 36 SRBOC',propulsion:'PROPULSION'},
  subsystemPositions:{sps48:new THREE.Vector3(7,13,0),sps49:new THREE.Vector3(4,25,0),spg55:new THREE.Vector3(10,14,0),mk10Aft:new THREE.Vector3(-25,6,0),mk10Forward:new THREE.Vector3(22,6,0),ciws:new THREE.Vector3(13,10,0),ecm:new THREE.Vector3(-2,15,4),srboc:new THREE.Vector3(-5,8,4),propulsion:new THREE.Vector3(-7,5,0)},
  ammo:{rim67:0,sm2mr:48,sm2er:32,ciws:1800,channels:6,illuminators:4}
