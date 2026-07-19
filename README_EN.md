@@ -356,12 +356,15 @@ READY -> SLEWING -> FIRING -> RETURNING -> LOADING -> READY
 
 CG-57's forward and aft Mk 41 banks are independent launch resources that may work in parallel, while each bank has its own ignition sequencer:
 
+- Each of the 122 physical cells is bound to `SM-2MR`, `SM-2ER`, or a reserved non-air-defense load. A task can only select a cell loaded with the requested weapon.
+- The default air-defense load is 48 SM-2MR, 32 SM-2ER, and 42 other-load cells. Sandbox requests above 122 are scaled proportionally instead of creating ammunition without physical cells.
 - A cell proceeds through hatch opening, hot launch, exhaust clearance, and hatch closing, then remains permanently spent.
+- Ammunition is reserved when hatch opening begins. A pre-launch cancellation caused by target destruction or bank failure refunds the same weapon and closes back to `ready`; only a round that physically leaves the cell transitions to `spent`.
 - Successive ignitions in one bank obey a game-scaled minimum interval; bank damage lengthens that interval.
 - A cell that is opening or hot launching creates a temporary one-cell safety boundary around itself.
 - Adjacent cells are hard-inhibited while exhaust from the previous launch remains near the deck; allocation prefers cells farther from the previous launch.
 - Tasks alternate between banks and may transfer when one bank is damaged, busy, or has no safely available cell.
-- Runtime diagnostics record each bank's observed minimum ignition interval and launch-cell history so salvo safety constraints can be verified.
+- Runtime diagnostics record each bank's minimum ignition interval, launch-cell history, per-weapon ready/pending counts, spent cells, and cancellation returns for salvo-safety and ammunition-conservation checks.
 
 <a id="electronic-warfare"></a>
 ## 10. Electronic Warfare and Decoys
