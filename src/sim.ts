@@ -17,7 +17,7 @@ export class CombatPicture {
       const range=target.position.distanceTo(sensorPosition); const effective=260*Math.pow(Math.max(.05,target.rcs/12000),.25)*radarHealth;
       const horizon=this.radarHorizon(18,target.altitude); const horizonFactor=range>horizon?Math.max(.2,1-(range-horizon)/effective):1;
       const ratio=Math.min(1,range/effective); const probability=Math.max(0,.96-ratio*ratio*.74)*horizonFactor;
-      if(this.rand()<probability){ const quality=Math.max(.03,(1-ratio)*horizonFactor*radarHealth); const error=(1-quality)*9000+this.rand()*1200; const pos=target.position.clone().add(new THREE.Vector3((this.rand()-.5)*error,(this.rand()-.5)*error*.25,(this.rand()-.5)*error)); this.tracks.set(target.id,{id:target.id,position:pos,velocity:target.velocity.clone(),quality,uncertainty:error,age:0,classification:quality>.7?'classified':quality>.25?'suspect':'unknown',lastSeen:now}); }
+      if(this.rand()<probability){ const quality=Math.max(.03,(1-ratio)*horizonFactor*radarHealth); const errorMeters=(1-quality)*9000+this.rand()*1200,errorWorld=errorMeters/100; const pos=target.position.clone().add(new THREE.Vector3((this.rand()-.5)*errorWorld,(this.rand()-.5)*errorWorld*.25,(this.rand()-.5)*errorWorld)); this.tracks.set(target.id,{id:target.id,position:pos,velocity:target.velocity.clone(),quality,uncertainty:errorMeters,age:0,classification:quality>.7?'classified':quality>.25?'suspect':'unknown',lastSeen:now}); }
     }}
     if(now>=this.nextShare){ this.nextShare=now+5; for(const t of this.tracks.values()){ t.quality*=.85; t.uncertainty+=1500; }}
     for(const [id,t] of this.tracks) if(t.quality<.03||t.age>160) this.tracks.delete(id);
