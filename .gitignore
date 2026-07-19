@@ -1,0 +1,10 @@
+node_modules/
+dist/
+KEYS/
+*.env
+*.png
+
+# Local development artifacts
+*.log
+.DS_Store
+Thumbs.db
