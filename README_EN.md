@@ -57,6 +57,8 @@
 - [14. After Action Review](#aar)
 - [15. Values, Units, and Determinism](#values-and-units)
 - [16. Project Structure](#project-structure)
+  - [Module Boundaries](#module-boundaries)
+  - [Adding Ships and Weapons](#adding-ships-and-weapons)
 - [17. Development and Verification](#development)
 - [18. Known Boundaries and Future Work](#known-boundaries)
 - [19. License and Security](#license-and-security)
@@ -497,18 +499,44 @@ Victory waits for active Mk 10 mounts to return and reload so the AAR does not f
 
 ```text
 game-codewar-intercept/
-├─ index.html          # HUD and base page structure
+├─ index.html                 # HUD and base page structure
 ├─ src/
-│  ├─ main.ts          # 3D model, combat loop, guidance, EW, damage, UI, AAR
-│  ├─ sim.ts           # Dual-radar scanning, association, error, fire-control solution
-│  └─ style.css        # Desktop/mobile HUD, damage-control panel, AAR styling
-├─ package.json        # Vite/TypeScript scripts and dependencies
-├─ tsconfig.json       # TypeScript configuration
-├─ README.md           # Chinese documentation
-└─ README_EN.md        # English documentation
+│  ├─ main.ts                 # Scene orchestration, frame loop, UI adapters, rendering
+│  ├─ ship-types.ts           # Ship capabilities, semantic subsystems, launcher contracts
+│  ├─ ship-catalog.ts         # Ship registry, magazines, platform data, damage zones
+│  ├─ combat-types.ts         # Missile, interceptor, launcher, and AAR domain types
+│  ├─ missile-data.ts         # Game-scaled threat and interceptor flight profiles
+│  ├─ sim.ts                  # Radar scans, association, uncertainty, fire-control solutions
+│  ├─ sensor-faces.ts         # Fixed-array aspect coverage and localized damage
+│  ├─ vls.ts                  # Pure VLS loading, geometry, and damage logic
+│  ├─ models/
+│  │  ├─ long-beach.ts        # CGN-9, radar, and Mk 10 procedural model
+│  │  └─ ticonderoga.ts       # CG-57, SPY-1, and Mk 41 procedural model
+│  └─ style.css               # Desktop/mobile HUD, damage control, AAR styling
+├─ ARCHITECTURE.md            # Architectural constraints and extension rules
+├─ package.json               # Vite/TypeScript scripts and dependencies
+├─ README.md                  # Chinese documentation
+└─ README_EN.md               # English documentation
 ```
 
-The runtime deliberately remains compact for rapid iteration. As fleet logic, tests, and content grow, the next architectural step should separate sensors, weapons, platforms, UI, and AAR into dedicated modules.
+<a id="module-boundaries"></a>
+### Module Boundaries
+
+The runtime now follows a capability configuration + model anchors + generic orchestration structure. `main.ts` does not branch on ship IDs such as `long-beach` or `ticonderoga`, and it contains no USS Long Beach geometry, equipment-name defaults, magazine defaults, or hit-zone layout. Each catalog entry declares sensors, launcher behavior, compatible weapons, platform maneuver data, radar signature, magazines, subsystem positions, and longitudinal damage zones. Model modules only construct Three.js objects and expose equipment anchors.
+
+Shared subsystem slots use semantic names such as `primaryRadar`, `fireControl`, and `forwardLauncher` rather than treating SPS-48, SPG-55, or Mk 10 as cross-class identifiers. Sensor capabilities select mechanical or fixed-array behavior; the launcher discriminated configuration selects Mk 10 or Mk 41 behavior. Adding a ship must not add a ship-name branch to `main.ts`.
+
+<a id="adding-ships-and-weapons"></a>
+### Adding Ships and Weapons
+
+To add a ship:
+
+1. Implement its builder under `src/models/` and expose the radar, fire-control, launcher, CIWS, LOD, and lighting anchors required by its capabilities.
+2. Register one `ShipDefinition` in `src/ship-catalog.ts`, including platform data, sensors, launcher capability, magazines, semantic subsystem positions, and hull damage zones.
+3. Add `fixedSensorFaces` only for a fixed-array ship. A mechanically scanned ship does not need synthetic face data.
+4. Switch to the ship in the sandbox and verify that weapon options, default magazines, radar labels, launchers, and damage behavior all follow the definition.
+
+For a new threat or interceptor, extend its type in `src/combat-types.ts` and add its flight profile to `src/missile-data.ts`. VLS loading or damage algorithms belong in `src/vls.ts`; fixed-array algorithms belong in `src/sensor-faces.ts`. Do not duplicate either inside a ship model or the frame loop. See [ARCHITECTURE.md](ARCHITECTURE.md) for the compact architectural contract.
 
 <a id="development"></a>
 ## 17. Development and Verification
@@ -536,7 +564,7 @@ The repository contains development verification screenshots for the hull, radar
 <a id="known-boundaries"></a>
 ## 18. Known Boundaries and Future Work
 
-- Only USS Long Beach is present; there are no escorts, AEW aircraft, or CEC network.
+- USS Long Beach and USS Lake Champlain are selectable, but each scenario still contains one defending ship with no escorts, AEW aircraft, or CEC network.
 - Curvature, weather, sea state, and radar propagation use simplified relationships.
 - There is no continuous six-degree-of-freedom aerodynamic rigid body; flight is a 3D point-mass approximation.
 - Seekers and ECM are explainable probability/signal models, not RF engineering simulations.
