@@ -438,7 +438,7 @@ USS Long Beach is represented by a procedural model built around recognizable fe
 - Forward/aft CIWS and visual abstractions for Mk 36/EW antennas.
 - Track lines, seeker fields of view, illumination beams, exhaust, booster separation, and debris.
 - Sea surface, wake, explosions, persistent fire/smoke, and electronic-warfare pulses.
-- Distance-sensitive detail groups for close views and mobile performance.
+- Three-stage near/medium/far LOD groups, animated navigation and deck lights, and a health-aware SPS-48 search sector.
 
 ![Mk 10 firing and ship detail](mk10-firing.png)
 
