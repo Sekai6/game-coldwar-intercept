@@ -38,7 +38,7 @@
   - [Weapon Parameters](#sam-parameters)
   - [Two-Stage Guidance](#two-stage-guidance)
   - [RIM-67 Active Terminal Guidance](#rim67-terminal)
-  - [SM-2 and SPG-55 Illumination](#sm2-illumination)
+  - [SM-2 and Shipboard Illumination](#sm2-illumination)
   - [Flight Physics and Hit Resolution](#interceptor-physics)
 - [8. Engagement Planning and Channels](#engagement-planning)
   - [Doctrine](#doctrine)
@@ -175,7 +175,7 @@ The editor configures:
 - Ripple or simultaneous arrival pattern.
 - Initial USS Long Beach coordinates.
 - RIM-67, SM-2MR, SM-2ER, and CIWS ammunition.
-- SAM engagement channels and SPG-55 illuminator count.
+- SAM engagement channels and the selected ship's fire-control illuminator count.
 - A second wave with independent type, count, and delay.
 - `SEA SKIMMER`, `SATURATION`, and `HIGH SPEED` presets.
 - Direct ship and raid placement by clicking the tactical radar.
@@ -258,8 +258,8 @@ Incoming weapons transition through `inbound -> midcourse -> terminal`. Altitude
 | Weapon | Game Envelope | Max Speed | Boost | Base Turn Rate | Terminal Range | Terminal Guidance |
 |---|---:|---:|---:|---:|---:|---|
 | RIM-67 | 2-75 km | 12.5 u/s | 5.2 s | 18°/s | 18 km | Game-modeled active seeker |
-| SM-2MR | 1.5-45 km | 13.5 u/s | 4.4 s | 22°/s | 10 km | SPG-55 semi-active illumination |
-| SM-2ER | 2.2-90 km | 14.2 u/s | 6.2 s | 16°/s | 19 km | SPG-55 semi-active illumination |
+| SM-2MR | 1.5-45 km | 13.5 u/s | 4.4 s | 22°/s | 10 km | Shipboard semi-active illumination |
+| SM-2ER | 2.2-90 km | 14.2 u/s | 6.2 s | 16°/s | 19 km | Shipboard semi-active illumination |
 
 These values exist only for this project’s world scale and combat pacing.
 
@@ -271,7 +271,7 @@ The missile leaves from the selected Mk 10 rail’s actual position and orientat
 1. The ship sends delayed datalink updates based on track quality.
 2. Update spacing varies with quality; missing data causes inertial extrapolation.
 3. Trajectory selection follows the threat profile: P-500/P-700 use a low-altitude forward-intercept corridor, while high-altitude targets such as Kh-22 retain a lofted trajectory. Against sea skimmers, Mk 41 rounds hold vertical only long enough to clear the ship before a rapid programmed turn.
-4. Inside terminal range, control transfers to an active seeker or SPG-55 illumination.
+4. Inside terminal range, control transfers to an active seeker or the selected ship's fire-control illumination.
 
 <a id="rim67-terminal"></a>
 ### RIM-67 Active Terminal Guidance
@@ -285,14 +285,15 @@ The active seeker here is a deliberate game treatment for two-stage guidance and
 - A short track-memory period follows lock loss; prolonged failure to reacquire causes a miss.
 
 <a id="sm2-illumination"></a>
-### SM-2 and SPG-55 Illumination
+### SM-2 and Shipboard Illumination
 
-SM-2MR/ER also receive midcourse updates but require continuous SPG-55 illumination in terminal flight.
+SM-2MR/ER also receive midcourse updates but require continuous shipboard fire-control illumination in terminal flight. USS Long Beach uses two AN/SPG-55 directors; USS Lake Champlain uses four AN/SPG-62 directors. Available illumination is constrained by the actual mounts and equipment count of the selected ship.
 
 - The illuminator must slew to the target and enter its angular capture gate.
 - Illumination channels are finite; missiles against the same target may share an established illumination.
+- Bearing solutions use ship-local coordinates, so ship maneuvers do not corrupt director target bearings.
 - More than roughly 2.5 seconds without illumination causes an illumination-loss miss.
-- SPG-55 damage reduces slew speed and available channel count.
+- Fire-control damage reduces slew speed and removes channels according to the selected ship's installed director count.
 
 <a id="interceptor-physics"></a>
 ### Flight Physics and Hit Resolution
@@ -327,7 +328,7 @@ Threat ranking combines time to impact, flight phase, missile type, and track qu
 - Accepted launcher tasks count against SAM channels and per-target assignment before physical launch.
 - Mechanical slew delay cannot cause the planner to allocate unlimited duplicate shots.
 - A request is rejected when both Mk 10 launchers are busy or disabled.
-- Terminal SM-2 flight also consumes a separate SPG-55 illumination resource.
+- Terminal SM-2 flight also consumes a separate fire-control illumination resource: two AN/SPG-55 directors on CGN-9 and four AN/SPG-62 directors on CG-57.
 - The automatic planner only considers targets with a fresh 3D solution inside a weapon envelope.
 
 <a id="mk10-launchers"></a>
@@ -431,6 +432,8 @@ The `DAMAGE CONTROL` panel shows continuous health for all nine entries. Below 6
 ## 13. 3D Presentation and Ship Model
 
 Scenario setup now selects between two procedural ships. CG-57 follows the supplied reference photograph with a slender Spruance-derived hull, forward and aft 61-cell Mk 41 banks, four octagonal SPY-1 faces, separated superstructure blocks, twin mast/exhaust groups, hangar, flight deck, and fore/aft Mk 45 guns. Mk 41 cells have independent hatches and one-shot state; launch sequencing opens the hatch, performs a hot vertical departure, delays the programmed turn, closes the hatch, and marks the cell spent.
+
+The CG-57 model carries four independently tasked AN/SPG-62 directors, one on each side of the forward and aft superstructure. Its two Phalanx CIWS mounts select threats within their respective forward and aft sectors. Both systems solve bearings in ship-local coordinates so target tracking remains correct while the ship maneuvers.
 
 The ship selector is generated from `SHIP_CATALOG`. Each definition supplies its model builder, sensors, ammunition, launcher family, and subsystem positions. Stack smoke and CIWS effects read model attachment points, so another ship in an existing launcher family does not require ship-name branches in UI or firing code.
 
