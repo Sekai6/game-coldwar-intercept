@@ -213,12 +213,12 @@ function updateCiws(){
  if(!ciwsEnabled||ciwsRounds<=0||elapsed-lastCiwsShot<.55)return;
  const mounts=[{name:'FORE',position:new THREE.Vector3(13,0,0),heading:Math.PI/2},{name:'AFT',position:new THREE.Vector3(-14,0,0),heading:-Math.PI/2}];
  const candidates=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15).map(m=>{
-  const relative=m.mesh.position.clone().sub(defender.position),bearing=Math.atan2(relative.x,relative.z),mount=mounts.map(x=>({...x,delta:Math.abs(angleDifference(bearing,x.heading))})).sort((a,b)=>a.delta-b.delta)[0];
-  return {m,bearing,mount};
- }).filter(x=>x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)-b.m.mesh.position.distanceTo(defender.position));
+  const relative=m.mesh.position.clone().sub(defender.position),bearing=Math.atan2(relative.x,relative.z),closingSpeed=-m.velocity.dot(relative.clone().normalize()),mount=mounts.map(x=>({...x,delta:Math.abs(angleDifference(bearing,x.heading))})).sort((a,b)=>a.delta-b.delta)[0];
+  return {m,bearing,closingSpeed,mount};
+ }).filter(x=>x.closingSpeed>.5&&x.mount.delta<=THREE.MathUtils.degToRad(105)).sort((a,b)=>a.m.mesh.position.distanceTo(defender.position)-b.m.mesh.position.distanceTo(defender.position));
  const target=candidates[0];
- if(!target){if(missiles.some(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15))log('CIWS HOLD / BLIND SECTOR');return;}
- const range=target.m.mesh.position.distanceTo(defender.position),speed=Math.max(1,target.m.velocity.length()),tti=range/speed,bursts=Math.max(1,Math.floor(tti/.55));
+ if(!target){const nearby=missiles.filter(m=>m.phase!=='destroyed'&&m.mesh.position.distanceTo(defender.position)<15),approaching=nearby.some(m=>{const relative=m.mesh.position.clone().sub(defender.position);return -m.velocity.dot(relative.normalize())>.5;});if(nearby.length)log(approaching?'CIWS HOLD / BLIND SECTOR':'CIWS HOLD / TARGET OPENING');return;}
+ const range=target.m.mesh.position.distanceTo(defender.position),tti=range/target.closingSpeed,bursts=Math.max(1,Math.floor(tti/.55));
  if(tti<.35){lastCiwsShot=elapsed;log(`CIWS HOLD / WINDOW CLOSED / ${target.m.kind} / ${tti.toFixed(2)}s / ${target.mount.name}`);return;}
  const mountModel=defender.getObjectByName(target.mount.name==='FORE'?'ciwsFore':'ciwsAft'),aim=target.m.mesh.position.clone().sub(defender.position),desiredTraverse=Math.atan2(-aim.z,aim.x),traverseError=mountModel?angleDifference(desiredTraverse,mountModel.rotation.y):0;
  if(mountModel)mountModel.rotation.y+=THREE.MathUtils.clamp(traverseError,-THREE.MathUtils.degToRad(70)*.55,THREE.MathUtils.degToRad(70)*.55);
