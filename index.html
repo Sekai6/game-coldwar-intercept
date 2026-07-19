@@ -29,7 +29,10 @@
       </div>
       <div class="help">LMB ORBIT&nbsp;&nbsp; WHEEL RANGE&nbsp;&nbsp; 1-3 VIEW&nbsp;&nbsp; C CINEMATIC&nbsp;&nbsp; SPACE PAUSE</div>
     </section>
-    <div class="reticle" id="reticle"><i></i></div><div class="feed" id="feed"></div>
+    <div class="reticle" id="reticle"><i></i></div>
+    <div class="target-marker" id="targetMarker" aria-hidden="true"><i></i><span id="targetMarkerLabel"></span></div>
+    <div class="combat-flash" id="combatFlash" aria-hidden="true"></div>
+    <div class="feed" id="feed"></div>
     <div class="radar-shell"><div class="radar-heading"><span>AN/SPS-48E</span><b>TACTICAL PICTURE</b></div><canvas id="radar" width="260" height="260"></canvas><div class="radar-scale">RINGS 50 km</div></div>
   </div>
   <script type="module" src="/src/main.ts"></script>
