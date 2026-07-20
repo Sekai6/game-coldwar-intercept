@@ -7,6 +7,8 @@ export const P500 = {
     cruiseAltitude: 1.2,
     terminalAltitude: 0.3,
     terminalAt: 180,
+    seekerFieldOfViewDeg: 50,
+    seekerAcquisitionRangeFactor: 1.15,
     cruiseSpeed: 8.8,
     terminalSpeed: 9.6,
     turnRate: 8,

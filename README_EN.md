@@ -144,6 +144,7 @@ This runs the TypeScript type check and Vite production bundle. Output is writte
 | `CIWS` | Sets close-in defense to AUTO or HOLD |
 | `THREAT CHAFF` | Enables incoming-missile chaff deployment |
 | `OPFOR ECM` | Enables threat-side interference against SAM guidance and enemy-platform ECM/decoy soft kill against Harpoon |
+| `OPFOR RADAR` | Controls enemy-platform emissions; silence blocks new fire-control tracks and makes airborne weapons coast on their last estimate |
 | `SHIP ECM` | Sets shipboard ECM to AUTO or HOLD |
 | `SRBOC` | Sets Mk 36 chaff deployment to AUTO or HOLD |
 | `WEAPON` | Cycles RIM-67, SM-2MR, and SM-2ER |
@@ -268,6 +269,10 @@ P-15 uses separate seeker-activation and descent gates. It enters active-radar g
 The Slava-class Moskva is the first cataloged enemy platform. Its definition declares MR-800, MR-700, and Argument sensor slots plus one P-500-compatible `inclined-canister` weapon slot. Its model exposes a standard `platformSlots` manifest with sixteen physical Bazalt hardpoints, tube-axis directions, and individual releasable covers. Runtime first proves that declared capacity equals model hardpoint count, then reserves unused hardpoints across the primary and second waves while sharing one `nextAvailable` time for mechanical spacing.
 
 A platform-launched P-500 is not spawned in open air. It starts at a specific tube's world position and moves through `TUBE EXIT -> BOOST -> PROGRAM TURN -> MIDCOURSE TAKEOVER` using the slot-defined axis, exit speed, boost duration, and takeover time. Only after takeover does it enter the generic P-500 envelope, radar-altimeter, and terminal-guidance logic. Cover and hardpoint states remain one-to-one, so a fired tube cannot be reserved again by a later wave.
+
+Moskva sensors maintain a target track separate from truth, including deterministic position/velocity error, quality, uncertainty, and refresh time. A P-500 receives command-point updates at the slot-defined 1.4-second interval with 0.35-second link latency and propagates estimated velocity between messages. Radar silence, insufficient quality, or platform destruction produces `PLATFORM DATALINK LOST`; the missile then coasts on its last estimate instead of reading friendly-ship truth.
+
+When the navigation point enters the programmed terminal region, P-500 first enters `ACTIVE SEEKER SEARCH`. It records `TARGET ACQUIRED` only when the real target is inside the game-scaled acquisition range and 50-degree field of view, then stops platform updates and becomes `terminal-autonomous`. Ship ECM, SRBOC chaff, HOJ, and terminal maneuver resolution apply only after acquisition. The front-end state chain is `SHIP GUIDED -> INERTIAL` on link loss `-> ACTIVE SEARCH -> ACTIVE`.
 
 Each platform weapon slot declares minimum track quality, continuous track age, and fire-control reaction time. A reservation does not guarantee immediate launch: Moskva must hold an adequate track for 2.4 seconds and then complete a 1.6-second fire-control/command delay. Rounds that become due while waiting still obey the scenario interval and mechanical minimum during actual release rather than leaving together on the ready frame. If the platform is disabled, unreleased reservations enter a distinct `canceled` state and retain their covers, while missiles already clear of their tubes continue the attack. Canceled rounds are never counted as fired.
 

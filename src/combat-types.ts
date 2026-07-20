@@ -27,6 +27,12 @@ export type Missile = {
     reservation: PlatformLaunchReservation;
     released: boolean;
     takeoverLogged: boolean;
+    commandPoint: THREE.Vector3;
+    commandVelocity: THREE.Vector3;
+    nextDatalink: number;
+    datalinkValid: boolean;
+    lastDatalinkQuality: number;
+    terminalSeekerAcquired: boolean;
   };
 };
 export type Interceptor = {

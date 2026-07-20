@@ -31,6 +31,8 @@ export interface ThreatProfile {
     minimumJammingStrength: number;
     residualErrorFactor: number;
   };
+  seekerFieldOfViewDeg?: number;
+  seekerAcquisitionRangeFactor?: number;
   weave: {
     lateral: number;
     longitudinal: number;

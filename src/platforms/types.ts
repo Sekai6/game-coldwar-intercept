@@ -35,6 +35,9 @@ export interface PlatformWeaponSlot {
   minimumTrackQuality: number;
   minimumTrackAge: number;
   fireControlDelay: number;
+  datalinkUpdateInterval: number;
+  datalinkLatency: number;
+  datalinkMinimumQuality: number;
 }
 
 export interface PlatformWeaponHardpoint {
@@ -99,6 +102,14 @@ export interface EnemyPlatformInstance {
   velocity: THREE.Vector3;
   speedKnots: number;
   desiredHeading: number;
+  targetTrack: {
+    position: THREE.Vector3;
+    velocity: THREE.Vector3;
+    quality: number;
+    uncertainty: number;
+    lastUpdate: number;
+    valid: boolean;
+  };
   destroyed: boolean;
 }
 

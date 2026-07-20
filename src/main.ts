@@ -372,6 +372,7 @@ let surfaceHardpointState = new Map<
   nextSurfaceLaunch = 0,
   nextSurfaceDecision = 0,
   autoSurfaceStrike = true,
+  opforRadarEnabled = true,
   surfaceHits = 0,
   surfaceHardKills = 0,
   surfaceTrackId = 0,
@@ -565,6 +566,16 @@ function addMissile(
           reservation: platformReservation,
           released: false,
           takeoverLogged: false,
+          commandPoint: platformReservation.platform.targetTrack.valid
+            ? platformReservation.platform.targetTrack.position.clone()
+            : defender.position.clone(),
+          commandVelocity: platformReservation.platform.targetTrack.valid
+            ? platformReservation.platform.targetTrack.velocity.clone()
+            : new THREE.Vector3(),
+          nextDatalink: launchAt,
+          datalinkValid: platformReservation.platform.targetTrack.valid,
+          lastDatalinkQuality: -1,
+          terminalSeekerAcquired: false,
         }
       : undefined,
   });
@@ -3263,6 +3274,13 @@ const radarButton = controlButton("RADAR: ACTIVE", () => {
   radarButton.textContent = `RADAR: ${radarEnabled ? "ACTIVE" : "SILENT"}`;
   log(radarEnabled ? "RADAR EMISSION RESTORED" : "EMCON / RADAR SILENT");
 });
+const opforRadarButton = controlButton("OPFOR RADAR: ACTIVE", () => {
+  opforRadarEnabled = !opforRadarEnabled;
+  opforRadarButton.textContent = `OPFOR RADAR: ${opforRadarEnabled ? "ACTIVE" : "SILENT"}`;
+  log(
+    `OPFOR EMCON / RADAR ${opforRadarEnabled ? "EMITTING" : "SILENT"}`,
+  );
+});
 function slewSearchToSelected() {
   const track = combatPicture.trackForTarget(selectedTargetId);
   if (!track) {
@@ -5318,6 +5336,14 @@ function updateIncomingMissile(m: Missile, dt: number) {
   if (m.phase === "destroyed") {
     m.mesh.userData.seekerLine.visible = false;
     m.mesh.userData.seekerFov.visible = false;
+    if (missiles.indexOf(m) + 1 === selectedTargetId) {
+      canvas.dataset.selectedThreatPhase = "destroyed";
+      canvas.dataset.platformDatalink = m.platformLaunch?.terminalSeekerAcquired
+        ? "terminal-autonomous"
+        : m.platformLaunch
+          ? "lost"
+          : "airborne";
+    }
     return;
   }
   const pendingPlatformLaunch = m.platformLaunch;
@@ -5388,6 +5414,18 @@ function updateIncomingMissile(m: Missile, dt: number) {
   const platformLaunch = m.platformLaunch;
   if (platformLaunch && !platformLaunch.released) {
     platformLaunch.released = true;
+    const platformTrack = platformLaunch.reservation.platform.targetTrack;
+    if (platformTrack.valid) {
+      platformLaunch.commandPoint
+        .copy(platformTrack.position)
+        .addScaledVector(
+          platformTrack.velocity,
+          platformLaunch.reservation.weaponSlot.datalinkLatency,
+        );
+      platformLaunch.commandVelocity.copy(platformTrack.velocity);
+      platformLaunch.datalinkValid = true;
+    }
+    platformLaunch.nextDatalink = elapsed;
     releasePlatformHardpoint(platformLaunch.reservation);
     platformLaunch.reservation.platform.weaponSlotNextRelease.set(
       platformLaunch.reservation.weaponSlot.id,
@@ -5398,12 +5436,17 @@ function updateIncomingMissile(m: Missile, dt: number) {
       `${platformLaunch.reservation.platform.definition.name} / ${platformLaunch.reservation.hardpoint.id.toUpperCase()} / ${m.kind} CANISTER LAUNCH`,
     );
   }
+  if (platformLaunch)
+    platformLaunch.commandPoint.addScaledVector(
+      platformLaunch.commandVelocity,
+      dt,
+    );
   const departure = platformLaunch
     ? platformDepartureSolution(
         platformLaunch.reservation,
         m.age,
         m.mesh.position,
-        defender.position,
+        platformLaunch.commandPoint,
         incomingProfiles[m.kind].cruiseAltitude,
         incomingProfiles[m.kind].cruiseSpeed,
       )
@@ -5416,6 +5459,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     setMissileAttitude(m.mesh, m.velocity, "-Z", m.bank);
     m.mesh.userData.seaMistActive = false;
     m.mesh.userData.platformDeparturePhase = departure.phase;
+    m.mesh.userData.seekerState = "SHIP GUIDED / BOOST";
     if (
       m.history.length === 0 ||
       m.mesh.position.distanceTo(m.history[m.history.length - 1]) > 1.2
@@ -5446,25 +5490,65 @@ function updateIncomingMissile(m: Missile, dt: number) {
       `${m.kind} MIDCOURSE GUIDANCE TAKEOVER / ${platformLaunch.reservation.platform.definition.name}`,
     );
   }
+  if (
+    platformLaunch &&
+    !platformLaunch.terminalSeekerAcquired &&
+    elapsed >= platformLaunch.nextDatalink
+  ) {
+    const platform = platformLaunch.reservation.platform,
+      slot = platformLaunch.reservation.weaponSlot,
+      track = platform.targetTrack,
+      updateValid =
+        !platform.destroyed &&
+        track.valid &&
+        track.quality >= slot.datalinkMinimumQuality;
+    if (updateValid) {
+      const solution = track.position
+        .clone()
+        .addScaledVector(track.velocity, slot.datalinkLatency);
+      platformLaunch.commandPoint.lerp(solution, 0.78);
+      platformLaunch.commandVelocity.lerp(track.velocity, 0.7);
+      if (
+        !platformLaunch.datalinkValid ||
+        platformLaunch.lastDatalinkQuality < 0 ||
+        Math.abs(track.quality - platformLaunch.lastDatalinkQuality) >= 0.12
+      )
+        log(
+          `${m.kind} PLATFORM DATALINK UPDATE / ${platform.definition.name} / TQ ${Math.round(track.quality * 100)}% / UNC ${(track.uncertainty / 10).toFixed(1)} km`,
+        );
+      platformLaunch.datalinkValid = true;
+      platformLaunch.lastDatalinkQuality = track.quality;
+    } else if (platformLaunch.datalinkValid) {
+      platformLaunch.datalinkValid = false;
+      log(
+        `${m.kind} PLATFORM DATALINK LOST / ${platform.definition.name} / INERTIAL COAST`,
+      );
+    }
+    platformLaunch.nextDatalink = elapsed + slot.datalinkUpdateInterval;
+  }
   const range = m.mesh.position.distanceTo(defender.position),
     profile = incomingProfiles[m.kind],
+    guidanceRange =
+      platformLaunch && !platformLaunch.terminalSeekerAcquired
+        ? m.mesh.position.distanceTo(platformLaunch.commandPoint)
+        : range,
     terminalFactor = THREE.MathUtils.clamp(
-      (profile.terminalAt - range) / (profile.terminalAt * 0.72),
+      (profile.terminalAt - guidanceRange) / (profile.terminalAt * 0.72),
       0,
       1,
     ),
     altitudeFactor = profile.terminalDescentAt
       ? THREE.MathUtils.clamp(
-          (profile.terminalDescentAt - range) /
+          (profile.terminalDescentAt - guidanceRange) /
             Math.max(1, profile.terminalDescentAt - 6),
           0,
           1,
         )
       : terminalFactor;
   m.phase =
-    range < profile.terminalAt
+    guidanceRange < profile.terminalAt
       ? "terminal"
-      : range < profile.terminalAt * 1.9
+      : guidanceRange < profile.terminalAt * 1.9
         ? "midcourse"
         : "inbound";
   if (
@@ -5477,7 +5561,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
   if (m.phase === "terminal" && !m.mesh.userData.seekerOn) {
     m.mesh.userData.seekerOn = true;
     log(
-      `${m.kind} ACTIVE SEEKER ON / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+      `${m.kind} ACTIVE SEEKER SEARCH / NAV ${(guidanceRange / WORLD_UNITS_PER_KM).toFixed(1)} km`,
     );
     if (m.mesh.userData.terminalAttackMode !== "standard")
       log(
@@ -5485,7 +5569,33 @@ function updateIncomingMissile(m: Missile, dt: number) {
       );
   }
   if (
+    platformLaunch &&
+    m.mesh.userData.seekerOn &&
+    !platformLaunch.terminalSeekerAcquired
+  ) {
+    const targetDirection = defender.position
+        .clone()
+        .sub(m.mesh.position)
+        .normalize(),
+      offBoresight = m.velocity.clone().normalize().angleTo(targetDirection),
+      fieldOfView = THREE.MathUtils.degToRad(
+        profile.seekerFieldOfViewDeg ?? 55,
+      ),
+      acquisitionRange =
+        profile.terminalAt * (profile.seekerAcquisitionRangeFactor ?? 1.1);
+    if (range <= acquisitionRange && offBoresight <= fieldOfView / 2) {
+      platformLaunch.terminalSeekerAcquired = true;
+      m.mesh.userData.platformGuidanceMode = "ACTIVE HOMING";
+      log(
+        `${m.kind} ACTIVE SEEKER TARGET ACQUIRED / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km / OFF-BORESIGHT ${THREE.MathUtils.radToDeg(offBoresight).toFixed(1)} DEG`,
+      );
+    }
+  }
+  const terminalSeekerValid =
+    !platformLaunch || platformLaunch.terminalSeekerAcquired;
+  if (
     m.phase === "terminal" &&
+    terminalSeekerValid &&
     srbocEnabled &&
     range < 140 &&
     !m.mesh.userData.shipDecoyCloud &&
@@ -5539,7 +5649,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     sjDb = 10 * Math.log10(sjRatio),
     burnThrough = !shipEcmEnabled || ecmHealth <= 0.05 || sjDb >= 0,
     shipEcmStrength =
-      shipEcmEnabled && !burnThrough
+      terminalSeekerValid && shipEcmEnabled && !burnThrough
         ? THREE.MathUtils.clamp(-sjDb / 18, 0, 0.8) * ecmHealth
         : 0,
     lockedDecoy =
@@ -5629,19 +5739,27 @@ function updateIncomingMissile(m: Missile, dt: number) {
           : "CLEAR";
   m.mesh.userData.seekerState =
     m.phase === "terminal"
-      ? deceived
+      ? !terminalSeekerValid
+        ? "ACTIVE SEARCH"
+        : deceived
         ? "FALSE TARGET"
         : popUpActive
           ? "ACTIVE / POP-UP"
           : "ACTIVE"
-      : "STANDBY";
+      : platformLaunch
+        ? platformLaunch.datalinkValid
+          ? "SHIP GUIDED"
+          : "INERTIAL"
+        : "STANDBY";
   const ecmOffset = new THREE.Vector3(
       Math.sin(m.age * 2.1) * effectiveEcmStrength * 8,
       0,
       Math.cos(m.age * 1.7) * effectiveEcmStrength * 8,
     ),
     aimBase =
-      deceived && shipChaff
+      platformLaunch && !platformLaunch.terminalSeekerAcquired
+        ? platformLaunch.commandPoint
+        : deceived && shipChaff
         ? shipChaff.position
         : defender.position.clone().add(ecmOffset),
     aimPoint = aimBase
@@ -5745,6 +5863,20 @@ function updateIncomingMissile(m: Missile, dt: number) {
     );
     canvas.dataset.platformLaunchSlot =
       m.platformLaunch?.reservation.hardpoint.id ?? "AIRBORNE";
+    canvas.dataset.platformDatalink = m.platformLaunch
+      ? m.platformLaunch.terminalSeekerAcquired
+        ? "terminal-autonomous"
+        : m.platformLaunch.datalinkValid
+        ? "valid"
+        : "lost"
+      : "airborne";
+    canvas.dataset.platformCommandError = m.platformLaunch
+      ? m.platformLaunch.commandPoint.distanceTo(defender.position).toFixed(2)
+      : "0.00";
+    canvas.dataset.terminalSeekerAcquired = String(
+      m.platformLaunch?.terminalSeekerAcquired ??
+        (m.phase === "terminal" && !!m.mesh.userData.seekerOn),
+    );
   }
   if (
     m.history.length === 0 ||
@@ -5872,8 +6004,19 @@ function tick(now: number) {
     simAccumulator += realDt * timeScale;
     while (simAccumulator >= 0.05 && running) {
       elapsed += 0.05;
-      if (enemyPlatform)
-        updateEnemyPlatform(enemyPlatform, elapsed, 0.05, defender.position);
+      if (enemyPlatform) {
+        const defenderVelocity = new THREE.Vector3(1, 0, 0)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), defender.rotation.y)
+          .multiplyScalar(shipSpeedKnots * 0.005144);
+        updateEnemyPlatform(
+          enemyPlatform,
+          elapsed,
+          0.05,
+          defender.position,
+          defenderVelocity,
+          opforRadarEnabled,
+        );
+      }
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
       captureAarSnapshot();
@@ -5915,6 +6058,11 @@ function tick(now: number) {
       0,
       ...enemyPlatform.weaponTrackAge.values(),
     ).toFixed(2);
+    canvas.dataset.enemyPlatformTargetTrackQuality =
+      enemyPlatform.targetTrack.quality.toFixed(3);
+    canvas.dataset.enemyPlatformTargetTrackUncertainty =
+      enemyPlatform.targetTrack.uncertainty.toFixed(2);
+    canvas.dataset.opforRadar = opforRadarEnabled ? "active" : "silent";
     canvas.dataset.enemyPlatformHardpoints = String(
       enemyPlatform.slots.weaponHardpoints.length,
     );
@@ -5933,6 +6081,9 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformTrackAge = "0.00";
+    canvas.dataset.enemyPlatformTargetTrackQuality = "0.000";
+    canvas.dataset.enemyPlatformTargetTrackUncertainty = "0.00";
+    canvas.dataset.opforRadar = "not-applicable";
     canvas.dataset.enemyPlatformHardpoints = "0";
     canvas.dataset.enemyPlatformCoversVisible = "0";
     canvas.dataset.enemyPlatformSpeedKnots = "0.00";

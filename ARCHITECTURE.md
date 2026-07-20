@@ -55,6 +55,8 @@ The simulation is organized around capabilities rather than ship-name checks.
 6. Platform departure remains generic: the missile stores a `PlatformLaunchReservation`, releases the referenced cover, follows that hardpoint's transformed axis, and hands off to the threat profile after the configured takeover time. `main.ts` must not compare a platform ID or missile ID to choose this behavior.
 7. Declare `minimumTrackQuality`, `minimumTrackAge`, and `fireControlDelay` on every platform weapon slot. Pending launches require continuous quality and command reaction time. Actual release uses a separate per-slot clock so delayed reservations cannot collapse into one frame. Destroying the platform changes only unreleased reservations to `canceled`, while already released weapons continue independently.
 8. Platform mobility is capability data (`maxSpeedKnots`, cruise setting, acceleration, and turn rate). Runtime owns velocity and heading integration; sensor tracks consume that velocity instead of assuming a static target.
+9. Platform target tracks are measured state, never aliases of defender truth. Weapon slots declare datalink interval, latency, and minimum quality. Released weapons coast on their last command point when the link fails.
+10. Terminal seeker acquisition is capability-driven by range and field of view. A platform-launched threat may use truth only after acquisition; ECM, decoys, and autonomous terminal aim must not leak truth into midcourse guidance.
 
 ## Adding friendly surface-strike capability
 

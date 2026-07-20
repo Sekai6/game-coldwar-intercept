@@ -88,6 +88,14 @@ export function instantiateEnemyPlatform(
     velocity: new THREE.Vector3(),
     speedKnots: 0,
     desiredHeading: heading,
+    targetTrack: {
+      position: position.clone(),
+      velocity: new THREE.Vector3(),
+      quality: 0,
+      uncertainty: Infinity,
+      lastUpdate: -Infinity,
+      valid: false,
+    },
     destroyed: false,
   };
   return instance;
@@ -212,8 +220,10 @@ export function updateEnemyPlatform(
   elapsed: number,
   dt: number,
   targetPosition: THREE.Vector3,
+  targetVelocity: THREE.Vector3,
+  sensorsEnabled: boolean,
 ) {
-  const sensorHealth = platform.destroyed
+  const sensorHealth = platform.destroyed || !sensorsEnabled
     ? 0
     : platform.definition.sensorSlots.reduce(
         (sum, sensor) => sum + (platform.subsystemHealth.get(sensor.id) ?? 100),
@@ -259,12 +269,16 @@ export function updateEnemyPlatform(
   platform.velocity.copy(forward).multiplyScalar(platform.speedKnots * 0.005144);
   platform.model.position.addScaledVector(platform.velocity, dt);
   const range = platform.model.position.distanceTo(targetPosition);
+  let sensorUpdated = false;
   for (const definition of platform.definition.sensorSlots) {
     const state = platform.sensorState.get(definition.id)!;
     if (elapsed < state.nextUpdate) continue;
+    sensorUpdated = true;
     state.nextUpdate = elapsed + definition.updateInterval;
     const ratio = range / Math.max(1, definition.maxRange);
-    const health = (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
+    const health = platform.destroyed || !sensorsEnabled
+      ? 0
+      : (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
     state.quality =
       ratio <= 1
         ? THREE.MathUtils.clamp(
@@ -278,6 +292,37 @@ export function updateEnemyPlatform(
     0,
     ...[...platform.sensorState.values()].map((state) => state.quality),
   );
+  const track = platform.targetTrack;
+  if (sensorUpdated && bestTrackQuality > 0.04) {
+    const uncertainty = 2 + (1 - bestTrackQuality) * 24,
+      phase = elapsed * 0.41 + platform.definition.radarCrossSection * 0.17,
+      error = new THREE.Vector3(
+        Math.sin(phase) * uncertainty,
+        0,
+        Math.cos(phase * 0.83) * uncertainty * 0.72,
+      ),
+      velocityError = (1 - bestTrackQuality) * 0.045;
+    track.position.copy(targetPosition).add(error);
+    track.velocity
+      .copy(targetVelocity)
+      .add(
+        new THREE.Vector3(
+          Math.sin(phase * 1.31) * velocityError,
+          0,
+          Math.cos(phase * 1.17) * velocityError,
+        ),
+      );
+    track.quality = bestTrackQuality;
+    track.uncertainty = uncertainty;
+    track.lastUpdate = elapsed;
+    track.valid = true;
+  } else {
+    track.position.addScaledVector(track.velocity, dt);
+    track.quality = Math.max(0, track.quality - dt * 0.012);
+    track.uncertainty = Math.min(80, track.uncertainty + dt * 0.7);
+    if (track.quality <= 0.04 || elapsed - track.lastUpdate > 4)
+      track.valid = false;
+  }
   for (const slot of platform.definition.weaponSlots) {
     const sufficient = bestTrackQuality >= slot.minimumTrackQuality;
     platform.weaponTrackAge.set(
