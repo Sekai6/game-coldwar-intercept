@@ -706,6 +706,7 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
     decisionInterval: 1,
     standoffRange: 560,
     standoffTolerance: 60,
+    significantHeightMeters: 32,
     radarRcs: 10.5,
   },
   hullColor: 0x748183,

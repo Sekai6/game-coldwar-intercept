@@ -63,6 +63,7 @@ export interface ShipDefinition {
     decisionInterval: number;
     standoffRange: number;
     standoffTolerance: number;
+    significantHeightMeters: number;
     radarRcs: number;
   };
   launcher: LauncherConfig;

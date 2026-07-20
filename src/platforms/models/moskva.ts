@@ -155,6 +155,7 @@ export const MOSKVA = {
   era: "1980s-2000s",
   role: "GUIDED MISSILE CRUISER / SURFACE STRIKE",
   radarCrossSection: 15,
+  significantHeightMeters: 36,
   mobility: {
     maxSpeedKnots: 32,
     cruiseSpeedKnots: 20,
@@ -167,9 +168,9 @@ export const MOSKVA = {
   },
   defaultThreat: "P-500",
   sensorSlots: [
-    { id: "air-search", displayName: "MR-800 VOSKHOD / TOP PAIR", role: "air-search", anchorId: "top-pair", maxRange: 920, updateInterval: 0.9, precision: 0.78 },
-    { id: "surface-search", displayName: "MR-700 FREGAT / TOP STEER", role: "surface-search", anchorId: "top-steer", maxRange: 760, updateInterval: 0.72, precision: 0.84 },
-    { id: "strike-control", displayName: "ARGUMENT / FRONT DOOR", role: "fire-control", anchorId: "argument", maxRange: 680, updateInterval: 0.55, precision: 0.9 },
+    { id: "air-search", displayName: "MR-800 VOSKHOD / TOP PAIR", role: "air-search", anchorId: "top-pair", maxRange: 920, updateInterval: 0.9, precision: 0.78, radarHeight: 35 },
+    { id: "surface-search", displayName: "MR-700 FREGAT / TOP STEER", role: "surface-search", anchorId: "top-steer", maxRange: 760, updateInterval: 0.72, precision: 0.84, radarHeight: 31 },
+    { id: "strike-control", displayName: "ARGUMENT / FRONT DOOR", role: "fire-control", anchorId: "argument", maxRange: 680, updateInterval: 0.55, precision: 0.9, radarHeight: 24 },
   ],
   weaponSlots: [
     { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8, minimumTrackQuality: 0.3, minimumTrackAge: 2.4, fireControlDelay: 1.6, datalinkUpdateInterval: 1.4, datalinkLatency: 0.35, datalinkMinimumQuality: 0.18 },

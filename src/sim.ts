@@ -24,6 +24,7 @@ export interface Track {
   age: number;
   classification: TrackQuality;
   lastSeen: number;
+  horizonLimited: boolean;
 }
 export interface SearchState {
   width: number;
@@ -38,6 +39,7 @@ type TargetReturn = {
   velocity: THREE.Vector3;
   altitude: number;
   rcs: number;
+  domain?: "air" | "surface";
 };
 export type SensorDefinition = {
   name: SensorName;
@@ -69,6 +71,10 @@ export const DEFAULT_SENSORS: SensorDefinition[] = [
   },
 ];
 
+export function radarHorizonWorldUnits(aMeters: number, bMeters: number) {
+  return 41.2 * (Math.sqrt(Math.max(0, aMeters)) + Math.sqrt(Math.max(0, bMeters)));
+}
+
 // Game-scaled sensor model. Relationships are physical; values are not system specifications.
 export class CombatPicture {
   readonly tracks = new Map<number, Track>();
@@ -97,9 +103,7 @@ export class CombatPicture {
     return this.rng / 0xffffffff;
   }
   private radarHorizon(aMeters: number, bMeters: number) {
-    return (
-      41.2 * (Math.sqrt(Math.max(0, aMeters)) + Math.sqrt(Math.max(0, bMeters)))
-    );
+    return radarHorizonWorldUnits(aMeters, bMeters);
   }
   private angleDelta(a: number, b: number) {
     return Math.atan2(Math.sin(a - b), Math.cos(a - b));
@@ -241,9 +245,12 @@ export class CombatPicture {
             targetHealth;
         if (range > effective * 1.05) continue;
         const horizon = this.radarHorizon(sensor.radarHeight, target.altitude),
+          horizonLimited = target.domain === "surface" && range > horizon,
           horizonFactor =
             range > horizon
-              ? Math.max(0.06, 1 - (range - horizon) / effective)
+              ? target.domain === "surface"
+                ? Math.max(0.02, 0.16 * Math.exp(-(range - horizon) / 180))
+                : Math.max(0.06, 1 - (range - horizon) / effective)
               : 1;
         const ratio = Math.min(1, range / effective),
           highAltitudeGain =
@@ -331,6 +338,7 @@ export class CombatPicture {
           );
           existing.age = 0;
           existing.lastSeen = now;
+          existing.horizonLimited = horizonLimited;
           if (sensor.threeDimensional) {
             existing.altitudeEstimate = measuredPosition.y * 50;
             existing.altitudeUncertainty = altitudeError;
@@ -377,6 +385,7 @@ export class CombatPicture {
                   ? "suspect"
                   : "unknown",
             lastSeen: now,
+            horizonLimited,
           });
         }
       }

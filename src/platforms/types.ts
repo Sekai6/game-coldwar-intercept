@@ -27,6 +27,7 @@ export interface PlatformSensorSlot {
   maxRange: number;
   updateInterval: number;
   precision: number;
+  radarHeight: number;
 }
 
 export interface PlatformWeaponSlot {
@@ -70,6 +71,7 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   era: string;
   role: string;
   radarCrossSection: number;
+  significantHeightMeters: number;
   mobility: {
     maxSpeedKnots: number;
     cruiseSpeedKnots: number;

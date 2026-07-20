@@ -20,6 +20,7 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
     decisionInterval: 1,
     standoffRange: 520,
     standoffTolerance: 65,
+    significantHeightMeters: 34,
     radarRcs: 12,
   },
   hullColor: 0x687574,

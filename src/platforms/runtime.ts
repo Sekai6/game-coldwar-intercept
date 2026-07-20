@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { EnemyType } from "../threats/catalog";
+import { radarHorizonWorldUnits } from "../sim";
 import type {
   EnemyPlatformDefinition,
   EnemyPlatformInstance,
@@ -231,6 +232,7 @@ export function updateEnemyPlatform(
   dt: number,
   targetPosition: THREE.Vector3,
   targetVelocity: THREE.Vector3,
+  targetSignificantHeightMeters: number,
   sensorsEnabled: boolean,
 ) {
   const previousManeuverMode = platform.maneuverMode;
@@ -352,10 +354,21 @@ export function updateEnemyPlatform(
     const health = platform.destroyed || !sensorsEnabled
       ? 0
       : (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
+    const horizon = radarHorizonWorldUnits(
+        definition.radarHeight,
+        targetSignificantHeightMeters,
+      ),
+      horizonFactor =
+        range > horizon
+          ? Math.max(0.02, 0.16 * Math.exp(-(range - horizon) / 180))
+          : 1;
     state.quality =
       ratio <= 1
         ? THREE.MathUtils.clamp(
-            (1 - ratio * ratio) * definition.precision * health,
+            (1 - ratio * ratio) *
+              definition.precision *
+              health *
+              horizonFactor,
             0,
             1,
           )

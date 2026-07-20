@@ -4624,8 +4624,9 @@ function updateSurfaceCombat(
             id: 1,
             position: enemyPlatform.model.position,
             velocity: enemyPlatform.velocity,
-            altitude: 30,
+            altitude: enemyPlatform.definition.significantHeightMeters,
             rcs: enemyPlatform.definition.radarCrossSection,
+            domain: "surface",
           },
         ]
       : [],
@@ -4827,6 +4828,9 @@ function updateSurfaceCombat(
       missile.target.incomingTracks.delete(missile.id);
   }
   canvas.dataset.surfaceTrackQuality = (track?.quality ?? 0).toFixed(3);
+  canvas.dataset.surfaceTrackHorizonLimited = String(
+    track?.horizonLimited ?? false,
+  );
   canvas.dataset.surfaceTrackAge = (track?.age ?? 0).toFixed(2);
   canvas.dataset.surfaceTrackUncertainty = String(
     Math.round(track?.uncertainty ?? 0),
@@ -6412,6 +6416,7 @@ function tick(now: number) {
           0.05,
           defender.position,
           defenderVelocity,
+          activeShip.platform.significantHeightMeters,
           opforRadarEnabled,
         );
         if (platformUpdate.maneuverChanged)
