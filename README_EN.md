@@ -461,7 +461,7 @@ The `DAMAGE CONTROL` panel shows continuous health for all nine entries. Below 6
 <a id="presentation"></a>
 ## 13. 3D Presentation and Ship Model
 
-Scenario setup now selects between two procedural ships. CG-57 follows the supplied reference photograph with a slender Spruance-derived hull, forward and aft 61-cell Mk 41 banks, four octagonal SPY-1 faces, separated superstructure blocks, twin mast/exhaust groups, hangar, flight deck, and fore/aft Mk 45 guns. Mk 41 cells have independent hatches and one-shot state; launch sequencing opens the hatch, performs a hot vertical departure, delays the programmed turn, closes the hatch, and marks the cell spent.
+Scenario setup now selects between two procedural ships. Both hulls use ten longitudinal stations and eight cross-section points per station to control deck edge, shoulder chine, waterline, keel, and bow sheer. The shared module only triangulates the profiles; each class retains its own proportions and lines. CG-57 follows the supplied reference photograph with a slender Spruance-derived parallel midbody, near-full-width transom, flared fine bow, forward and aft 61-cell Mk 41 banks, four octagonal SPY-1 faces, separated superstructure blocks, twin mast/exhaust groups, hangar, flight deck, and fore/aft Mk 45 guns. Mk 41 cells have independent hatches and one-shot state; launch sequencing opens the hatch, performs a hot vertical departure, delays the programmed turn, closes the hatch, and marks the cell spent.
 
 The CG-57 model carries four independently tasked AN/SPG-62 directors, one on each side of the forward and aft superstructure. Its two Phalanx CIWS mounts select threats within their respective forward and aft sectors. Both systems solve bearings in ship-local coordinates so target tracking remains correct while the ship maneuvers.
 
@@ -469,7 +469,7 @@ The ship selector is generated from `SHIP_CATALOG`. Each definition supplies its
 
 USS Long Beach is represented by a procedural model built around recognizable features:
 
-- A faceted hull with narrowing bow and stern sections.
+- CGN-9-scaled beam, a broad transom, flared upper side, shoulder chine, waterline taper, keel curve, and rising fine bow.
 - Bridge, masts, deck fittings, hull number, flag, navigation lights, and survival equipment.
 - AN/SPS-48E, AN/SPS-49, and SPG-55-inspired shapes and animation.
 - Forward and aft Mk 10 twin-arm mounts with trunnions, yokes, hydraulics, loading rails, and safety markings.
@@ -530,6 +530,7 @@ game-codewar-intercept/
 │  │  ├─ kh22.ts              # Complete Kh-22 definition
 │  │  └─ harpoon.ts           # Harpoon model, pop-up, and HOJ capabilities
 │  ├─ models/
+│  │  ├─ hull-geometry.ts     # Multi-chine hull loft, sheer deck, and waterline band
 │  │  ├─ long-beach.ts        # CGN-9, radar, and Mk 10 procedural model
 │  │  └─ ticonderoga.ts       # CG-57, SPY-1, and Mk 41 procedural model
 │  └─ style.css               # Desktop/mobile HUD, damage control, AAR styling

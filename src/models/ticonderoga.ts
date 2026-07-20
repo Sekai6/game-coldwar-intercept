@@ -1,6 +1,12 @@
 import * as THREE from "three";
 import type { ShipDefinition } from "../ship-types";
 import { applySurfaceDetail } from "../visual/material-textures";
+import {
+  createLoftedHullGeometry,
+  createSheerDeckGeometry,
+  createWaterlineBandGeometry,
+  type HullStation,
+} from "./hull-geometry";
 
 function slopedBox(
   length: number,
@@ -41,75 +47,18 @@ function strut(
   group.add(mesh);
   return mesh;
 }
-function hullGeometry() {
-  const sections = [
-      [-34, 2.05],
-      [-32, 3.05],
-      [-25, 3.55],
-      [-8, 3.75],
-      [13, 3.72],
-      [24, 3.35],
-      [29, 2.55],
-      [32.5, 1.2],
-      [34, 0.1],
-    ] as const,
-    vertices: number[] = [],
-    indices: number[] = [];
-  for (const [x, w] of sections)
-    vertices.push(x, 5.8, -w, x, 5.8, w, x, 0.25, -w * 0.58, x, 0.25, w * 0.58);
-  for (let i = 0; i < sections.length - 1; i++) {
-    const a = i * 4,
-      b = a + 4;
-    indices.push(
-      a,
-      a + 1,
-      b + 1,
-      a,
-      b + 1,
-      b,
-      a + 2,
-      b + 2,
-      b + 3,
-      a + 2,
-      b + 3,
-      a + 3,
-      a,
-      a + 2,
-      b + 2,
-      a,
-      b + 2,
-      b,
-      a + 1,
-      b + 1,
-      b + 3,
-      a + 1,
-      b + 3,
-      a + 3,
-    );
-  }
-  indices.push(
-    0,
-    4,
-    5,
-    0,
-    5,
-    1,
-    (sections.length - 1) * 4,
-    (sections.length - 1) * 4 + 1,
-    (sections.length - 1) * 4 + 3,
-    (sections.length - 1) * 4,
-    (sections.length - 1) * 4 + 3,
-    (sections.length - 1) * 4 + 2,
-  );
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(vertices, 3),
-  );
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
+const TICONDEROGA_HULL: readonly HullStation[] = [
+  { x: -34, deckHalf: 3.02, shoulderHalf: 2.94, waterlineHalf: 2.72, keelHalf: 1.1, deckY: 5.52, shoulderY: 3.25, waterlineY: 0.32, keelY: -0.68 },
+  { x: -31.5, deckHalf: 3.46, shoulderHalf: 3.34, waterlineHalf: 3.02, keelHalf: 1.16, deckY: 5.6, shoulderY: 3.2, waterlineY: 0.3, keelY: -0.78 },
+  { x: -24, deckHalf: 3.64, shoulderHalf: 3.5, waterlineHalf: 3.12, keelHalf: 1.18, deckY: 5.72, shoulderY: 3.18, waterlineY: 0.28, keelY: -0.88 },
+  { x: -8, deckHalf: 3.74, shoulderHalf: 3.58, waterlineHalf: 3.18, keelHalf: 1.2, deckY: 5.82, shoulderY: 3.16, waterlineY: 0.27, keelY: -0.94 },
+  { x: 10, deckHalf: 3.72, shoulderHalf: 3.56, waterlineHalf: 3.12, keelHalf: 1.16, deckY: 5.88, shoulderY: 3.2, waterlineY: 0.28, keelY: -0.92 },
+  { x: 19, deckHalf: 3.55, shoulderHalf: 3.38, waterlineHalf: 2.9, keelHalf: 1.02, deckY: 5.98, shoulderY: 3.36, waterlineY: 0.31, keelY: -0.78 },
+  { x: 25.5, deckHalf: 3.02, shoulderHalf: 2.82, waterlineHalf: 2.3, keelHalf: 0.76, deckY: 6.18, shoulderY: 3.66, waterlineY: 0.36, keelY: -0.56 },
+  { x: 29.5, deckHalf: 2.02, shoulderHalf: 1.8, waterlineHalf: 1.34, keelHalf: 0.4, deckY: 6.46, shoulderY: 4.02, waterlineY: 0.43, keelY: -0.25 },
+  { x: 32.5, deckHalf: 0.78, shoulderHalf: 0.62, waterlineHalf: 0.4, keelHalf: 0.12, deckY: 6.75, shoulderY: 4.42, waterlineY: 0.52, keelY: 0.08 },
+  { x: 34, deckHalf: 0.045, shoulderHalf: 0.035, waterlineHalf: 0.02, keelHalf: 0.008, deckY: 6.92, shoulderY: 4.72, waterlineY: 0.58, keelY: 0.34 },
+];
 function hullNumberTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 256;
@@ -336,19 +285,19 @@ function fixedArray(
 export function buildTiconderoga() {
   const ship = new THREE.Group(),
     hullMat = new THREE.MeshStandardMaterial({
-      color: 0x687678,
-      metalness: 0.58,
-      roughness: 0.42,
+      color: 0x748183,
+      metalness: 0.14,
+      roughness: 0.5,
     }),
     deckMat = new THREE.MeshStandardMaterial({
       color: 0x5d6867,
-      metalness: 0.32,
-      roughness: 0.66,
+      metalness: 0.1,
+      roughness: 0.7,
     }),
     superMat = new THREE.MeshStandardMaterial({
       color: 0x8d9998,
-      metalness: 0.38,
-      roughness: 0.52,
+      metalness: 0.16,
+      roughness: 0.56,
     }),
     dark = new THREE.MeshStandardMaterial({
       color: 0x263235,
@@ -373,27 +322,16 @@ export function buildTiconderoga() {
   applySurfaceDetail(superMat, "painted-metal", 0.26);
   applySurfaceDetail(dark, "dark-metal", 0.34);
   applySurfaceDetail(arrayMat, "painted-metal", 0.2);
-  const hull = new THREE.Mesh(hullGeometry(), hullMat),
+  const hull = new THREE.Mesh(createLoftedHullGeometry(TICONDEROGA_HULL), hullMat),
     waterline = new THREE.Mesh(
-      hullGeometry(),
+      createWaterlineBandGeometry(TICONDEROGA_HULL),
       new THREE.MeshStandardMaterial({ color: 0x151d20, roughness: 0.8 }),
     );
-  waterline.scale.set(1.002, 0.27, 1.002);
-  waterline.position.y = -0.05;
   ship.add(hull, waterline);
-  const deckShape = new THREE.Shape();
-  deckShape.moveTo(-33, -2);
-  deckShape.lineTo(-30, -3.15);
-  deckShape.lineTo(18, -3.68);
-  deckShape.lineTo(27, -2.9);
-  deckShape.lineTo(34, 0);
-  deckShape.lineTo(27, 2.9);
-  deckShape.lineTo(18, 3.68);
-  deckShape.lineTo(-30, 3.15);
-  deckShape.closePath();
-  const deck = new THREE.Mesh(new THREE.ShapeGeometry(deckShape), deckMat);
-  deck.rotation.x = -Math.PI / 2;
-  deck.position.y = 5.85;
+  const deck = new THREE.Mesh(
+    createSheerDeckGeometry(TICONDEROGA_HULL),
+    deckMat,
+  );
   ship.add(deck);
   const forwardHouse = new THREE.Mesh(
     slopedBox(15.5, 7.8, 6.35, 2.8, 0.65),
@@ -638,7 +576,7 @@ export function buildTiconderoga() {
         new THREE.CylinderGeometry(0.025, 0.025, 0.65, 5),
         dark,
       );
-      post.position.set(x, 6.45, side * (x > 20 ? 3.2 : x < -25 ? 3.2 : 4.18));
+      post.position.set(x, 6.45, side * (x > 20 ? 3.2 : x < -25 ? 3.2 : 3.72));
       highDetail.add(post);
     }
   for (const side of [-1, 1])
@@ -701,7 +639,7 @@ export function buildTiconderoga() {
       new THREE.BoxGeometry(48, 0.07, 0.07),
       new THREE.MeshBasicMaterial({ color: 0x82908d }),
     );
-    rail.position.set(-1, 6.65, side * 4.15);
+    rail.position.set(-1, 6.65, side * 3.72);
     mediumDetail.add(rail);
   }
   ship.add(mediumDetail);
@@ -725,7 +663,7 @@ export function buildTiconderoga() {
       new THREE.PlaneGeometry(3.4, 1.35),
       numberMaterial,
     );
-    number.position.set(23, 3.6, side * 3.78);
+    number.position.set(23, 3.6, side * 3.02);
     number.rotation.y = side > 0 ? 0 : Math.PI;
     ship.add(number);
   }
@@ -795,6 +733,8 @@ export function buildTiconderoga() {
   ship.add(ewPulse);
   ship.userData = {
     shipClass: "ticonderoga",
+    hullStations: TICONDEROGA_HULL.length,
+    hullSectionPoints: 8,
     vlsCells,
     radar,
     secondaryRadar: sps49,
@@ -838,7 +778,7 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
   era: "1990s AEGIS",
   role: "AEGIS AIR DEFENSE CRUISER",
   platform: { maxSpeedKnots: 32.5, turnRateDeg: 1.8, radarRcs: 10.5 },
-  hullColor: 0x687678,
+  hullColor: 0x748183,
   launcher: {
     kind: "mk41",
     displayName: "MK 41 VLS",

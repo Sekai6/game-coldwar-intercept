@@ -11,7 +11,7 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
   era: "NTU 1980s",
   role: "NUCLEAR GUIDED MISSILE CRUISER",
   platform: { maxSpeedKnots: 30, turnRateDeg: 1.6, radarRcs: 12 },
-  hullColor: 0x4b5a59,
+  hullColor: 0x687574,
   launcher: {
     kind: "mk10",
     displayName: "MK 10",

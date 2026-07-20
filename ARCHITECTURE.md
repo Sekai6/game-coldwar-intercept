@@ -9,6 +9,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/ship-types.ts`: ship capability contracts shared by the catalog and runtime.
 - `src/models/long-beach.ts`: CGN-9 procedural model and Mk 10 visual components.
 - `src/models/ticonderoga.ts`: CG-47-class procedural model and Mk 41 visual components.
+- `src/models/hull-geometry.ts`: shared multi-chine longitudinal loft, sheer deck, and waterline-band geometry; ship-specific station tables remain in each model.
 - `src/combat-types.ts`: shared runtime domain types.
 - `src/interceptor-data.ts`: ship-launched interceptor flight profiles.
 - `src/threats/catalog.ts`: incoming-threat registry and derived `EnemyType`.
@@ -46,6 +47,8 @@ The simulation is organized around capabilities rather than ship-name checks.
 The incoming-threat engine is intentionally generic. `src/main.ts` may read a threat capability, but it must not compare an incoming missile ID to select a model, envelope, preset, trajectory, EW mode, or terminal attack behavior.
 
 Model modules expose equipment anchors through `Object3D.userData`; combat behavior reads capabilities from `ShipDefinition` and must not infer them from a model or ship name.
+
+Hull precision is data-driven but not shape-generic. Each ship owns a station table describing deck edge, shoulder chine, waterline, keel width, and vertical sheer. `hull-geometry.ts` only triangulates those profiles. This keeps bow flare, parallel midbody, stern form, and proportions specific to the real class while avoiding duplicate index-generation code. Hull-side attachments must be repositioned when station breadth changes; old absolute beam offsets are not valid after a hull revision.
 
 ## Rendering pipeline
 

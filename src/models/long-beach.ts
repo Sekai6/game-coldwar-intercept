@@ -1,75 +1,24 @@
 import * as THREE from "three";
 import { applySurfaceDetail } from "../visual/material-textures";
+import {
+  createLoftedHullGeometry,
+  createSheerDeckGeometry,
+  createWaterlineBandGeometry,
+  type HullStation,
+} from "./hull-geometry";
 
-function createHullGeometry() {
-  const sections = [
-    [-29, 3.15],
-    [-27, 3.9],
-    [-22, 4.35],
-    [-14, 4.55],
-    [8, 4.65],
-    [17, 4.2],
-    [23, 3.15],
-    [27, 1.65],
-    [29.5, 0.18],
-  ] as const;
-  const vertices: number[] = [],
-    indices: number[] = [];
-  for (const [x, w] of sections)
-    vertices.push(x, 6, -w, x, 6, w, x, 0.4, -w * 0.58, x, 0.4, w * 0.58);
-  for (let i = 0; i < sections.length - 1; i++) {
-    const a = i * 4,
-      b = (i + 1) * 4;
-    indices.push(
-      a,
-      a + 1,
-      b + 1,
-      a,
-      b + 1,
-      b,
-      a + 2,
-      b + 2,
-      b + 3,
-      a + 2,
-      b + 3,
-      a + 3,
-      a,
-      a + 2,
-      b + 2,
-      a,
-      b + 2,
-      b,
-      a + 1,
-      b + 1,
-      b + 3,
-      a + 1,
-      b + 3,
-      a + 3,
-    );
-  }
-  indices.push(
-    0,
-    4,
-    5,
-    0,
-    5,
-    1,
-    (sections.length - 1) * 4,
-    (sections.length - 1) * 4 + 1,
-    (sections.length - 1) * 4 + 3,
-    (sections.length - 1) * 4,
-    (sections.length - 1) * 4 + 3,
-    (sections.length - 1) * 4 + 2,
-  );
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(vertices, 3),
-  );
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
+const LONG_BEACH_HULL: readonly HullStation[] = [
+  { x: -30, deckHalf: 2.8, shoulderHalf: 2.7, waterlineHalf: 2.45, keelHalf: 0.72, deckY: 5.72, shoulderY: 3.55, waterlineY: 0.34, keelY: -0.72 },
+  { x: -28, deckHalf: 3.35, shoulderHalf: 3.25, waterlineHalf: 2.92, keelHalf: 0.9, deckY: 5.82, shoulderY: 3.5, waterlineY: 0.32, keelY: -0.82 },
+  { x: -24, deckHalf: 3.68, shoulderHalf: 3.55, waterlineHalf: 3.14, keelHalf: 1, deckY: 5.92, shoulderY: 3.45, waterlineY: 0.3, keelY: -0.92 },
+  { x: -16, deckHalf: 3.82, shoulderHalf: 3.67, waterlineHalf: 3.24, keelHalf: 1.05, deckY: 6, shoulderY: 3.42, waterlineY: 0.28, keelY: -0.98 },
+  { x: 0, deckHalf: 3.85, shoulderHalf: 3.7, waterlineHalf: 3.25, keelHalf: 1.06, deckY: 6.02, shoulderY: 3.42, waterlineY: 0.28, keelY: -1 },
+  { x: 12, deckHalf: 3.78, shoulderHalf: 3.63, waterlineHalf: 3.1, keelHalf: 1, deckY: 6.08, shoulderY: 3.48, waterlineY: 0.3, keelY: -0.94 },
+  { x: 19, deckHalf: 3.42, shoulderHalf: 3.24, waterlineHalf: 2.7, keelHalf: 0.84, deckY: 6.2, shoulderY: 3.62, waterlineY: 0.34, keelY: -0.78 },
+  { x: 24, deckHalf: 2.62, shoulderHalf: 2.38, waterlineHalf: 1.86, keelHalf: 0.55, deckY: 6.42, shoulderY: 3.9, waterlineY: 0.4, keelY: -0.52 },
+  { x: 27.5, deckHalf: 1.32, shoulderHalf: 1.08, waterlineHalf: 0.7, keelHalf: 0.2, deckY: 6.72, shoulderY: 4.3, waterlineY: 0.48, keelY: -0.12 },
+  { x: 29.5, deckHalf: 0.06, shoulderHalf: 0.045, waterlineHalf: 0.025, keelHalf: 0.01, deckY: 7.08, shoulderY: 4.8, waterlineY: 0.58, keelY: 0.32 },
+];
 function createSlopedBoxGeometry(
   length: number,
   height: number,
@@ -302,18 +251,18 @@ function createMk10Launcher(deckMat: THREE.Material, darkMat: THREE.Material) {
   launcher.add(loaderDoor);
   return launcher;
 }
-export function buildLongBeach(color = 0x4b5a59, scale = 1) {
+export function buildLongBeach(color = 0x687574, scale = 1) {
   const g = new THREE.Group();
   g.scale.setScalar(scale);
   const hullMat = new THREE.MeshStandardMaterial({
     color,
-    metalness: 0.72,
-    roughness: 0.32,
+    metalness: 0.16,
+    roughness: 0.48,
   });
   const deckMat = new THREE.MeshStandardMaterial({
     color: 0x707d7c,
-    metalness: 0.35,
-    roughness: 0.6,
+    metalness: 0.12,
+    roughness: 0.68,
   });
   const darkMat = new THREE.MeshStandardMaterial({
     color: 0x263538,
@@ -323,29 +272,17 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
   applySurfaceDetail(hullMat, "painted-metal", 0.32);
   applySurfaceDetail(deckMat, "weather-deck", 0.48);
   applySurfaceDetail(darkMat, "dark-metal", 0.34);
-  const hull = new THREE.Mesh(createHullGeometry(), hullMat);
+  const hull = new THREE.Mesh(createLoftedHullGeometry(LONG_BEACH_HULL), hullMat);
   g.add(hull);
-  const deckShape = new THREE.Shape();
-  deckShape.moveTo(-28, -3.15);
-  deckShape.lineTo(-22, -4.25);
-  deckShape.lineTo(16, -4.25);
-  deckShape.lineTo(23, -3.15);
-  deckShape.lineTo(29, 0);
-  deckShape.lineTo(23, 3.15);
-  deckShape.lineTo(16, 4.25);
-  deckShape.lineTo(-22, 4.25);
-  deckShape.lineTo(-28, 3.15);
-  deckShape.closePath();
-  const mainDeck = new THREE.Mesh(new THREE.ShapeGeometry(deckShape), deckMat);
-  mainDeck.rotation.x = -Math.PI / 2;
-  mainDeck.position.y = 6.05;
+  const mainDeck = new THREE.Mesh(
+    createSheerDeckGeometry(LONG_BEACH_HULL),
+    deckMat,
+  );
   g.add(mainDeck);
   const waterline = new THREE.Mesh(
-    createHullGeometry(),
+    createWaterlineBandGeometry(LONG_BEACH_HULL),
     new THREE.MeshStandardMaterial({ color: 0x151d20, roughness: 0.75 }),
   );
-  waterline.scale.set(1.002, 0.28, 1.002);
-  waterline.position.y = -0.1;
   g.add(waterline);
   const keel = new THREE.Mesh(new THREE.BoxGeometry(24, 0.7, 2.8), darkMat);
   keel.position.set(-1, 0.15, 0);
@@ -668,14 +605,14 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
       }),
     );
     rail.rotation.z = Math.PI / 2;
-    rail.position.set(-1, 7, side * 4.15);
+    rail.position.set(-1, 7, side * 3.78);
     g.add(rail);
     for (let x = -19; x <= 18; x += 4) {
       const post = new THREE.Mesh(
         new THREE.CylinderGeometry(0.055, 0.055, 1.2, 6),
         darkMat,
       );
-      post.position.set(x, 6.5, side * 4.15);
+      post.position.set(x, 6.5, side * 3.78);
       g.add(post);
     }
   }
@@ -708,7 +645,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
   });
   for (const side of [-1, 1]) {
     const number = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), numberMat);
-    number.position.set(17.5, 3.7, side * 4.02);
+    number.position.set(17.5, 3.7, side * 3.38);
     number.rotation.y = side > 0 ? 0 : Math.PI;
     g.add(number);
     const lampColor = side > 0 ? 0x36ff78 : 0xff3a32,
@@ -727,7 +664,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
         new THREE.SphereGeometry(0.09, 7, 5),
         new THREE.MeshBasicMaterial({ color: 0xffd99a }),
       );
-      port.position.set(x, 7.05, side * 4.05);
+      port.position.set(x, 7.05, side * 3.72);
       lightBulbs.push(port);
       g.add(port);
     }
@@ -753,7 +690,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
       new THREE.TorusGeometry(0.45, 0.12, 8, 16),
       darkMat,
     );
-    anchor.position.set(21, 3.2, side * 3.1);
+    anchor.position.set(21, 3.2, side * 2.86);
     anchor.rotation.x = Math.PI / 2;
     g.add(anchor);
   }
@@ -770,7 +707,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
       new THREE.CylinderGeometry(0.16, 0.16, 0.8, 8),
       darkMat,
     );
-    bollard.position.set(x, 6.5, 4);
+    bollard.position.set(x, 6.5, 3.56);
     g.add(bollard);
   }
   // The forward Mk 10 stows facing aft; the loading housing remains on the bow side.
@@ -1007,7 +944,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
         new THREE.CylinderGeometry(0.035, 0.035, 0.7, 5),
         darkMat,
       );
-      stanchion.position.set(x, 6.75, side * 4.18);
+      stanchion.position.set(x, 6.75, side * 3.82);
       highDetail.add(stanchion);
     }
   const breakwater = new THREE.Mesh(
@@ -1053,7 +990,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
   const srbocLaunchers = new THREE.Group();
   for (const side of [-1, 1]) {
     const station = new THREE.Group();
-    station.position.set(0, 7.25, side * 4.05);
+    station.position.set(0, 7.25, side * 3.72);
     station.rotation.x = side * 0.42;
     const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 1.25), darkMat);
     station.add(base);
@@ -1142,7 +1079,7 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
       new THREE.BoxGeometry(42, 0.08, 0.08),
       new THREE.MeshBasicMaterial({ color: 0x81908d }),
     );
-    rail.position.set(-1, 6.9, side * 4.18);
+    rail.position.set(-1, 6.9, side * 3.82);
     mediumDetail.add(rail);
   }
   for (const x of [-18, -8, 3, 14]) {
@@ -1174,6 +1111,8 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
   lowDetail.visible = false;
   g.add(lowDetail);
   g.userData = {
+    hullStations: LONG_BEACH_HULL.length,
+    hullSectionPoints: 8,
     radar,
     secondaryRadar: sps49,
     fireControl,

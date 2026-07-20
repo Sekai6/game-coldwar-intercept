@@ -129,6 +129,10 @@ function updateMaterialDiagnostics() {
     ).length;
   });
   canvas.dataset.pbrMappedMaterials = String(mappedMaterials);
+  canvas.dataset.hullStations = String(defender.userData.hullStations ?? 0);
+  canvas.dataset.hullSectionPoints = String(
+    defender.userData.hullSectionPoints ?? 0,
+  );
 }
 const grid = new THREE.GridHelper(1200, 48, 0x1d6570, 0x123f4b);
 grid.position.y = 0.15;
