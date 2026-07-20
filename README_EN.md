@@ -66,7 +66,7 @@
 <a id="overview"></a>
 ## 1. Overview
 
-NTU Intercept is a Three.js browser-based 3D combat sandbox. The player can select the Mk 10-equipped USS Long Beach (CGN-9) or the AEGIS/SPY-1B and Mk 41-equipped USS Lake Champlain (CG-57) against P-500, P-700, and Kh-22 raids while managing the complete air-defense chain.
+NTU Intercept is a Three.js browser-based 3D combat sandbox. The player can select the Mk 10-equipped USS Long Beach (CGN-9) or the AEGIS/SPY-1B and Mk 41-equipped USS Lake Champlain (CG-57) against P-500, P-700, Kh-22, and RGM-84 Harpoon raids while managing the complete air-defense chain.
 
 The combat model is not a simple “target enters a circle and disappears on a dice roll.” Results emerge from an observable engagement chain:
 
@@ -248,10 +248,13 @@ Radar reports do not copy target truth. Each measurement receives position and a
 | Type | Cruise Altitude | Terminal Altitude | Cruise/Terminal Speed | Terminal Starts | Game Damage | Character |
 |---|---:|---:|---:|---:|---:|---|
 | P-500 | 60 m | 15 m | 8.8 / 9.6 u/s | 18 km | 28% | Sea skimming and terminal maneuver |
-| P-700 | 130 m | 20 m | 9.8 / 10.8 u/s | 22 km | Faster with stronger terminal weaving |
-| Kh-22 | 18,000 m | 110 m | 13.2 / 15.2 u/s | 45 km | High-altitude, high-speed dive; difficult for CIWS |
+| P-700 | 130 m | 20 m | 9.8 / 10.8 u/s | 22 km | 38% | Faster with stronger terminal weaving |
+| RGM-84 Harpoon | 45 m | 6 m | 5.8 / 6.4 u/s | 13 km | 20% | Compact low-RCS subsonic sea skimmer with active terminal homing and quick, restrained maneuver |
+| Kh-22 | 18,000 m | 110 m | 13.2 / 15.2 u/s | 45 km | 46% | High-altitude, high-speed dive; difficult for CIWS |
 
-Incoming weapons transition through `inbound -> midcourse -> terminal`. Altitude, speed, and maneuver amplitude interpolate continuously during terminal entry. Each missile has a turn-rate limit, speed response, bank visualization, active-seeker activation, line-of-sight aim point, and closest-approach history.
+Incoming weapons transition through `inbound -> midcourse -> terminal`. Altitude, speed, and maneuver amplitude interpolate continuously during terminal entry. Each missile has a turn-rate limit, speed response, bank visualization, active-seeker activation, line-of-sight aim point, and closest-approach history. Harpoon enters terminal flight at roughly 13 km, activates its seeker, and descends continuously from about 45 m to about 6 m. Its terminal weave is quicker but substantially smaller than P-700's, while the 3D view shows sea mist, seeker field of view, and bank response. The game-scaled model assigns most rounds a direct skim profile and a minority a late pop-up/dive profile; strong shipboard jamming can expose an emitter bearing and trigger a simplified home-on-jam state.
+
+![RGM-84 Harpoon terminal pop-up and active seeker](verification-harpoon-terminal.png)
 
 <a id="sam-guidance"></a>
 ## 7. SAMs and Guidance
@@ -274,7 +277,7 @@ The missile leaves from the selected Mk 10 rail’s actual position and orientat
 
 1. The ship sends delayed datalink updates based on track quality.
 2. Update spacing varies with quality; missing data causes inertial extrapolation.
-3. Trajectory selection follows the threat profile: P-500/P-700 use a low-altitude forward-intercept corridor, while high-altitude targets such as Kh-22 retain a lofted trajectory. Against sea skimmers, Mk 41 rounds hold vertical only long enough to clear the ship before a rapid programmed turn.
+3. Trajectory selection follows the threat profile: P-500, P-700, and Harpoon use a low-altitude forward-intercept corridor, while high-altitude targets such as Kh-22 retain a lofted trajectory. Against sea skimmers, Mk 41 rounds hold vertical only long enough to clear the ship before a rapid programmed turn.
 4. Inside terminal range, control transfers to an active seeker or the selected ship's fire-control illumination.
 
 <a id="rim67-terminal"></a>

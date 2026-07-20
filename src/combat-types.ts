@@ -1,6 +1,6 @@
 import type * as THREE from "three";
 
-export type EnemyType = "P-500" | "P-700" | "Kh-22";
+export type EnemyType = "P-500" | "P-700" | "Kh-22" | "RGM-84 Harpoon";
 export type WeaponType = "RIM-67" | "SM-2MR" | "SM-2ER";
 export type MissilePhase =
   | "inbound"

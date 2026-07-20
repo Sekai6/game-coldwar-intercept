@@ -19,6 +19,21 @@ export interface ThreatProfile {
   damage: number;
   defaultRange: number;
   burnThroughRange: number;
+  radarCrossSection: number;
+  modelScale: number;
+  selectionRadius: number;
+  pathColor: number;
+  threatPriority: number;
+  trajectory: "sea-skimmer" | "high-altitude";
+  ciwsPenalty: number;
+  ciwsPkCap?: number;
+  terminalAttackModes?: readonly ("skim" | "pop-up")[];
+  weave: {
+    lateral: number;
+    longitudinal: number;
+    lateralRate: number;
+    longitudinalRate: number;
+  };
 }
 
 export const WEAPON_PROFILES: Record<WeaponType, InterceptorProfile> = {
@@ -62,6 +77,19 @@ export const THREAT_PROFILES: Record<EnemyType, ThreatProfile> = {
     damage: 28,
     defaultRange: 600,
     burnThroughRange: 30,
+    radarCrossSection: 0.42,
+    modelScale: 0.96,
+    selectionRadius: 4.2,
+    pathColor: 0xe25a43,
+    threatPriority: 0,
+    trajectory: "sea-skimmer",
+    ciwsPenalty: 0.1,
+    weave: {
+      lateral: 2.2,
+      longitudinal: 1.4,
+      lateralRate: 3.8,
+      longitudinalRate: 3.1,
+    },
   },
   "P-700": {
     cruiseAltitude: 2.6,
@@ -73,6 +101,19 @@ export const THREAT_PROFILES: Record<EnemyType, ThreatProfile> = {
     damage: 38,
     defaultRange: 750,
     burnThroughRange: 36,
+    radarCrossSection: 0.7,
+    modelScale: 1.05,
+    selectionRadius: 4.8,
+    pathColor: 0xe25a43,
+    threatPriority: 18,
+    trajectory: "sea-skimmer",
+    ciwsPenalty: 0.16,
+    weave: {
+      lateral: 7,
+      longitudinal: 5,
+      lateralRate: 2.8,
+      longitudinalRate: 2.35,
+    },
   },
   "Kh-22": {
     cruiseAltitude: 360,
@@ -84,5 +125,44 @@ export const THREAT_PROFILES: Record<EnemyType, ThreatProfile> = {
     damage: 46,
     defaultRange: 1000,
     burnThroughRange: 26,
+    radarCrossSection: 1.1,
+    modelScale: 0.92,
+    selectionRadius: 4.2,
+    pathColor: 0xffb05a,
+    threatPriority: 45,
+    trajectory: "high-altitude",
+    ciwsPenalty: 0.3,
+    ciwsPkCap: 0.14,
+    weave: {
+      lateral: 0,
+      longitudinal: 0,
+      lateralRate: 0,
+      longitudinalRate: 0,
+    },
+  },
+  "RGM-84 Harpoon": {
+    cruiseAltitude: 0.9,
+    terminalAltitude: 0.12,
+    terminalAt: 130,
+    cruiseSpeed: 5.8,
+    terminalSpeed: 6.4,
+    turnRate: 11,
+    damage: 20,
+    defaultRange: 420,
+    burnThroughRange: 22,
+    radarCrossSection: 0.18,
+    modelScale: 0.82,
+    selectionRadius: 3.2,
+    pathColor: 0xf1b44c,
+    threatPriority: 6,
+    trajectory: "sea-skimmer",
+    ciwsPenalty: 0.08,
+    terminalAttackModes: ["skim", "skim", "skim", "pop-up"],
+    weave: {
+      lateral: 1.4,
+      longitudinal: 0.8,
+      lateralRate: 4.2,
+      longitudinalRate: 3.6,
+    },
   },
 };

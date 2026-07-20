@@ -362,11 +362,12 @@ function missileThreatScore(missile: Missile, quality: number) {
       : missile.phase === "midcourse"
         ? 35
         : 0) +
-    (missile.kind === "Kh-22" ? 45 : missile.kind === "P-700" ? 18 : 0) +
+    incomingProfiles[missile.kind].threatPriority +
     quality * 12
   );
 }
 function createEnemyMissile(kind: EnemyType) {
+  if (kind === "RGM-84 Harpoon") return createHarpoonMissile();
   const g = new THREE.Group(),
     isGranite = kind === "P-700",
     isKh22 = kind === "Kh-22",
@@ -553,19 +554,153 @@ function createEnemyMissile(kind: EnemyType) {
   g.userData.seekerFov = seekerFov;
   return g;
 }
+function createHarpoonMissile() {
+  const g = new THREE.Group(),
+    skin = new THREE.MeshStandardMaterial({
+      color: 0xd5d6d1,
+      metalness: 0.42,
+      roughness: 0.46,
+    }),
+    dark = new THREE.MeshStandardMaterial({
+      color: 0x343a3b,
+      metalness: 0.5,
+      roughness: 0.4,
+    }),
+    band = new THREE.MeshStandardMaterial({
+      color: 0xb49336,
+      metalness: 0.35,
+      roughness: 0.48,
+    }),
+    length = 6.2,
+    radius = 0.45;
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.92, radius, length, 16),
+    skin,
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const radome = new THREE.Mesh(
+    new THREE.ConeGeometry(radius * 0.92, 1.15, 16),
+    dark,
+  );
+  radome.rotation.x = -Math.PI / 2;
+  radome.position.z = -length * 0.5 - 0.55;
+  g.add(radome);
+  const noseTip = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 12, 8),
+    dark,
+  );
+  noseTip.position.z = -length * 0.5 - 1.12;
+  g.add(noseTip);
+  const idBand = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.95, radius * 0.95, 0.18, 16),
+    band,
+  );
+  idBand.rotation.x = Math.PI / 2;
+  idBand.position.z = -length * 0.22;
+  g.add(idBand);
+  const tail = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.7, radius, 0.8, 16),
+    dark,
+  );
+  tail.rotation.x = Math.PI / 2;
+  tail.position.z = length * 0.5 + 0.3;
+  g.add(tail);
+  const addFinSet = (z: number, span: number, chord: number, material: THREE.Material) => {
+    for (let index = 0; index < 4; index++) {
+      const fin = new THREE.Mesh(
+        new THREE.BoxGeometry(span, 0.08, chord),
+        material,
+      );
+      fin.position.z = z;
+      fin.rotation.z = index * Math.PI * 0.5;
+      g.add(fin);
+    }
+  };
+  addFinSet(0.15, 2.8, 1.35, skin);
+  addFinSet(length * 0.39, 1.65, 0.85, dark);
+  const intakeOuter = new THREE.Mesh(
+    new THREE.BoxGeometry(0.72, 0.48, 1.45),
+    skin,
+  );
+  intakeOuter.position.set(0, -radius * 1.02, 0.72);
+  g.add(intakeOuter);
+  const intake = new THREE.Mesh(
+    new THREE.BoxGeometry(0.48, 0.3, 1.28),
+    dark,
+  );
+  intake.position.set(0, -radius * 1.28, 0.58);
+  g.add(intake);
+  const exhaust = new THREE.Mesh(
+    new THREE.ConeGeometry(0.2, 1.65, 10, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff8b45,
+      transparent: true,
+      opacity: 0.56,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  exhaust.rotation.x = -Math.PI / 2;
+  exhaust.position.z = length * 0.5 + 1.15;
+  g.add(exhaust);
+  const hotCore = new THREE.Mesh(
+    new THREE.ConeGeometry(0.08, 0.9, 8, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffe5ac,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  hotCore.rotation.x = -Math.PI / 2;
+  hotCore.position.z = length * 0.5 + 0.75;
+  g.add(hotCore);
+  const seaMist = new THREE.Mesh(
+    new THREE.ConeGeometry(0.8, 6, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xbce8ec,
+      transparent: true,
+      opacity: 0.11,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seaMist.rotation.x = -Math.PI / 2;
+  seaMist.position.z = length * 0.5 + 4;
+  seaMist.visible = false;
+  g.add(seaMist);
+  const seekerFov = new THREE.Mesh(
+    new THREE.ConeGeometry(7, 30, 24, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff6554,
+      transparent: true,
+      opacity: 0.07,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seekerFov.rotation.x = -Math.PI / 2;
+  seekerFov.position.z = -length * 0.5 - 16;
+  seekerFov.visible = false;
+  g.add(seekerFov);
+  g.userData.exhaust = exhaust;
+  g.userData.hotCore = hotCore;
+  g.userData.seaMist = seaMist;
+  g.userData.shockCone = undefined;
+  g.userData.seekerFov = seekerFov;
+  g.userData.modelLength = length;
+  return g;
+}
 function addMissile(
   pos: THREE.Vector3,
   kind: EnemyType = "P-500",
   launchAt = 0,
 ) {
-  const visual =
-      kind === "P-700"
-        ? { rcs: 0.7, scale: 1.05 }
-        : {
-            rcs: kind === "Kh-22" ? 1.1 : 0.42,
-            scale: kind === "Kh-22" ? 0.92 : 0.96,
-          },
-    profile = incomingProfiles[kind],
+  const profile = incomingProfiles[kind],
     ordinal = missiles.length,
     aimOffset = new THREE.Vector3(
       Math.sin((ordinal + 1) * 2.399) * 2.8,
@@ -573,11 +708,15 @@ function addMissile(
       Math.cos((ordinal + 1) * 1.73) * 1.2,
     ),
     g = createEnemyMissile(kind);
+  const attackModes = profile.terminalAttackModes;
+  g.userData.terminalAttackMode = attackModes
+    ? attackModes[ordinal % attackModes.length]
+    : "standard";
   g.position.copy(pos);
-  g.scale.setScalar(visual.scale);
+  g.scale.setScalar(profile.modelScale);
   g.visible = launchAt <= 0;
   const selection = new THREE.Mesh(
-    new THREE.TorusGeometry(kind === "P-700" ? 4.8 : 4.2, 0.12, 8, 32),
+    new THREE.TorusGeometry(profile.selectionRadius, 0.12, 8, 32),
     new THREE.MeshBasicMaterial({
       color: 0xffd45a,
       transparent: true,
@@ -592,7 +731,7 @@ function addMissile(
     path = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(history),
       new THREE.LineBasicMaterial({
-        color: kind === "Kh-22" ? 0xffb05a : 0xe25a43,
+        color: profile.pathColor,
         transparent: true,
         opacity: 0.34,
         blending: THREE.AdditiveBlending,
@@ -625,7 +764,7 @@ function addMissile(
     path,
     kind,
     speedFactor: profile.cruiseSpeed,
-    rcs: visual.rcs,
+    rcs: profile.radarCrossSection,
     launchAt,
     aimOffset,
     bank: 0,
@@ -2152,7 +2291,10 @@ let placementMode: false | "enemy" | "ship" = false;
 const sandbox = document.createElement("div");
 sandbox.style.cssText =
   "position:fixed;inset:0;margin:auto;width:470px;height:430px;background:#071923f5;border:1px solid #4ac0b8;color:#d5edf0;z-index:30;padding:28px;font:12px Arial;letter-spacing:1px";
-sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType"><option>P-500</option><option>P-700</option><option>Kh-22</option></select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.2" max="500" step="0.1" value="1.2"></label><label>CENTER X<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
+const threatOptions = (Object.keys(incomingProfiles) as EnemyType[])
+  .map((kind) => `<option>${kind}</option>`)
+  .join("");
+sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType">${threatOptions}</select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.12" max="500" step="0.1" value="1.2"></label><label>CENTER X<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
 sandbox
   .querySelectorAll("input,select")
   .forEach(
@@ -2329,7 +2471,7 @@ for (const [label, id] of [
 }
 const wave2Type = document.createElement("label");
 wave2Type.innerHTML =
-  'SECOND WAVE TYPE<select id="sbType2"><option value="NONE">NONE</option><option>P-500</option><option>P-700</option><option>Kh-22</option></select>';
+  `SECOND WAVE TYPE<select id="sbType2"><option value="NONE">NONE</option>${threatOptions}</select>`;
 const wave2Select = wave2Type.querySelector("select") as HTMLSelectElement;
 wave2Select.style.cssText =
   "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
@@ -2356,7 +2498,7 @@ sandbox.style.maxHeight = "calc(100vh - 48px)";
 sandbox.style.overflowY = "auto";
 sandbox.style.boxSizing = "border-box";
 const presets = document.createElement("div");
-presets.style.cssText = "display:flex;gap:7px;margin-top:12px";
+presets.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px";
 sandbox.insertBefore(presets, patternWrap);
 function presetButton(
   text: string,
@@ -2388,6 +2530,17 @@ function presetButton(
 presetButton("SEA SKIMMER", "P-500", 6, 1.5, 1.2, 140, 600);
 presetButton("SATURATION", "P-700", 16, 0, 2.6, 260, 750);
 presetButton("HIGH SPEED", "Kh-22", 8, 2, 360, 190, 1000);
+presetButton("HARPOON RAID", "RGM-84 Harpoon", 8, 1.2, 0.9, 180, 420);
+const threatSelect = sandbox.querySelector("#sbType") as HTMLSelectElement;
+threatSelect.onchange = () => {
+  const profile = incomingProfiles[threatSelect.value as EnemyType];
+  (sandbox.querySelector("#sbAltitude") as HTMLInputElement).value = String(
+    profile.cruiseAltitude,
+  );
+  (sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(
+    -profile.defaultRange,
+  );
+};
 radarCanvas.addEventListener("pointerdown", (e) => {
   if (!placementMode) return;
   e.stopPropagation();
@@ -2479,7 +2632,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     addMissile(
       new THREE.Vector3(
         cx + offset,
-        altitude + Math.sin(i) * 5,
+        altitude + Math.sin(i) * Math.min(0.2, altitude * 0.08),
         cz - Math.abs(offset) * 0.12,
       ),
       kind,
@@ -2631,7 +2784,9 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         addMissile(
           new THREE.Vector3(
             cx + offset,
-            kind2 === "Kh-22" ? Math.max(45, altitude) : altitude,
+            incomingProfiles[kind2].trajectory === "high-altitude"
+              ? Math.max(45, altitude)
+              : altitude,
             cz - 50,
           ),
           kind2,
@@ -3754,15 +3909,11 @@ function updateCiws() {
   const saturation = Math.max(1, candidates.length),
     basePk =
       (Math.max(0.08, 0.46 / saturation) -
-        (target.m.kind === "P-500"
-          ? 0.1
-          : target.m.kind === "P-700"
-            ? 0.16
-            : 0.3)) *
+        incomingProfiles[target.m.kind].ciwsPenalty) *
       (0.25 + 0.75 * health),
     singlePk =
-      target.m.kind === "Kh-22"
-        ? Math.min(0.14, basePk)
+      incomingProfiles[target.m.kind].ciwsPkCap !== undefined
+        ? Math.min(incomingProfiles[target.m.kind].ciwsPkCap!, basePk)
         : Math.max(0.04, basePk),
     windowFactor = Math.min(1.35, 0.75 + bursts * 0.12),
     pk = Math.min(0.72, singlePk * windowFactor),
@@ -4408,7 +4559,7 @@ function updateCombat(dt: number) {
               seekerBlend,
             )
         : i.commandPoint.clone();
-    const seaSkimmer = i.target.kind !== "Kh-22",
+    const seaSkimmer = incomingProfiles[i.target.kind].trajectory === "sea-skimmer",
       estimatedLaunchRange = Math.min(
         profile.maxRange,
         range + i.distanceTraveled,
@@ -4739,6 +4890,10 @@ function updateIncomingMissile(m: Missile, dt: number) {
     log(
       `${m.kind} ACTIVE SEEKER ON / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
     );
+    if (m.kind === "RGM-84 Harpoon")
+      log(
+        `${m.kind} TERMINAL PROFILE / ${String(m.mesh.userData.terminalAttackMode).toUpperCase()}`,
+      );
   }
   if (
     m.phase === "terminal" &&
@@ -4749,25 +4904,33 @@ function updateIncomingMissile(m: Missile, dt: number) {
     deployShipChaff(m)
   )
     m.mesh.userData.srbocShots = (m.mesh.userData.srbocShots ?? 0) + 1;
-  const commandedAltitude = THREE.MathUtils.lerp(
+  let commandedAltitude = THREE.MathUtils.lerp(
     profile.cruiseAltitude,
     profile.terminalAltitude,
     terminalFactor,
   );
-  const weave =
-    m.kind === "P-700"
-      ? new THREE.Vector3(
-          Math.sin(m.age * 2.8) * 7 * terminalFactor,
-          0,
-          Math.cos(m.age * 2.35) * 5 * terminalFactor,
-        )
-      : m.kind === "P-500"
-        ? new THREE.Vector3(
-            Math.sin(m.age * 3.8) * 2.2 * terminalFactor,
-            0,
-            Math.cos(m.age * 3.1) * 1.4 * terminalFactor,
-          )
-        : new THREE.Vector3();
+  if (
+    m.kind === "RGM-84 Harpoon" &&
+    m.mesh.userData.terminalAttackMode === "pop-up" &&
+    m.phase === "terminal" &&
+    range < 48
+  ) {
+    const popupProgress = THREE.MathUtils.clamp((48 - range) / 42, 0, 1);
+    commandedAltitude = THREE.MathUtils.lerp(
+      profile.terminalAltitude,
+      2.4,
+      Math.sin(popupProgress * Math.PI),
+    );
+  }
+  const weave = new THREE.Vector3(
+    Math.sin(m.age * profile.weave.lateralRate) *
+      profile.weave.lateral *
+      terminalFactor,
+    0,
+    Math.cos(m.age * profile.weave.longitudinalRate) *
+      profile.weave.longitudinal *
+      terminalFactor,
+  );
   const availableShipChaff = chaffClouds.filter(
     (c) =>
       c.side === "ship" &&
@@ -4847,19 +5010,40 @@ function updateIncomingMissile(m: Missile, dt: number) {
     );
   }
   m.mesh.userData.shipDecoy = deceived;
+  const harpoonHoj =
+      m.kind === "RGM-84 Harpoon" &&
+      m.phase === "terminal" &&
+      shipEcmEnabled &&
+      shipEcmStrength > 0.42 &&
+      !deceived,
+    effectiveEcmStrength = harpoonHoj ? shipEcmStrength * 0.18 : shipEcmStrength;
+  if (harpoonHoj && !m.mesh.userData.hojLogged) {
+    m.mesh.userData.hojLogged = true;
+    log(`${m.kind} HOME-ON-JAM / AN/SLQ-32 EMITTER BEARING`);
+  }
   m.mesh.userData.ewState = deceived
     ? "CHAFF LOCK"
-    : shipEcmStrength > 0
-      ? `J/S +${Math.round(-sjDb)} dB`
-      : burnThrough && shipEcmEnabled
-        ? `S/J +${Math.round(sjDb)} dB`
-        : "CLEAR";
+    : harpoonHoj
+      ? "HOME-ON-JAM"
+      : shipEcmStrength > 0
+        ? `J/S +${Math.round(-sjDb)} dB`
+        : burnThrough && shipEcmEnabled
+          ? `S/J +${Math.round(sjDb)} dB`
+          : "CLEAR";
   m.mesh.userData.seekerState =
-    m.phase === "terminal" ? (deceived ? "FALSE TARGET" : "ACTIVE") : "STANDBY";
+    m.phase === "terminal"
+      ? deceived
+        ? "FALSE TARGET"
+        : m.kind === "RGM-84 Harpoon" &&
+            m.mesh.userData.terminalAttackMode === "pop-up" &&
+            range < 48
+          ? "ACTIVE / POP-UP"
+          : "ACTIVE"
+      : "STANDBY";
   const ecmOffset = new THREE.Vector3(
-      Math.sin(m.age * 2.1) * shipEcmStrength * 8,
+      Math.sin(m.age * 2.1) * effectiveEcmStrength * 8,
       0,
-      Math.cos(m.age * 1.7) * shipEcmStrength * 8,
+      Math.cos(m.age * 1.7) * effectiveEcmStrength * 8,
     ),
     aimBase =
       deceived && shipChaff
@@ -4912,6 +5096,13 @@ function updateIncomingMissile(m: Missile, dt: number) {
   );
   m.velocity.copy(direction.multiplyScalar(speed));
   m.mesh.position.addScaledVector(m.velocity, dt);
+  if (profile.trajectory === "sea-skimmer") {
+    const radarAltimeterFloor = Math.max(0.06, profile.terminalAltitude * 0.75);
+    if (m.mesh.position.y < radarAltimeterFloor) {
+      m.mesh.position.y = radarAltimeterFloor;
+      m.velocity.y = Math.max(0, m.velocity.y);
+    }
+  }
   m.bank = THREE.MathUtils.lerp(
     m.bank,
     THREE.MathUtils.clamp(turnSign * 8, -0.62, 0.62),
@@ -4920,10 +5111,21 @@ function updateIncomingMissile(m: Missile, dt: number) {
   setMissileAttitude(m.mesh, m.velocity, "-Z", m.bank);
   if (m.mesh.userData.seaMist)
     m.mesh.userData.seaMist.visible =
-      m.kind !== "Kh-22" && m.phase === "terminal" && m.mesh.position.y < 1.25;
+      profile.trajectory === "sea-skimmer" &&
+      m.phase === "terminal" &&
+      m.mesh.position.y < 1.25;
   if (m.mesh.userData.shockCone)
     m.mesh.userData.shockCone.visible =
-      m.kind === "Kh-22" && m.phase === "terminal";
+      profile.trajectory === "high-altitude" && m.phase === "terminal";
+  if (missiles.indexOf(m) + 1 === selectedTargetId) {
+    canvas.dataset.selectedThreatKind = m.kind;
+    canvas.dataset.selectedThreatPhase = m.phase;
+    canvas.dataset.selectedThreatAltitude = m.mesh.position.y.toFixed(3);
+    canvas.dataset.selectedThreatRange = range.toFixed(2);
+    canvas.dataset.selectedThreatModelLength = String(
+      m.mesh.userData.modelLength ?? "legacy",
+    );
+  }
   if (
     m.history.length === 0 ||
     m.mesh.position.distanceTo(m.history[m.history.length - 1]) > 3
