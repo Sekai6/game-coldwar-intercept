@@ -363,6 +363,7 @@ const surfaceLaunchQueue: {
   hardpoint: ModelWeaponHardpoint;
   launchAt: number;
   commandPoint: THREE.Vector3;
+  commandVelocity: THREE.Vector3;
 }[] = [];
 let surfaceHardpointState = new Map<
     string,
@@ -4343,10 +4344,14 @@ function planSurfaceStrike(manual = false) {
     return false;
   }
   const track = surfacePicture.trackForTarget(1);
-  if (!track || track.quality < strike.requiredTrackQuality) {
+  if (
+    !track ||
+    track.age > strike.maximumTrackAge ||
+    track.quality < strike.requiredTrackQuality
+  ) {
     if (manual)
       log(
-        `SURFACE STRIKE INHIBIT / TRACK QUALITY ${track ? Math.round(track.quality * 100) : 0}% / REQUIRES ${Math.round(strike.requiredTrackQuality * 100)}%`,
+        `SURFACE STRIKE INHIBIT / ${track && track.age > strike.maximumTrackAge ? `STALE TRACK ${track.age.toFixed(1)}s` : `TRACK QUALITY ${track ? Math.round(track.quality * 100) : 0}% / REQUIRES ${Math.round(strike.requiredTrackQuality * 100)}%`}`,
       );
     return false;
   }
@@ -4394,7 +4399,8 @@ function planSurfaceStrike(manual = false) {
       launchAt,
       commandPoint: track.position
         .clone()
-        .addScaledVector(track.velocity, 4 + index * 0.4),
+        .addScaledVector(track.velocity, strike.datalinkLatency),
+      commandVelocity: track.velocity.clone(),
     });
     launchAt += strike.minimumInterval;
   }
@@ -4438,7 +4444,12 @@ function updateSurfaceCombat(
     .forEach((event) => log(`SURFACE ${event}`));
   const track = surfacePicture.trackForTarget(1);
   const strike = activeShip.surfaceStrike;
-  if (track && strike && track.quality >= strike.requiredTrackQuality) {
+  if (!strike) return;
+  if (
+    track &&
+    track.age <= strike.maximumTrackAge &&
+    track.quality >= strike.requiredTrackQuality
+  ) {
     if (surfaceTrackId !== track.id) {
       surfaceTrackId = track.id;
       surfaceTrackStableTime = 0;
@@ -4492,6 +4503,7 @@ function updateSurfaceCombat(
       enemyPlatform,
       strike,
       request.commandPoint,
+      request.commandVelocity,
     );
     surfaceHardpointState.set(request.hardpoint.id, "fired");
     surfaceStrikeAmmo = Math.max(0, surfaceStrikeAmmo - 1);
@@ -4504,11 +4516,19 @@ function updateSurfaceCombat(
 
   for (const missile of surfaceStrikeMissiles) {
     if (missile.phase === "destroyed") continue;
-    if (track && elapsed >= missile.nextDatalink && missile.phase !== "terminal") {
+    if (
+      track &&
+      track.age <= strike.maximumTrackAge &&
+      track.quality >= strike.datalinkMinimumQuality &&
+      elapsed >= missile.nextDatalink &&
+      !missile.seekerAcquired
+    ) {
       missile.commandPoint
         .copy(track.position)
-        .addScaledVector(track.velocity, 4);
-      missile.nextDatalink = elapsed + 2.4;
+        .addScaledVector(track.velocity, strike.datalinkLatency);
+      missile.commandVelocity.copy(track.velocity);
+      missile.datalinkValid = true;
+      missile.nextDatalink = elapsed + strike.datalinkUpdateInterval;
       if (
         missile.lastDatalinkQuality < 0 ||
         Math.abs(track.quality - missile.lastDatalinkQuality) >= 0.12
@@ -4518,6 +4538,14 @@ function updateSurfaceCombat(
         );
         missile.lastDatalinkQuality = track.quality;
       }
+    } else if (
+      elapsed >= missile.nextDatalink &&
+      !missile.seekerAcquired &&
+      missile.datalinkValid
+    ) {
+      missile.datalinkValid = false;
+      missile.nextDatalink = elapsed + strike.datalinkUpdateInterval;
+      log(`HARPOON ${missile.id} DATALINK LOST / INERTIAL COAST`);
     }
     const density = surfaceStrikeMissiles.filter(
       (other) =>
@@ -4532,8 +4560,14 @@ function updateSurfaceCombat(
       ecmEnabled,
     );
     if (!event) continue;
-    if (event.kind === "seeker")
-      log(`RGM-84 HARPOON ${missile.id} ACTIVE SEEKER / TERMINAL SEARCH`);
+    if (event.kind === "seeker-search")
+      log(`RGM-84 HARPOON ${missile.id} ACTIVE SEEKER / SEARCH`);
+    else if (event.kind === "seeker-acquired")
+      log(
+        `RGM-84 HARPOON ${missile.id} TARGET ACQUIRED / ${(event.range / 10).toFixed(1)} km / OFF-BORESIGHT ${event.offBoresightDeg.toFixed(1)} DEG`,
+      );
+    else if (event.kind === "miss")
+      log(`HARPOON ${missile.id} MISS / ${event.reason}`);
     else if (event.kind === "soft-kill")
       log(
         `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ECM-DECOY SEDUCTION`,
@@ -4560,6 +4594,7 @@ function updateSurfaceCombat(
     }
   }
   canvas.dataset.surfaceTrackQuality = (track?.quality ?? 0).toFixed(3);
+  canvas.dataset.surfaceTrackAge = (track?.age ?? 0).toFixed(2);
   canvas.dataset.surfaceTrackUncertainty = String(
     Math.round(track?.uncertainty ?? 0),
   );
@@ -4590,6 +4625,25 @@ function updateSurfaceCombat(
     .join(",");
   canvas.dataset.surfaceStrikeClosest = liveSurfaceStrikes
     .map((missile) => missile.closestTargetRange.toFixed(1))
+    .join(",");
+  canvas.dataset.surfaceStrikeDatalinks = liveSurfaceStrikes
+    .map((missile) =>
+      missile.seekerAcquired
+        ? "terminal-autonomous"
+        : missile.datalinkValid
+          ? "valid"
+          : "inertial",
+    )
+    .join(",");
+  canvas.dataset.surfaceStrikeSeekerAcquired = liveSurfaceStrikes
+    .map((missile) => String(missile.seekerAcquired))
+    .join(",");
+  canvas.dataset.surfaceStrikeCommandErrors = liveSurfaceStrikes
+    .map((missile) =>
+      missile.commandPoint
+        .distanceTo(missile.target.model.position)
+        .toFixed(1),
+    )
     .join(",");
   canvas.dataset.enemyPlatformHull = String(
     Math.round(enemyPlatform?.hullIntegrity ?? 0),

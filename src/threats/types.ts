@@ -33,6 +33,7 @@ export interface ThreatProfile {
   };
   seekerFieldOfViewDeg?: number;
   seekerAcquisitionRangeFactor?: number;
+  targetLostCoastSeconds?: number;
   weave: {
     lateral: number;
     longitudinal: number;

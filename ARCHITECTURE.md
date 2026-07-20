@@ -80,6 +80,8 @@ The incoming-threat engine is intentionally generic. `src/main.ts` may read a th
 
 Model modules expose equipment anchors through `Object3D.userData`; combat behavior reads capabilities from `ShipDefinition` and must not infer them from a model or ship name.
 
+Surface fire control and missile datalinks consume track estimates rather than target transforms. Track quality alone is insufficient authorization: reports older than four seconds are stale and may remain displayable but cannot build fire-control continuity, release a new salvo, or update an airborne Harpoon. Terminal truth access is gated behind the missile profile's acquisition range and field of view.
+
 Hull precision is data-driven but not shape-generic. Each ship owns a station table describing deck edge, shoulder chine, waterline, keel width, and vertical sheer. `hull-geometry.ts` only triangulates those profiles. This keeps bow flare, parallel midbody, stern form, and proportions specific to the real class while avoiding duplicate index-generation code. Hull-side attachments must be repositioned when station breadth changes; old absolute beam offsets are not valid after a hull revision.
 
 Longitudinal calibration must update geometry, equipment roots, subsystem positions, and damage zones as one coordinate contract. CG-57 derives `TICONDEROGA_LENGTH_SCALE` from its `172.8 m` real length and the model's meters-per-unit constant, then applies the `longitudinal()` transform. Do not apply nonuniform scale to the returned ship group because it would turn cylindrical mounts and sensors into ellipses and would hide coordinate mismatches from combat logic.

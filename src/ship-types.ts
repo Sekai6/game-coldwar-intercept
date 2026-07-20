@@ -73,8 +73,12 @@ export interface ShipDefinition {
     minRange: number;
     maxRange: number;
     requiredTrackQuality: number;
+    maximumTrackAge: number;
     minimumTrackAge: number;
     fireControlDelay: number;
+    datalinkUpdateInterval: number;
+    datalinkLatency: number;
+    datalinkMinimumQuality: number;
     damage: number;
     salvoSize: number;
   };
