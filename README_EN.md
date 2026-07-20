@@ -445,7 +445,9 @@ SRBOC damage lengthens cooldown and round flight time. At or below 5% health, it
 <a id="maneuver-and-ciws"></a>
 ## 11. Ship Maneuver and CIWS
 
-The ship performs a simplified OODA maneuver decision once per second. When a valid close threat exists, USS Long Beach chooses a direction approximately perpendicular to the threat axis and accelerates to available maximum speed. This imposes additional terminal turn demand on the incoming missile.
+Each ship executes maneuver OODA at its catalog-defined cadence. Without a valid surface track it maintains patrol speed. With a surface track it uses only the uncertain report to close, hold a standoff ring, or withdraw at cruise speed. A qualified close incoming-air track preempts surface maneuvering: the ship selects the lower-turn beam direction and accelerates to the maximum allowed by propulsion and hull health, imposing additional terminal turn demand on the missile. CGN-9 and CG-57 patrol/cruise/maximum speeds, acceleration, deceleration, turn rate, and standoff ring all come from their definitions rather than main-loop constants.
+
+A reserved enemy-platform weapon still inside its physical launcher is neither a friendly radar measurement nor an `AIR ACTIVE` member. Only hardpoint release makes it eligible for detection, air-track formation, and defensive-beam preemption. With OPFOR radar silent, the friendly ship therefore cannot evade the hidden truth position of an unreleased P-500.
 
 Propulsion health and hull integrity limit maximum speed. Propulsion damage also reduces acceleration and turn rate.
 

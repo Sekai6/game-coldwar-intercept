@@ -6,6 +6,13 @@ import type { ModelWeaponHardpoint } from "./models/model-primitives";
 export type { ModelWeaponHardpoint } from "./models/model-primitives";
 
 export type ShipClass = string;
+export type ShipManeuverMode =
+  | "patrol"
+  | "close"
+  | "standoff"
+  | "withdraw"
+  | "defensive-beam"
+  | "disabled";
 export type ShipWeapon = "RIM-67" | "SM-2MR" | "SM-2ER";
 export type SubsystemId =
   | "primaryRadar"
@@ -46,7 +53,18 @@ export interface ShipDefinition {
   hullNumber: string;
   era: string;
   role: string;
-  platform: { maxSpeedKnots: number; turnRateDeg: number; radarRcs: number };
+  platform: {
+    maxSpeedKnots: number;
+    cruiseSpeedKnots: number;
+    patrolSpeedKnots: number;
+    accelerationKnotsPerSecond: number;
+    decelerationKnotsPerSecond: number;
+    turnRateDeg: number;
+    decisionInterval: number;
+    standoffRange: number;
+    standoffTolerance: number;
+    radarRcs: number;
+  };
   launcher: LauncherConfig;
   sensors: SensorDefinition[];
   fixedSensorFaces?: FixedSensorFaceConfig;

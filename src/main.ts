@@ -10,6 +10,7 @@ import {
   shipSurfaceHardpoints,
   type ModelWeaponHardpoint,
   type ShipClass,
+  type ShipManeuverMode,
   type SubsystemId,
 } from "./ship-types";
 import { createShipCatalog } from "./ship-catalog";
@@ -2180,6 +2181,8 @@ let dragging = false,
   viewMode: 1 | 2 | 3 | 4 | 5 = 2;
 let shipSpeedKnots = 0,
   shipDesiredHeading = 0,
+  shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots,
+  shipManeuverMode: ShipManeuverMode = "patrol",
   nextShipDecision = 0,
   shipManeuverThreatId = 0;
 let aarSnapshots: AarSnapshot[] = [],
@@ -2829,6 +2832,8 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   () => {
     shipSpeedKnots = 0;
     shipDesiredHeading = 0;
+    shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots;
+    shipManeuverMode = "patrol";
     nextShipDecision = 0;
     shipManeuverThreatId = 0;
     defender.rotation.y = 0;
@@ -3579,8 +3584,22 @@ function updateShipManeuver(dt: number) {
     threat = tracks[0],
     threatRange = threat?.position.distanceTo(defender.position) ?? Infinity;
   if (elapsed >= nextShipDecision) {
-    nextShipDecision = elapsed + 1;
-    if (threat && threatRange < 500) {
+    nextShipDecision = elapsed + activeShip.platform.decisionInterval;
+    const previousMode = shipManeuverMode;
+    const headingFor = (direction: THREE.Vector3) =>
+      Math.atan2(-direction.z, direction.x);
+    const headingDelta = (heading: number) =>
+      Math.abs(
+        Math.atan2(
+          Math.sin(heading - defender.rotation.y),
+          Math.cos(heading - defender.rotation.y),
+        ),
+      );
+    if (hullIntegrity <= 0) {
+      shipManeuverMode = "disabled";
+      shipCommandedSpeedKnots = 0;
+      shipManeuverThreatId = 0;
+    } else if (threat && threatRange < 500) {
       const axis = threat.position
           .clone()
           .sub(defender.position)
@@ -3590,19 +3609,67 @@ function updateShipManeuver(dt: number) {
         right = left.clone().negate(),
         beam = forward.dot(left) >= forward.dot(right) ? left : right;
       shipDesiredHeading = Math.atan2(-beam.z, beam.x);
+      shipCommandedSpeedKnots = activeShip.platform.maxSpeedKnots;
+      shipManeuverMode = "defensive-beam";
       if (shipManeuverThreatId !== threat.sourceId) {
         shipManeuverThreatId = threat.sourceId;
         log(`OODA MANEUVER / BEAM TRACK ${threat.id} / FULL POWER`);
       }
-    } else shipManeuverThreatId = 0;
+    } else {
+      shipManeuverThreatId = 0;
+      const surfaceTrack = enemyPlatform
+        ? surfacePicture.trackForTarget(1)
+        : undefined;
+      if (surfaceTrack && surfaceTrack.age < 8 && surfaceTrack.quality > 0.08) {
+        const toTrack = surfaceTrack.position
+            .clone()
+            .sub(defender.position)
+            .setY(0),
+          range = toTrack.length(),
+          axis = toTrack.normalize(),
+          platform = activeShip.platform;
+        if (range > platform.standoffRange + platform.standoffTolerance) {
+          shipDesiredHeading = headingFor(axis);
+          shipManeuverMode = "close";
+        } else if (
+          range <
+          platform.standoffRange - platform.standoffTolerance
+        ) {
+          shipDesiredHeading = headingFor(axis.multiplyScalar(-1));
+          shipManeuverMode = "withdraw";
+        } else {
+          const left = new THREE.Vector3(-axis.z, 0, axis.x),
+            right = left.clone().negate(),
+            headings = [headingFor(left), headingFor(right)];
+          shipDesiredHeading =
+            headingDelta(headings[0]) <= headingDelta(headings[1])
+              ? headings[0]
+              : headings[1];
+          shipManeuverMode = "standoff";
+        }
+        shipCommandedSpeedKnots = platform.cruiseSpeedKnots;
+      } else {
+        shipManeuverMode = "patrol";
+        shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots;
+      }
+    }
+    if (
+      previousMode !== shipManeuverMode &&
+      shipManeuverMode !== "defensive-beam"
+    )
+      log(
+        `OODA MANEUVER / ${shipManeuverMode.toUpperCase()} / ${activeShip.name} / CMD ${shipCommandedSpeedKnots.toFixed(0)} KT`,
+      );
   }
   const propulsion = subsystemHealth("propulsion"),
     designSpeed = activeShip.platform.maxSpeedKnots,
     maximumKnots =
       designSpeed * propulsion * Math.max(0.45, hullIntegrity / 100),
-    targetKnots = threat && threatRange < 500 ? maximumKnots : 0,
+    targetKnots = Math.min(maximumKnots, shipCommandedSpeedKnots),
     speedStep =
-      (targetKnots > shipSpeedKnots ? 2 : 1.25) *
+      (targetKnots > shipSpeedKnots
+        ? activeShip.platform.accelerationKnotsPerSecond
+        : activeShip.platform.decelerationKnotsPerSecond) *
       (0.25 + 0.75 * propulsion) *
       dt;
   shipSpeedKnots = THREE.MathUtils.clamp(
@@ -3637,6 +3704,11 @@ function updateShipManeuver(dt: number) {
   wake.position.copy(defender.position).addScaledVector(updatedForward, -28);
   wake.position.y = 0.22;
   wakeLineMat.opacity = 0.08 + (0.28 * shipSpeedKnots) / designSpeed;
+  canvas.dataset.shipManeuverMode = shipManeuverMode;
+  canvas.dataset.shipCommandedSpeedKnots = shipCommandedSpeedKnots.toFixed(2);
+  canvas.dataset.shipDesiredHeadingDeg = THREE.MathUtils.radToDeg(
+    shipDesiredHeading,
+  ).toFixed(2);
 }
 function updateShipStatus() {
   const active =
@@ -4196,7 +4268,11 @@ setInterval(
 setInterval(() => {
   const liveMissiles = missiles.filter((m) => m.phase !== "destroyed"),
     live = liveMissiles.length,
-    activeAir = liveMissiles.filter((m) => elapsed >= m.launchAt),
+    activeAir = liveMissiles.filter(
+      (m) =>
+        elapsed >= m.launchAt &&
+        (!m.platformLaunch || m.platformLaunch.released),
+    ),
     engagedTargets = new Set(
       interceptors.filter((i) => i.mesh.visible).map((i) => i.target),
     ).size,
@@ -4938,7 +5014,12 @@ function updateCombat(dt: number) {
     radarEnabled
       ? missiles
           .map((m, i) => ({ m, i }))
-          .filter((x) => elapsed >= x.m.launchAt && x.m.phase !== "destroyed")
+          .filter(
+            (x) =>
+              elapsed >= x.m.launchAt &&
+              x.m.phase !== "destroyed" &&
+              (!x.m.platformLaunch || x.m.platformLaunch.released),
+          )
           .map((x) => ({
             id: x.i + 1,
             position: x.m.mesh.position,
@@ -6344,7 +6425,10 @@ function tick(now: number) {
       simAccumulator -= 0.05;
     }
     const activeMissiles = missiles.filter(
-        (m) => m.phase !== "destroyed" && elapsed >= m.launchAt,
+        (m) =>
+          m.phase !== "destroyed" &&
+          elapsed >= m.launchAt &&
+          (!m.platformLaunch || m.platformLaunch.released),
       ),
       live = activeMissiles.length,
       distances = activeMissiles.map((m) =>
