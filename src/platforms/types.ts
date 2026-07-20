@@ -87,7 +87,14 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
       localSaturationPenalty: number;
       engagementsPerTarget: number;
     };
-    softKillPk: number;
+    softKill: {
+      ecmStrength: number;
+      burnThroughRange: number;
+      decoyRounds: number;
+      decoyCooldown: number;
+      decoyDeployRange: number;
+      decoyRcs: number;
+    };
   };
   buildModel: () => THREE.Group;
 }
@@ -106,6 +113,8 @@ export interface EnemyPlatformInstance {
   subsystemHealth: Map<string, number>;
   incomingTracks: Map<number, PlatformIncomingTrack>;
   pointDefenseChannelReady: number[];
+  decoyRounds: number;
+  nextDecoy: number;
   velocity: THREE.Vector3;
   speedKnots: number;
   desiredHeading: number;

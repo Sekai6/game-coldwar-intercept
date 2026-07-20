@@ -376,6 +376,8 @@ let surfaceHardpointState = new Map<
   opforRadarEnabled = true,
   surfaceHits = 0,
   surfaceHardKills = 0,
+  surfaceSoftKills = 0,
+  surfacePointDefenseKills = 0,
   surfaceTrackId = 0,
   surfaceTrackStableTime = 0,
   surfaceFireControlReadyAt = Infinity,
@@ -1505,6 +1507,62 @@ function deployChaff(source: Missile) {
   source.mesh.userData.chaffDeployed = true;
   log(`${source.kind} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`);
 }
+function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
+  const platform = missile.target;
+  const softKill = platform.definition.survivability.softKill;
+  const track = platform.incomingTracks.get(missile.id);
+  const ewHealth =
+    (platform.subsystemHealth.get("electronic-warfare") ?? 100) / 100;
+  const range = missile.mesh.position.distanceTo(platform.model.position);
+  if (
+    !ecmEnabled ||
+    platform.destroyed ||
+    ewHealth <= 0.05 ||
+    platform.decoyRounds <= 0 ||
+    elapsed < platform.nextDecoy ||
+    range > softKill.decoyDeployRange ||
+    missile.mesh.userData.platformDecoyDeployed ||
+    !track?.detectionLogged ||
+    elapsed - track.lastUpdate >
+      platform.definition.survivability.pointDefense.trackMemory
+  )
+    return false;
+  const threatAxis = missile.mesh.position
+    .clone()
+    .sub(platform.model.position)
+    .setY(0)
+    .normalize();
+  const beam = new THREE.Vector3(-threatAxis.z, 0, threatAxis.x).multiplyScalar(
+    missile.id % 2 ? 1 : -1,
+  );
+  const group = createChaffVisual(0xffb58a);
+  group.position
+    .copy(platform.model.position)
+    .addScaledVector(beam, 5.2)
+    .add(new THREE.Vector3(0, 2.4, 0));
+  scene.add(group);
+  chaffClouds.push({
+    mesh: group,
+    position: group.position,
+    velocity: platform.velocity
+      .clone()
+      .addScaledVector(beam, 0.42)
+      .add(new THREE.Vector3(0, 0.08, 0)),
+    age: 0,
+    rcs: softKill.decoyRcs,
+    initialRcs: softKill.decoyRcs,
+    source: null,
+    side: "platform",
+    serial: ++chaffSerial,
+  });
+  platform.decoyRounds--;
+  missile.mesh.userData.platformDecoyDeployed = true;
+  platform.nextDecoy = elapsed + softKill.decoyCooldown / Math.max(0.3, ewHealth);
+  log(
+    `${platform.definition.name} DECOY DEPLOY / ROUNDS ${platform.decoyRounds} / RCS ${softKill.decoyRcs.toFixed(1)}`,
+  );
+  return true;
+}
 function deployShipChaff(threat: Missile) {
   const health = subsystemHealth("srboc");
   if (
@@ -2602,6 +2660,8 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   resetSurfaceStrikeLoadout();
   surfaceHits = 0;
   surfaceHardKills = 0;
+  surfaceSoftKills = 0;
+  surfacePointDefenseKills = 0;
   if (enemyPlatform) {
     scene.remove(enemyPlatform.model);
     disposeEnemyPlatform(enemyPlatform);
@@ -3058,7 +3118,12 @@ function renderAarFrame(index: number) {
   }
   for (const cloud of snapshot.chaff) {
     const p = map(cloud);
-    ctx.strokeStyle = cloud.side === "ship" ? "#71ddd7" : "#e4c66f";
+    ctx.strokeStyle =
+      cloud.side === "ship"
+        ? "#71ddd7"
+        : cloud.side === "platform"
+          ? "#ff9f78"
+          : "#e4c66f";
     ctx.globalAlpha = 0.72;
     ctx.beginPath();
     ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
@@ -3147,7 +3212,7 @@ function showAar(outcome: string, score: number) {
     harpoons = aarEvents.filter((e) =>
       /RGM-84 HARPOON SURFACE LAUNCH/i.test(e.text),
     ).length;
-  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
+  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
   const eventList = resultPanel.querySelector("#aarEvents")!;
   aarEvents.forEach((event, eventIndex) => {
     const button = document.createElement("button");
@@ -4547,6 +4612,7 @@ function updateSurfaceCombat(
       missile.nextDatalink = elapsed + strike.datalinkUpdateInterval;
       log(`HARPOON ${missile.id} DATALINK LOST / INERTIAL COAST`);
     }
+    deployPlatformDecoy(missile);
     const density = surfaceStrikeMissiles.filter(
       (other) =>
         other.phase !== "destroyed" &&
@@ -4559,6 +4625,7 @@ function updateSurfaceCombat(
       density,
       ecmEnabled,
       opforRadarEnabled,
+      chaffClouds.filter((cloud) => cloud.side === "platform"),
     );
     if (!event) continue;
     if (event.kind === "seeker-search")
@@ -4578,10 +4645,14 @@ function updateSurfaceCombat(
         `${missile.target.definition.name} POINT DEFENSE READY / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}%`,
       );
     else if (event.kind === "soft-kill")
-      log(
-        `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ECM-DECOY SEDUCTION`,
-      );
+      {
+        surfaceSoftKills++;
+        log(
+        `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ${event.mode} / PK ${Math.round(event.pk * 100)}%`,
+        );
+      }
     else if (event.kind === "point-defense") {
+      surfacePointDefenseKills++;
       createExplosion(missile.mesh.position.clone());
       log(
         `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / PK ${Math.round(event.pk * 100)}% / LOCAL ${density}`,
@@ -4628,6 +4699,10 @@ function updateSurfaceCombat(
   );
   canvas.dataset.surfaceStrikeQueued = String(surfaceLaunchQueue.length);
   canvas.dataset.surfaceHits = String(surfaceHits);
+  canvas.dataset.surfaceSoftKills = String(surfaceSoftKills);
+  canvas.dataset.surfacePointDefenseKills = String(
+    surfacePointDefenseKills,
+  );
   const liveSurfaceStrikes = surfaceStrikeMissiles.filter(
     (missile) => missile.phase !== "destroyed",
   );
@@ -4653,6 +4728,9 @@ function updateSurfaceCombat(
     .join(",");
   canvas.dataset.surfaceStrikeSeekerAcquired = liveSurfaceStrikes
     .map((missile) => String(missile.seekerAcquired))
+    .join(",");
+  canvas.dataset.surfaceStrikeSeekerStates = liveSurfaceStrikes
+    .map((missile) => String(missile.mesh.userData.seekerState ?? "STANDBY"))
     .join(",");
   canvas.dataset.surfaceStrikeCommandErrors = liveSurfaceStrikes
     .map((missile) =>
@@ -4699,6 +4777,17 @@ function updateSurfaceCombat(
         ).length
       : 0,
   );
+  canvas.dataset.platformDecoyRounds = String(enemyPlatform?.decoyRounds ?? 0);
+  canvas.dataset.platformDecoyClouds = String(
+    chaffClouds.filter((cloud) => cloud.side === "platform").length,
+  );
+  canvas.dataset.platformEcmState = !enemyPlatform
+    ? "not-applicable"
+    : !ecmEnabled
+      ? "hold"
+      : (enemyPlatform.subsystemHealth.get("electronic-warfare") ?? 100) <= 5
+        ? "failed"
+        : "active";
   canvas.dataset.enemyPlatformHull = String(
     Math.round(enemyPlatform?.hullIntegrity ?? 0),
   );

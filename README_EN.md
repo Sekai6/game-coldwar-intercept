@@ -413,7 +413,9 @@ CG-57's forward and aft Mk 41 banks are independent launch resources that may wo
 <a id="threat-ew"></a>
 ### Threat ECM and Chaff
 
-`OPFOR ECM` adds a range-dependent aim-point error to terminal SM-2 guidance. As the interceptor closes, it enters burn-through range and interference falls, generating an `ECM BURN-THROUGH` event. In a surface action the same switch also enables the enemy platform's single ECM/decoy soft-kill resolution against each Harpoon. Turning it off shows `EW OFF` and bypasses that soft-kill step while leaving point defense independent.
+`OPFOR ECM` adds a range-dependent aim-point error to terminal SM-2 guidance. As the interceptor closes, it enters burn-through range and interference falls, generating an `ECM BURN-THROUGH` event. In a surface action ECM represents continuous radiation from the enemy ship's electronic-warfare antennas; it is not a projectile. The finite decoys are what leave the ship. Moskva carries eight game-scaled decoy rounds and releases an orange cloud abeam only after a fresh incoming track enters the 9 km deployment region, subject to a 2.2-second cooldown.
+
+Harpoon soft-kill resolution compares ship return, decoy RCS, missile distance to each, ECM strength, electronic-warfare health, the HOJ threshold, and a 2.4 km burn-through range. Outcomes include `ECM CONTESTED`, `ACTIVE / HOJ`, `BURN THROUGH`, or a soft kill that records its method and probability. Disabling `OPFOR ECM` stops platform radiation and decoy deployment while leaving point defense independent.
 
 Incoming missiles can also deploy chaff. Terminal SM-2 compares target and chaff radar cross sections and may record `DECOY CAPTURE`. Chaff expands, drifts, and decays over time.
 

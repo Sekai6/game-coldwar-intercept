@@ -120,7 +120,7 @@ export type ChaffCloud = {
   rcs: number;
   initialRcs: number;
   source: Missile | null;
-  side: "threat" | "ship";
+  side: "threat" | "ship" | "platform";
   serial: number;
 };
 export type SrbocRound = {
@@ -178,7 +178,7 @@ export type AarSnapshot = {
     weapon: WeaponType;
     targetId: number;
   }[];
-  chaff: { x: number; z: number; side: "threat" | "ship" }[];
+  chaff: { x: number; z: number; side: "threat" | "ship" | "platform" }[];
   enemyPlatform: {
     x: number;
     z: number;

@@ -185,7 +185,14 @@ export const MOSKVA = {
       localSaturationPenalty: 0.08,
       engagementsPerTarget: 1,
     },
-    softKillPk: 0.2,
+    softKill: {
+      ecmStrength: 0.62,
+      burnThroughRange: 24,
+      decoyRounds: 8,
+      decoyCooldown: 2.2,
+      decoyDeployRange: 90,
+      decoyRcs: 9,
+    },
   },
   buildModel: createMoskvaModel,
 } as const satisfies EnemyPlatformDefinition;

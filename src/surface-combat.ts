@@ -3,6 +3,7 @@ import type {
   EnemyPlatformInstance,
   PlatformIncomingTrack,
 } from "./platforms/types";
+import type { ChaffCloud } from "./combat-types";
 import type { ModelWeaponHardpoint, ShipDefinition } from "./ship-types";
 import { getThreatDefinition } from "./threats/catalog";
 import {
@@ -62,7 +63,12 @@ export type SurfaceStrikeEvent =
       missile: SurfaceStrikeMissile;
       quality: number;
     }
-  | { kind: "soft-kill"; missile: SurfaceStrikeMissile }
+  | {
+      kind: "soft-kill";
+      missile: SurfaceStrikeMissile;
+      pk: number;
+      mode: "ECM" | "DECOY" | "ECM + DECOY";
+    }
   | { kind: "point-defense"; missile: SurfaceStrikeMissile; pk: number }
   | {
       kind: "hit";
@@ -271,6 +277,7 @@ export function updateSurfaceStrikeMissile(
   localTerminalDensity: number,
   softKillEnabled: boolean,
   platformSensorsEnabled: boolean,
+  platformDecoys: readonly ChaffCloud[],
 ) {
   if (missile.phase === "destroyed") return null;
   if (missile.target.destroyed && missile.targetLostAt === null) {
@@ -334,7 +341,13 @@ export function updateSurfaceStrikeMissile(
     }
   }
 
-  if (terminal && missile.seekerAcquired && !missile.softKillResolved) {
+  const softKill = missile.target.definition.survivability.softKill;
+  if (
+    terminal &&
+    missile.seekerAcquired &&
+    !missile.softKillResolved &&
+    trueRange <= softKill.decoyDeployRange
+  ) {
     missile.softKillResolved = true;
     if (!softKillEnabled) {
       missile.mesh.userData.seekerState = "ACTIVE / NO JAM";
@@ -342,15 +355,66 @@ export function updateSurfaceStrikeMissile(
       const ecmHealth =
         (missile.target.subsystemHealth.get("electronic-warfare") ?? 100) /
         100;
-      const pk =
-        missile.target.definition.survivability.softKillPk * ecmHealth;
+      const ecmInterference = THREE.MathUtils.clamp(
+        Math.pow(trueRange / Math.max(1, softKill.burnThroughRange), 2) *
+          softKill.ecmStrength *
+          ecmHealth,
+        0,
+        1,
+      );
+      const nearestDecoy = platformDecoys
+        .filter((cloud) => cloud.rcs > 0.1)
+        .sort(
+          (a, b) =>
+            a.position.distanceToSquared(missile.mesh.position) -
+            b.position.distanceToSquared(missile.mesh.position),
+        )[0];
+      const targetPower =
+        missile.target.definition.radarCrossSection /
+        Math.pow(Math.max(1, trueRange), 4);
+      const decoyRange = nearestDecoy
+        ? nearestDecoy.position.distanceTo(missile.mesh.position)
+        : Infinity;
+      const decoyPower = nearestDecoy
+        ? nearestDecoy.rcs / Math.pow(Math.max(1, decoyRange), 4)
+        : 0;
+      const decoyCapture =
+        decoyPower > 0 ? decoyPower / (decoyPower + targetPower) : 0;
+      const hojThreshold =
+        profile.homeOnJam?.minimumJammingStrength ?? Infinity;
+      const homeOnJam = ecmInterference >= hojThreshold;
+      const pk = THREE.MathUtils.clamp(
+        (decoyCapture * (0.52 + ecmInterference * 0.28) +
+          ecmInterference * 0.04) *
+          ecmHealth *
+          (homeOnJam ? 0.62 : 1),
+        0,
+        0.78,
+      );
       if (deterministicRoll(missile, 1) < pk) {
         missile.phase = "destroyed";
         missile.mesh.visible = false;
         missile.path.visible = false;
-        return { kind: "soft-kill", missile } satisfies SurfaceStrikeEvent;
+        return {
+          kind: "soft-kill",
+          missile,
+          pk,
+          mode:
+            decoyCapture > 0.05
+              ? ecmInterference > 0.08
+                ? "ECM + DECOY"
+                : "DECOY"
+              : "ECM",
+        } satisfies SurfaceStrikeEvent;
       }
-      missile.mesh.userData.seekerState = "ACTIVE / HOJ";
+      missile.mesh.userData.seekerState =
+        trueRange <= softKill.burnThroughRange
+          ? "ACTIVE / BURN THROUGH"
+          : homeOnJam
+            ? "ACTIVE / HOJ"
+            : ecmInterference > 0.08
+              ? "ACTIVE / ECM CONTESTED"
+              : "ACTIVE";
     }
   }
 

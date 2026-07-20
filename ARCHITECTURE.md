@@ -68,7 +68,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 5. Enemy-platform survivability declares hull, point-defense range/interval/PK/finite engagements, saturation penalty, and soft-kill PK. Runtime subsystem health modifies those capabilities; platform mobility and persistent damage visuals must remain generic rather than platform-ID branches.
 6. Surface truth, surface tracks, Harpoons, and platform damage must be represented separately in AAR snapshots so replay never substitutes hidden truth for the tactical picture.
 7. Player-facing surface status derives identity and bounded BDA from track quality. Exact platform truth is reserved for simulation and verification datasets, not the HUD.
-8. `OPFOR ECM` is one doctrine input shared by incoming-weapon jamming and platform soft-kill logic; point defense remains a separate hard-kill capability.
+8. `OPFOR ECM` is one doctrine input shared by incoming-weapon jamming and platform soft-kill logic. Platform ECM is continuous radiation, while finite decoy inventory, deployment range, cooldown, cloud RCS, HOJ, and burn-through remain capability-driven state. Point defense remains a separate hard-kill capability.
 
 ## Adding an interceptor
 
