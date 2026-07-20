@@ -6,6 +6,10 @@ import {
   createWaterlineBandGeometry,
   type HullStation,
 } from "./hull-geometry";
+import {
+  addModelStrut as addStrut,
+  createSlopedBoxGeometry,
+} from "./model-primitives";
 
 const LONG_BEACH_HULL: readonly HullStation[] = [
   { x: -30, deckHalf: 2.8, shoulderHalf: 2.7, waterlineHalf: 2.45, keelHalf: 0.72, deckY: 5.72, shoulderY: 3.55, waterlineY: 0.34, keelY: -0.72 },
@@ -19,21 +23,6 @@ const LONG_BEACH_HULL: readonly HullStation[] = [
   { x: 27.5, deckHalf: 1.32, shoulderHalf: 1.08, waterlineHalf: 0.7, keelHalf: 0.2, deckY: 6.72, shoulderY: 4.3, waterlineY: 0.48, keelY: -0.12 },
   { x: 29.5, deckHalf: 0.06, shoulderHalf: 0.045, waterlineHalf: 0.025, keelHalf: 0.01, deckY: 7.08, shoulderY: 4.8, waterlineY: 0.58, keelY: 0.32 },
 ];
-function createSlopedBoxGeometry(
-  length: number,
-  height: number,
-  depth: number,
-  slope: number,
-) {
-  const geometry = new THREE.BoxGeometry(length, height, depth, 1, 1, 1),
-    position = geometry.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < position.count; i++)
-    if (position.getX(i) > 0 && position.getY(i) > 0)
-      position.setX(i, position.getX(i) - slope);
-  position.needsUpdate = true;
-  geometry.computeVertexNormals();
-  return geometry;
-}
 function createSectorGeometry(
   radius: number,
   halfAngle: number,
@@ -54,26 +43,6 @@ function createSectorGeometry(
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
-}
-function addStrut(
-  group: THREE.Group,
-  start: THREE.Vector3,
-  end: THREE.Vector3,
-  radius: number,
-  material: THREE.Material,
-) {
-  const direction = end.clone().sub(start),
-    strut = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius, direction.length(), 7),
-      material,
-    );
-  strut.position.copy(start).add(end).multiplyScalar(0.5);
-  strut.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    direction.normalize(),
-  );
-  group.add(strut);
-  return strut;
 }
 function createHullNumberTexture() {
   const c = document.createElement("canvas");

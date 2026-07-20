@@ -91,7 +91,7 @@ Radar scan -> noisy track -> 3D fire-control solution -> launcher slew
 <a id="current-scope"></a>
 ### Current Scope
 
-The current build is a single-ship air-defense sandbox. It does not yet include fleet-level CEC, aviation, submarines, anti-surface attacks, multiplayer, or a complete mission-authoring system. Ship and weapon visuals are generated procedurally and do not depend on external 3D model files.
+The current build is a single-ship air-defense sandbox. It can use the Slava-class Moskva as a visible enemy missile-launch platform with physical weapon slots, but it does not yet support anti-ship attacks or damage against that platform. Fleet-level CEC, aviation, submarines, multiplayer, and a complete mission-authoring system also remain out of scope. Ship and weapon visuals are generated procedurally and do not depend on external 3D model files.
 
 <a id="quick-start"></a>
 ## 2. Quick Start
@@ -165,6 +165,7 @@ Manual fire does not bypass fire-control rules. A request is rejected when there
 | `2` | Default tactical view |
 | `3` | Wide ship-to-target view |
 | `4` | Follow an active interceptor, or the selected incoming missile when no interceptor is active |
+| `5` | Focus the active enemy launch platform |
 | `C` | Toggle cinematic orbit |
 | `Space` | Pause or resume |
 | `R` | Reload the page |
@@ -175,6 +176,7 @@ Manual fire does not bypass fire-control rules. A request is rejected when there
 The editor configures:
 
 - Incoming missile type, count, interval, initial altitude, center coordinates, and formation spread.
+- Attack origin can remain a legacy airborne formation or use the cataloged Slava-class Moskva. Platform selection filters both wave selectors and maximum load through weapon-slot compatibility.
 - Ripple or simultaneous arrival pattern.
 - Initial USS Long Beach coordinates.
 - RIM-67, SM-2MR, SM-2ER, and CIWS ammunition.
@@ -194,7 +196,7 @@ The approximate fixed-step order is:
 
 ```text
 CIWS -> booster debris -> chaff/decoys
--> radar and tracks -> ship OODA maneuver -> Mk 10 mechanics
+-> enemy-platform sensors/launch slots -> radar and tracks -> ship OODA maneuver -> Mk 10 mechanics
 -> fire planning and illuminators -> interceptor guidance/hit resolution
 -> incoming seeker, ECM, maneuver, and ship impact
 -> AAR snapshot
@@ -260,6 +262,12 @@ P-15 uses separate seeker-activation and descent gates. It enters active-radar g
 ![P-15 Termit active guidance and procedural model](verification-p15.png)
 
 ![RGM-84 Harpoon terminal pop-up and active seeker](verification-harpoon-terminal.png)
+
+### Enemy Launch-Platform Loop
+
+The Slava-class Moskva is the first cataloged enemy platform. Its definition declares MR-800, MR-700, and Argument sensor slots plus one P-500-compatible `inclined-canister` weapon slot. Its model exposes a standard `platformSlots` manifest with sixteen physical Bazalt hardpoints, tube-axis directions, and individual releasable covers. Runtime first proves that declared capacity equals model hardpoint count, then reserves unused hardpoints across the primary and second waves while sharing one `nextAvailable` time for mechanical spacing.
+
+A platform-launched P-500 is not spawned in open air. It starts at a specific tube's world position and moves through `TUBE EXIT -> BOOST -> PROGRAM TURN -> MIDCOURSE TAKEOVER` using the slot-defined axis, exit speed, boost duration, and takeover time. Only after takeover does it enter the generic P-500 envelope, radar-altimeter, and terminal-guidance logic. Cover and hardpoint states remain one-to-one, so a fired tube cannot be reserved again by a later wave.
 
 <a id="sam-guidance"></a>
 ## 7. SAMs and Guidance
@@ -533,8 +541,15 @@ game-codewar-intercept/
 │  │  └─ harpoon.ts           # Harpoon model, pop-up, and HOJ capabilities
 │  ├─ models/
 │  │  ├─ hull-geometry.ts     # Multi-chine hull loft, sheer deck, and waterline band
+│  │  ├─ model-primitives.ts  # Shared sloped boxes and mast struts
 │  │  ├─ long-beach.ts        # CGN-9, radar, and Mk 10 procedural model
 │  │  └─ ticonderoga.ts       # CG-57, SPY-1, and Mk 41 procedural model
+│  ├─ platforms/
+│  │  ├─ types.ts             # Enemy platform, sensor, weapon-slot, and hardpoint contracts
+│  │  ├─ model-slots.ts       # Typed model-anchor registration
+│  │  ├─ runtime.ts           # Validation, cross-wave reservation, release, and sensors
+│  │  ├─ catalog.ts           # Enemy-platform registry
+│  │  └─ models/moskva.ts     # Slava/Moskva with sixteen physical P-500 tubes
 │  └─ style.css               # Desktop/mobile HUD, damage control, AAR styling
 ├─ ARCHITECTURE.md            # Architectural constraints and extension rules
 ├─ package.json               # Vite/TypeScript scripts and dependencies
@@ -560,6 +575,8 @@ To add a ship:
 4. Switch to the ship in the sandbox and verify that weapon options, default magazines, radar labels, launchers, and damage behavior all follow the definition.
 
 For a new incoming threat, add one missile file under `src/threats/`. Keep its envelope, RCS, CIWS modifiers, terminal/EW capabilities, sandbox preset, and procedural model together as one `ThreatDefinition`, then register it once in `catalog.ts`. `EnemyType`, both wave selectors, preset buttons, and profile lookup are derived automatically. P-15's independent descent gate and Harpoon's pop-up/HOJ behavior are capabilities; a new behavior should extend the generic contract rather than add a missile-ID branch to `main.ts`.
+
+For a new enemy launch platform, build its model under `src/platforms/models/`, register sensor anchors and physical weapon hardpoints through `createPlatformModelSlots`, and add one `EnemyPlatformDefinition` to the platform catalog. Every weapon slot declares launcher family, compatible threats, capacity, minimum interval, exit speed, boost duration, and guidance-takeover time. Runtime rejects mismatched capacities, slot IDs, or sensor anchors. Do not add platform-ID checks to `main.ts`.
 
 For a new interceptor, extend `WeaponType`, add its profile to `src/interceptor-data.ts`, and declare launcher compatibility and magazines in the ship definition. VLS algorithms belong in `src/vls.ts`; fixed-array algorithms belong in `src/sensor-faces.ts`. See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete contract.
 
@@ -590,6 +607,7 @@ The repository contains development verification screenshots for the hull, radar
 ## 18. Known Boundaries and Future Work
 
 - USS Long Beach and USS Lake Champlain are selectable, but each scenario still contains one defending ship with no escorts, AEW aircraft, or CEC network.
+- Moskva is currently a visible attack origin with sensors, launch slots, and a physical departure sequence; it is not yet a searchable surface target that can receive anti-ship fire or damage.
 - Curvature, weather, sea state, and radar propagation use simplified relationships.
 - There is no continuous six-degree-of-freedom aerodynamic rigid body; flight is a 3D point-mass approximation.
 - Seekers and ECM are explainable probability/signal models, not RF engineering simulations.

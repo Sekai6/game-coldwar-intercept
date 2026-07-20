@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { EnemyType } from "./threats/catalog";
+import type { PlatformLaunchReservation } from "./platforms/types";
 
 export type { EnemyType } from "./threats/catalog";
 export type WeaponType = "RIM-67" | "SM-2MR" | "SM-2ER";
@@ -22,6 +23,11 @@ export type Missile = {
   launchAt: number;
   aimOffset: THREE.Vector3;
   bank: number;
+  platformLaunch?: {
+    reservation: PlatformLaunchReservation;
+    released: boolean;
+    takeoverLogged: boolean;
+  };
 };
 export type Interceptor = {
   mesh: THREE.Group;

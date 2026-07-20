@@ -7,46 +7,11 @@ import {
   createWaterlineBandGeometry,
   type HullStation,
 } from "./hull-geometry";
+import {
+  addModelStrut as strut,
+  createSlopedBoxGeometry as slopedBox,
+} from "./model-primitives";
 
-function slopedBox(
-  length: number,
-  height: number,
-  depth: number,
-  foreSlope: number,
-  aftSlope = 0,
-) {
-  const geometry = new THREE.BoxGeometry(length, height, depth),
-    position = geometry.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < position.count; i++) {
-    const x = position.getX(i),
-      y = position.getY(i);
-    if (y > 0 && x > 0) position.setX(i, x - foreSlope);
-    if (y > 0 && x < 0) position.setX(i, x + aftSlope);
-  }
-  position.needsUpdate = true;
-  geometry.computeVertexNormals();
-  return geometry;
-}
-function strut(
-  group: THREE.Group,
-  a: THREE.Vector3,
-  b: THREE.Vector3,
-  radius: number,
-  material: THREE.Material,
-) {
-  const delta = b.clone().sub(a),
-    mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius, delta.length(), 6),
-      material,
-    );
-  mesh.position.copy(a).add(b).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    delta.normalize(),
-  );
-  group.add(mesh);
-  return mesh;
-}
 const TICONDEROGA_LENGTH_SCALE = 1.13;
 const longitudinal = (value: number) => value * TICONDEROGA_LENGTH_SCALE;
 const TICONDEROGA_HULL: readonly HullStation[] = [

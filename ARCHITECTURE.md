@@ -10,6 +10,12 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/models/long-beach.ts`: CGN-9 procedural model and Mk 10 visual components.
 - `src/models/ticonderoga.ts`: CG-47-class procedural model and Mk 41 visual components.
 - `src/models/hull-geometry.ts`: shared multi-chine longitudinal loft, sheer deck, and waterline-band geometry; ship-specific station tables remain in each model.
+- `src/models/model-primitives.ts`: shared sloped-box and structural-strut geometry used by US and Soviet models.
+- `src/platforms/types.ts`: enemy-platform definitions, sensor slots, weapon slots, physical hardpoints, and runtime instances.
+- `src/platforms/model-slots.ts`: typed model-anchor registration without platform-name checks.
+- `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, and sensor updates.
+- `src/platforms/catalog.ts`: enemy-platform registry and lookup.
+- `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.
 - `src/combat-types.ts`: shared runtime domain types.
 - `src/interceptor-data.ts`: ship-launched interceptor flight profiles.
 - `src/threats/catalog.ts`: incoming-threat registry and derived `EnemyType`.
@@ -37,6 +43,15 @@ The simulation is organized around capabilities rather than ship-name checks.
 3. Reuse `attachThreatEffects` or a geometry factory when useful, but do not put missile IDs or missile-specific branches in a shared helper.
 4. Express optional behavior through capabilities. Current examples are `terminalDescentAt` for a late independent descent gate, `terminalAttackModes` plus `popUp` for mixed terminal profiles, and `homeOnJam` for emitter homing. Add a general capability to `ThreatProfile` when a genuinely new behavior is needed; do not add an ID check to `main.ts`.
 5. Verify model forward axis `-Z`, initial/cruise/terminal altitude, seeker activation, special terminal behavior, ECM/decoy response, CIWS/SAM engagement, second-wave creation, and mobile sandbox layout.
+
+## Adding an enemy launch platform
+
+1. Add a model under `src/platforms/models/` and attach one `EnemyPlatformModelSlots` manifest to `model.userData.platformSlots`.
+2. Register every physical launcher tube, cell, or rail with a unique hardpoint ID, semantic weapon-slot ID, local exit direction, and optional cover object. Register every declared sensor anchor by semantic ID.
+3. Export one `EnemyPlatformDefinition` declaring sensor roles and weapon-slot compatibility, capacity, interval, exit speed, boost duration, and guidance takeover.
+4. Register the definition once in `ENEMY_PLATFORM_DEFINITIONS`. Sandbox selectors derive compatible threats and capacity from the catalog.
+5. Runtime must prove declared capacity equals physical hardpoint count. Primary and second waves share hardpoint state and `weaponSlotNextLaunch`; no wave may reuse a fired or reserved tube.
+6. Platform departure remains generic: the missile stores a `PlatformLaunchReservation`, releases the referenced cover, follows that hardpoint's transformed axis, and hands off to the threat profile after the configured takeover time. `main.ts` must not compare a platform ID or missile ID to choose this behavior.
 
 ## Adding an interceptor
 

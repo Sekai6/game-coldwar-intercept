@@ -32,6 +32,25 @@ import {
   type ThreatParticleTrail,
 } from "./visual/threat-particles";
 import { createOceanSurface } from "./visual/ocean";
+import {
+  ENEMY_PLATFORM_DEFINITIONS,
+  getEnemyPlatformDefinition,
+  type EnemyPlatformType,
+} from "./platforms/catalog";
+import {
+  instantiateEnemyPlatform,
+  disposeEnemyPlatform,
+  platformDepartureSolution,
+  releasePlatformHardpoint,
+  reservationDirection,
+  reservationOrigin,
+  reservePlatformLaunches,
+  updateEnemyPlatform,
+} from "./platforms/runtime";
+import type {
+  EnemyPlatformInstance,
+  PlatformLaunchReservation,
+} from "./platforms/types";
 import type {
   AarCategory,
   AarEvent,
@@ -328,6 +347,7 @@ for (const side of [-1, 1])
 wake.position.set(-28, 0.22, 40);
 scene.add(wake);
 const missiles: Missile[] = [];
+let enemyPlatform: EnemyPlatformInstance | null = null;
 const interceptors: Interceptor[] = [];
 const engagements = new Map<Missile, EngagementState>();
 const illuminators: IlluminatorState[] = [
@@ -420,6 +440,7 @@ function addMissile(
   pos: THREE.Vector3,
   kind: EnemyType = DEFAULT_THREAT_ID,
   launchAt = 0,
+  platformReservation?: PlatformLaunchReservation,
 ) {
   const profile = incomingProfiles[kind],
     ordinal = missiles.length,
@@ -471,15 +492,15 @@ function addMissile(
   seekerLine.visible = false;
   g.userData.seekerLine = seekerLine;
   scene.add(g, path, seekerLine);
-  const initialDirection = defender.position
-    .clone()
-    .sub(pos)
-    .setY(0)
-    .normalize();
+  const initialDirection = platformReservation
+    ? reservationDirection(platformReservation)
+    : defender.position.clone().sub(pos).setY(0).normalize();
   missiles.push({
     mesh: g,
-    velocity: initialDirection.multiplyScalar(profile.cruiseSpeed),
-    phase: "inbound",
+    velocity: initialDirection.multiplyScalar(
+      platformReservation?.weaponSlot.exitSpeed ?? profile.cruiseSpeed,
+    ),
+    phase: platformReservation ? "boost" : "inbound",
     age: 0,
     history,
     path,
@@ -489,6 +510,13 @@ function addMissile(
     launchAt,
     aimOffset,
     bank: 0,
+    platformLaunch: platformReservation
+      ? {
+          reservation: platformReservation,
+          released: false,
+          takeoverLogged: false,
+        }
+      : undefined,
   });
 }
 function launchInterceptor(
@@ -1965,7 +1993,7 @@ let dragging = false,
   el = 0.48,
   dist = 210,
   cinematic = false,
-  viewMode: 1 | 2 | 3 | 4 = 2;
+  viewMode: 1 | 2 | 3 | 4 | 5 = 2;
 let shipSpeedKnots = 0,
   shipDesiredHeading = 0,
   nextShipDecision = 0,
@@ -2106,6 +2134,11 @@ const shipField = document.createElement("label"),
   ).join("");
 shipField.innerHTML = `DEFENDING SHIP<select id="sbShip">${shipOptions}</select>`;
 const shipSelect = shipField.querySelector("select") as HTMLSelectElement;
+const platformField = document.createElement("label");
+platformField.innerHTML = `ATTACK ORIGIN<select id="sbPlatform"><option value="AIRBORNE">AIRBORNE FORMATION / LEGACY</option>${ENEMY_PLATFORM_DEFINITIONS.map((platform) => `<option value="${platform.id}">${platform.name} / ${platform.className}</option>`).join("")}</select>`;
+const platformSelect = platformField.querySelector(
+  "select",
+) as HTMLSelectElement;
 const sandboxWeaponSelect = sandbox.querySelector(
   "#sbWeapon",
 ) as HTMLSelectElement;
@@ -2123,7 +2156,64 @@ function syncWeaponOptions() {
 syncWeaponOptions();
 shipSelect.style.cssText =
   "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
+platformSelect.style.cssText = shipSelect.style.cssText;
 sandboxGrid.insertBefore(shipField, sandboxGrid.firstChild);
+sandboxGrid.insertBefore(platformField, shipField.nextSibling);
+function syncPlatformThreatOptions() {
+  const selection = platformSelect.value as EnemyPlatformType | "AIRBORNE";
+  const compatible =
+    selection === "AIRBORNE"
+      ? THREAT_DEFINITIONS.map((definition) => definition.id)
+      : getEnemyPlatformDefinition(selection).weaponSlots.flatMap((slot) => [
+          ...slot.compatibleThreats,
+        ]);
+  const threatSelector = sandbox.querySelector("#sbType") as HTMLSelectElement;
+  const previous = threatSelector.value as EnemyType;
+  threatSelector.replaceChildren(
+    ...compatible.map((id) => {
+      const option = document.createElement("option");
+      option.value = option.textContent = id;
+      return option;
+    }),
+  );
+  const next = compatible.includes(previous) ? previous : compatible[0];
+  threatSelector.value = next;
+  const secondWaveSelector = sandbox.querySelector(
+    "#sbType2",
+  ) as HTMLSelectElement | null;
+  if (secondWaveSelector)
+    secondWaveSelector.replaceChildren(
+      Object.assign(document.createElement("option"), {
+        value: "NONE",
+        textContent: "NONE",
+      }),
+      ...compatible.map((id) =>
+        Object.assign(document.createElement("option"), {
+          value: id,
+          textContent: id,
+        }),
+      ),
+    );
+  const definition = getThreatDefinition(next);
+  (sandbox.querySelector("#sbAltitude") as HTMLInputElement).value = String(
+    definition.profile.cruiseAltitude,
+  );
+  if (selection !== "AIRBORNE") {
+    const platform = getEnemyPlatformDefinition(selection);
+    const capacity = platform.weaponSlots.reduce(
+      (total, slot) => total + slot.capacity,
+      0,
+    );
+    const countInput = sandbox.querySelector("#sbCount") as HTMLInputElement;
+    countInput.max = String(capacity);
+    countInput.value = String(
+      Math.min(capacity, Math.max(1, Number(countInput.value))),
+    );
+  } else {
+    (sandbox.querySelector("#sbCount") as HTMLInputElement).max = "24";
+  }
+}
+platformSelect.onchange = syncPlatformThreatOptions;
 shipSelect.onchange = () => {
   configureShip(shipSelect.value as ShipClass);
   syncWeaponOptions();
@@ -2252,6 +2342,8 @@ function presetButton(
   b.style.cssText =
     "flex:1;border:1px solid #3d6f73;background:#09232a;color:#9fd3d1;padding:7px;font-size:9px;cursor:pointer";
   b.onclick = () => {
+    platformSelect.value = "AIRBORNE";
+    syncPlatformThreatOptions();
     (sandbox.querySelector("#sbType") as HTMLSelectElement).value = kind;
     (sandbox.querySelector("#sbCount") as HTMLInputElement).value =
       String(count);
@@ -2337,6 +2429,11 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     m.path.geometry.dispose();
   });
   missiles.length = 0;
+  if (enemyPlatform) {
+    scene.remove(enemyPlatform.model);
+    disposeEnemyPlatform(enemyPlatform);
+    enemyPlatform = null;
+  }
   interceptors.forEach((i) => scene.remove(i.mesh));
   interceptors.length = 0;
   combatPicture.reset();
@@ -2367,22 +2464,65 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     .value as WeaponType;
   const kind = (sandbox.querySelector("#sbType") as HTMLSelectElement)
       .value as EnemyType,
-    count = Math.max(1, Math.min(24, numberInput("#sbCount"))),
+    requestedCount = Math.max(1, Math.min(24, numberInput("#sbCount"))),
     interval = Math.max(0, numberInput("#sbInterval")),
     altitude = numberInput("#sbAltitude"),
     cx = numberInput("#sbX"),
     cz = numberInput("#sbZ"),
     spread = numberInput("#sbSpread");
-  for (let i = 0; i < count; i++) {
-    const offset = count === 1 ? 0 : (i / (count - 1) - 0.5) * spread;
-    addMissile(
-      new THREE.Vector3(
-        cx + offset,
-        altitude + Math.sin(i) * Math.min(0.2, altitude * 0.08),
-        cz - Math.abs(offset) * 0.12,
-      ),
+  const platformSelection = platformSelect.value as
+    | EnemyPlatformType
+    | "AIRBORNE";
+  let count = requestedCount;
+  if (platformSelection === "AIRBORNE") {
+    for (let index = 0; index < count; index++) {
+      const offset =
+        count === 1 ? 0 : (index / (count - 1) - 0.5) * spread;
+      addMissile(
+        new THREE.Vector3(
+          cx + offset,
+          altitude + Math.sin(index) * Math.min(0.2, altitude * 0.08),
+          cz - Math.abs(offset) * 0.12,
+        ),
+        kind,
+        index * interval,
+      );
+    }
+  } else {
+    const definition = getEnemyPlatformDefinition(platformSelection);
+    const heading = Math.atan2(
+      -(defender.position.z - cz),
+      defender.position.x - cx,
+    );
+    enemyPlatform = instantiateEnemyPlatform(
+      definition,
+      new THREE.Vector3(cx, 0, cz),
+      heading,
+    );
+    enemyPlatform.model.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
+    scene.add(enemyPlatform.model);
+    const reservations = reservePlatformLaunches(
+      enemyPlatform,
       kind,
-      i * interval,
+      requestedCount,
+      0,
+      interval,
+    );
+    count = reservations.length;
+    for (const reservation of reservations)
+      addMissile(
+        reservationOrigin(reservation),
+        kind,
+        reservation.launchAt,
+        reservation,
+      );
+    log(
+      `ENEMY PLATFORM / ${definition.name} / ${definition.className} / ${count} LAUNCH SLOTS RESERVED`,
     );
   }
   updateMaterialDiagnostics();
@@ -2400,7 +2540,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   sandbox.style.display = "none";
   running = true;
   log(
-    `SANDBOX START / ${activeShip.hullNumber} / ${count} x ${kind} / ${interval}s INTERVAL`,
+    `SANDBOX START / ${activeShip.hullNumber} / ${count} x ${kind} / ${interval}s INTERVAL / ${platformSelection}`,
   );
 };
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
@@ -2525,6 +2665,26 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         cz = numberInput("#sbZ"),
         altitude = numberInput("#sbAltitude"),
         spread = numberInput("#sbSpread");
+      if (enemyPlatform) {
+        const reservations = reservePlatformLaunches(
+          enemyPlatform,
+          kind2,
+          count,
+          delay,
+          0.6,
+        );
+        for (const reservation of reservations)
+          addMissile(
+            reservationOrigin(reservation),
+            kind2,
+            reservation.launchAt,
+            reservation,
+          );
+        log(
+          `SECOND WAVE / ${reservations.length} x ${kind2} / ${enemyPlatform.definition.name} REMAINING SLOTS / T+${delay}s`,
+        );
+        return;
+      }
       for (let i = 0; i < count; i++) {
         const offset =
           count === 1 ? 0 : (i / (count - 1) - 0.5) * spread * 0.75;
@@ -3188,6 +3348,10 @@ function updateCamera() {
   let focus: THREE.Vector3;
   if (viewMode === 1)
     focus = defender.position.clone().add(new THREE.Vector3(0, 9, 0));
+  else if (viewMode === 5 && enemyPlatform)
+    focus = enemyPlatform.model.position
+      .clone()
+      .add(new THREE.Vector3(0, 10, 0));
   else if (viewMode === 4) {
     const interceptor = interceptors.find((item) => item.mesh.visible),
       incoming = missiles[selectedTargetId - 1];
@@ -3791,6 +3955,21 @@ setInterval(() => {
   radarCtx.globalAlpha = 1;
   radarCtx.fillStyle = "#78e1c8";
   radarCtx.fillRect(cx - 3, cy - 3, 6, 6);
+  if (enemyPlatform) {
+    const platformX =
+        cx +
+        (enemyPlatform.model.position.x - defender.position.x) *
+          RADAR_PIXELS_PER_WORLD_UNIT,
+      platformY =
+        cy +
+        (enemyPlatform.model.position.z - defender.position.z) *
+          RADAR_PIXELS_PER_WORLD_UNIT;
+    radarCtx.strokeStyle = "#ff6758";
+    radarCtx.fillStyle = "#ff6758";
+    radarCtx.globalAlpha = 0.9;
+    radarCtx.strokeRect(platformX - 7, platformY - 4, 14, 8);
+    radarCtx.fillRect(platformX - 1, platformY - 1, 2, 2);
+  }
   for (const track of combatPicture.tracks.values()) {
     const missile = missiles[track.sourceId - 1];
     if (!missile || missile.phase === "destroyed") continue;
@@ -4612,6 +4791,63 @@ function updateIncomingMissile(m: Missile, dt: number) {
   m.mesh.visible = true;
   m.path.visible = true;
   m.age += dt;
+  const platformLaunch = m.platformLaunch;
+  if (platformLaunch && !platformLaunch.released) {
+    platformLaunch.released = true;
+    releasePlatformHardpoint(platformLaunch.reservation);
+    m.mesh.userData.platformDeparturePhase = "TUBE EXIT";
+    log(
+      `${platformLaunch.reservation.platform.definition.name} / ${platformLaunch.reservation.hardpoint.id.toUpperCase()} / ${m.kind} CANISTER LAUNCH`,
+    );
+  }
+  const departure = platformLaunch
+    ? platformDepartureSolution(
+        platformLaunch.reservation,
+        m.age,
+        m.mesh.position,
+        defender.position,
+        incomingProfiles[m.kind].cruiseAltitude,
+        incomingProfiles[m.kind].cruiseSpeed,
+      )
+    : null;
+  if (platformLaunch && departure) {
+    m.phase = "boost";
+    m.velocity.copy(departure.direction.multiplyScalar(departure.speed));
+    m.mesh.position.addScaledVector(m.velocity, dt);
+    m.bank = THREE.MathUtils.lerp(m.bank, 0, Math.min(1, dt * 4));
+    setMissileAttitude(m.mesh, m.velocity, "-Z", m.bank);
+    m.mesh.userData.seaMistActive = false;
+    m.mesh.userData.platformDeparturePhase = departure.phase;
+    if (
+      m.history.length === 0 ||
+      m.mesh.position.distanceTo(m.history[m.history.length - 1]) > 1.2
+    ) {
+      m.history.push(m.mesh.position.clone());
+      m.path.geometry.dispose();
+      m.path.geometry = new THREE.BufferGeometry().setFromPoints(m.history);
+    }
+    if (missiles.indexOf(m) + 1 === selectedTargetId) {
+      canvas.dataset.selectedThreatKind = m.kind;
+      canvas.dataset.selectedThreatPhase = m.phase;
+      canvas.dataset.selectedThreatAltitude = m.mesh.position.y.toFixed(3);
+      canvas.dataset.selectedThreatRange = m.mesh.position
+        .distanceTo(defender.position)
+        .toFixed(2);
+      canvas.dataset.platformDeparturePhase = String(
+        m.mesh.userData.platformDeparturePhase,
+      );
+      canvas.dataset.platformLaunchSlot =
+        platformLaunch.reservation.hardpoint.id;
+    }
+    return;
+  }
+  if (platformLaunch && !platformLaunch.takeoverLogged) {
+    platformLaunch.takeoverLogged = true;
+    m.mesh.userData.platformDeparturePhase = "MIDCOURSE TAKEOVER";
+    log(
+      `${m.kind} MIDCOURSE GUIDANCE TAKEOVER / ${platformLaunch.reservation.platform.definition.name}`,
+    );
+  }
   const range = m.mesh.position.distanceTo(defender.position),
     profile = incomingProfiles[m.kind],
     terminalFactor = THREE.MathUtils.clamp(
@@ -4906,6 +5142,11 @@ function updateIncomingMissile(m: Missile, dt: number) {
     canvas.dataset.selectedThreatModelLength = String(
       m.mesh.userData.modelLength ?? "legacy",
     );
+    canvas.dataset.platformDeparturePhase = String(
+      m.mesh.userData.platformDeparturePhase ?? "AIRBORNE",
+    );
+    canvas.dataset.platformLaunchSlot =
+      m.platformLaunch?.reservation.hardpoint.id ?? "AIRBORNE";
   }
   if (
     m.history.length === 0 ||
@@ -5033,6 +5274,8 @@ function tick(now: number) {
     simAccumulator += realDt * timeScale;
     while (simAccumulator >= 0.05 && running) {
       elapsed += 0.05;
+      if (enemyPlatform)
+        updateEnemyPlatform(enemyPlatform, elapsed, defender.position);
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
       captureAarSnapshot();
@@ -5047,6 +5290,39 @@ function tick(now: number) {
       );
     document.querySelector("#targetCount")!.textContent =
       `${live} ACTIVE / ${missiles.filter((m) => m.phase !== "destroyed").length - live} RESERVE / ${distances.length ? (Math.max(...distances) / 10).toFixed(1) : "0.0"} km`;
+  }
+  if (enemyPlatform) {
+    const states = [...enemyPlatform.hardpointState.values()];
+    canvas.dataset.enemyPlatform = enemyPlatform.definition.id;
+    canvas.dataset.enemyPlatformReady = String(
+      states.filter((state) => state === "ready").length,
+    );
+    canvas.dataset.enemyPlatformReserved = String(
+      states.filter((state) => state === "reserved").length,
+    );
+    canvas.dataset.enemyPlatformFired = String(
+      states.filter((state) => state === "fired").length,
+    );
+    canvas.dataset.enemyPlatformSensorQuality = Math.max(
+      0,
+      ...[...enemyPlatform.sensorState.values()].map((state) => state.quality),
+    ).toFixed(3);
+    canvas.dataset.enemyPlatformHardpoints = String(
+      enemyPlatform.slots.weaponHardpoints.length,
+    );
+    canvas.dataset.enemyPlatformCoversVisible = String(
+      enemyPlatform.slots.weaponHardpoints.filter(
+        (hardpoint) => hardpoint.cover?.visible !== false,
+      ).length,
+    );
+  } else {
+    canvas.dataset.enemyPlatform = "AIRBORNE";
+    canvas.dataset.enemyPlatformReady = "0";
+    canvas.dataset.enemyPlatformReserved = "0";
+    canvas.dataset.enemyPlatformFired = "0";
+    canvas.dataset.enemyPlatformSensorQuality = "0.000";
+    canvas.dataset.enemyPlatformHardpoints = "0";
+    canvas.dataset.enemyPlatformCoversVisible = "0";
   }
   ocean.update(elapsed);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
@@ -5200,6 +5476,13 @@ addEventListener("keydown", (e) => {
     az = 0.8;
     el = 0.18;
     dist = 28;
+  }
+  if (e.key === "5" && enemyPlatform) {
+    cinematic = false;
+    viewMode = 5;
+    az = 0.78;
+    el = 0.3;
+    dist = 115;
   }
   if (e.key.toLowerCase() === "c") cinematic = !cinematic;
 });
