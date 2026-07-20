@@ -61,7 +61,10 @@ import {
   updateSurfaceStrikeMissile,
   type SurfaceStrikeMissile,
 } from "./surface-combat";
-import { planSurfaceSalvo } from "./surface-doctrine";
+import {
+  estimateSurfaceBattleDamage,
+  planSurfaceSalvo,
+} from "./surface-doctrine";
 import type {
   AarCategory,
   AarEvent,
@@ -2213,11 +2216,9 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
     identified = quality >= 0.7,
     strikeMagazine = activeShip.surfaceStrike?.magazine ?? 0;
   raidIndex.textContent = "SFC";
-  raidTitle.textContent = enemyPlatform.destroyed
+  raidTitle.textContent = identified
     ? enemyPlatform.definition.name
-    : identified
-      ? enemyPlatform.definition.name
-      : "SURFACE CONTACT";
+    : "SURFACE CONTACT";
   targetCount.textContent = track
     ? `${liveAir} AIR / ${(track.position.distanceTo(defender.position) / 10).toFixed(1)} km / TQ ${Math.round(quality * 100)}% / EW ${ecmEnabled ? "ON" : "OFF"}`
     : `${liveAir} AIR / SEARCHING / EW ${ecmEnabled ? "ON" : "OFF"}`;
@@ -2230,11 +2231,19 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
     bda = Number.isFinite(surfaceFireControlReadyAt)
       ? "FC ASSIGN"
       : "TRACK BUILD";
-  if (enemyPlatform.destroyed) bda = "TARGET DISABLED";
-  else if (surfaceHits > 0 && track) {
-    const spread = Math.ceil(((1 - quality) * 25 + 5) / 5) * 5,
-      estimate = Math.round(enemyPlatform.hullIntegrity / 5) * 5;
-    bda = `BDA ${Math.max(0, estimate - spread)}-${Math.min(100, estimate + spread)}%`;
+  if (surfaceHits > 0 && activeShip.surfaceStrike) {
+    const estimate = estimateSurfaceBattleDamage({
+      targetHullEstimate: activeShip.surfaceStrike.targetHullEstimate,
+      weaponDamage: activeShip.surfaceStrike.damage,
+      assessedHits: surfaceHits,
+      trackQuality: quality,
+    });
+    bda =
+      elapsed < nextSurfaceAssessment
+        ? `BDA ASSESS ${(nextSurfaceAssessment - elapsed).toFixed(1)}s`
+        : estimate.disabledConfidence >= 0.7
+          ? `BDA DISABLED ${Math.round(estimate.disabledConfidence * 100)}%`
+          : `BDA ${estimate.lowerPercent}-${estimate.upperPercent}%`;
   }
   targetState.textContent = `HARP ${surfaceStrikeAmmo}/${strikeMagazine} / ${bda}`;
 }
@@ -4485,6 +4494,7 @@ function planSurfaceStrike(manual = false) {
       weaponDamage: strike.damage,
       assessedHits: surfaceHits,
       resolvedWeapons,
+      trackQuality: track.quality,
     }),
     count = salvoPlan.count;
   if (count <= 0) {
@@ -4725,7 +4735,7 @@ function updateSurfaceCombat(
         .hullMaterial as THREE.MeshStandardMaterial;
       hullMaterial?.color.lerp(new THREE.Color(0x302a28), event.damage / 80);
       log(
-        `HARPOON HIT / ${event.damage}% / ${event.subsystem.toUpperCase()} / ${missile.target.definition.name} HULL ${missile.target.hullIntegrity}%`,
+        `HARPOON HIT CONFIRMED / ${missile.target.definition.name} / EFFECT ASSESSMENT PENDING`,
       );
       if (event.platformDestroyed) {
         surfaceHardKills++;
@@ -4772,6 +4782,22 @@ function updateSurfaceCombat(
   canvas.dataset.surfaceRequiredHits = String(surfaceRequiredHits);
   canvas.dataset.surfacePlanningLeakProbability =
     surfacePlanningLeakProbability.toFixed(3);
+  const surfaceBda = activeShip.surfaceStrike
+    ? estimateSurfaceBattleDamage({
+        targetHullEstimate: activeShip.surfaceStrike.targetHullEstimate,
+        weaponDamage: activeShip.surfaceStrike.damage,
+        assessedHits: surfaceHits,
+        trackQuality: track?.quality ?? 0,
+      })
+    : null;
+  canvas.dataset.surfaceBdaEstimate = surfaceBda
+    ? surfaceBda.estimatedRemainingHull.toFixed(1)
+    : "0.0";
+  canvas.dataset.surfaceBdaLower = String(surfaceBda?.lowerPercent ?? 0);
+  canvas.dataset.surfaceBdaUpper = String(surfaceBda?.upperPercent ?? 0);
+  canvas.dataset.surfaceBdaDisabledConfidence = (
+    surfaceBda?.disabledConfidence ?? 0
+  ).toFixed(3);
   const liveSurfaceStrikes = surfaceStrikeMissiles.filter(
     (missile) => missile.phase !== "destroyed",
   );
