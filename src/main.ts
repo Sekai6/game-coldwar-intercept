@@ -367,6 +367,7 @@ function missileThreatScore(missile: Missile, quality: number) {
   );
 }
 function createEnemyMissile(kind: EnemyType) {
+  if (kind === "P-15 Termit") return createP15Missile();
   if (kind === "RGM-84 Harpoon") return createHarpoonMissile();
   const g = new THREE.Group(),
     isGranite = kind === "P-700",
@@ -552,6 +553,151 @@ function createEnemyMissile(kind: EnemyType) {
   g.userData.seaMist = seaMist;
   g.userData.shockCone = shockCone;
   g.userData.seekerFov = seekerFov;
+  return g;
+}
+function createP15Missile() {
+  const g = new THREE.Group(),
+    skin = new THREE.MeshStandardMaterial({
+      color: 0xd7d8d2,
+      metalness: 0.46,
+      roughness: 0.43,
+    }),
+    radomeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x596b70,
+      metalness: 0.28,
+      roughness: 0.55,
+    }),
+    dark = new THREE.MeshStandardMaterial({
+      color: 0x30383a,
+      metalness: 0.5,
+      roughness: 0.42,
+    }),
+    length = 8.8,
+    radius = 0.82;
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.91, radius, length, 18),
+    skin,
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const radome = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.96, 18, 12),
+    radomeMaterial,
+  );
+  radome.scale.z = 1.35;
+  radome.position.z = -length * 0.5 - 0.62;
+  g.add(radome);
+  const radomeCollar = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.93, radius * 0.93, 0.28, 18),
+    dark,
+  );
+  radomeCollar.rotation.x = Math.PI / 2;
+  radomeCollar.position.z = -length * 0.43;
+  g.add(radomeCollar);
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, -1.35);
+  wingShape.lineTo(4.35, 0.25);
+  wingShape.lineTo(3.7, 1.75);
+  wingShape.lineTo(0, 1.05);
+  wingShape.closePath();
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape), skin);
+    wing.rotation.x = Math.PI / 2;
+    wing.rotation.z = side < 0 ? Math.PI : 0;
+    wing.position.set(side * radius * 0.35, -0.08, 0.65);
+    g.add(wing);
+  }
+  const tailZ = length * 0.39;
+  for (let index = 0; index < 4; index++) {
+    const fin = new THREE.Mesh(
+      new THREE.BoxGeometry(2.55, 0.1, 1.8),
+      skin,
+    );
+    fin.position.z = tailZ;
+    fin.rotation.z = index * Math.PI * 0.5;
+    g.add(fin);
+  }
+  const intakeFairing = new THREE.Mesh(
+    new THREE.BoxGeometry(1.05, 0.62, 2.7),
+    skin,
+  );
+  intakeFairing.position.set(0, -radius * 1.03, 0.85);
+  g.add(intakeFairing);
+  const intakeOpening = new THREE.Mesh(
+    new THREE.BoxGeometry(0.76, 0.42, 0.16),
+    dark,
+  );
+  intakeOpening.position.set(0, -radius * 1.25, -0.55);
+  g.add(intakeOpening);
+  const nozzle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.34, 0.46, 0.8, 14),
+    dark,
+  );
+  nozzle.rotation.x = Math.PI / 2;
+  nozzle.position.z = length * 0.5 + 0.32;
+  g.add(nozzle);
+  const exhaust = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3, 2.2, 10, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff7540,
+      transparent: true,
+      opacity: 0.58,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  exhaust.rotation.x = -Math.PI / 2;
+  exhaust.position.z = length * 0.5 + 1.7;
+  g.add(exhaust);
+  const hotCore = new THREE.Mesh(
+    new THREE.ConeGeometry(0.11, 1.2, 8, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffedb5,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  hotCore.rotation.x = -Math.PI / 2;
+  hotCore.position.z = length * 0.5 + 1.15;
+  g.add(hotCore);
+  const seaMist = new THREE.Mesh(
+    new THREE.ConeGeometry(1.15, 7.5, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xbce8ec,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seaMist.rotation.x = -Math.PI / 2;
+  seaMist.position.z = length * 0.5 + 5;
+  seaMist.visible = false;
+  g.add(seaMist);
+  const seekerFov = new THREE.Mesh(
+    new THREE.ConeGeometry(9.5, 34, 24, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xff6554,
+      transparent: true,
+      opacity: 0.07,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  seekerFov.rotation.x = -Math.PI / 2;
+  seekerFov.position.z = -length * 0.5 - 18;
+  seekerFov.visible = false;
+  g.add(seekerFov);
+  g.userData.exhaust = exhaust;
+  g.userData.hotCore = hotCore;
+  g.userData.seaMist = seaMist;
+  g.userData.shockCone = undefined;
+  g.userData.seekerFov = seekerFov;
+  g.userData.modelLength = length;
   return g;
 }
 function createHarpoonMissile() {
@@ -2531,6 +2677,7 @@ presetButton("SEA SKIMMER", "P-500", 6, 1.5, 1.2, 140, 600);
 presetButton("SATURATION", "P-700", 16, 0, 2.6, 260, 750);
 presetButton("HIGH SPEED", "Kh-22", 8, 2, 360, 190, 1000);
 presetButton("HARPOON RAID", "RGM-84 Harpoon", 8, 1.2, 0.9, 180, 420);
+presetButton("P-15 RAID", "P-15 Termit", 6, 1.8, 1.95, 160, 400);
 const threatSelect = sandbox.querySelector("#sbType") as HTMLSelectElement;
 threatSelect.onchange = () => {
   const profile = incomingProfiles[threatSelect.value as EnemyType];
@@ -4871,7 +5018,15 @@ function updateIncomingMissile(m: Missile, dt: number) {
       (profile.terminalAt - range) / (profile.terminalAt * 0.72),
       0,
       1,
-    );
+    ),
+    altitudeFactor = profile.terminalDescentAt
+      ? THREE.MathUtils.clamp(
+          (profile.terminalDescentAt - range) /
+            Math.max(1, profile.terminalDescentAt - 6),
+          0,
+          1,
+        )
+      : terminalFactor;
   m.phase =
     range < profile.terminalAt
       ? "terminal"
@@ -4907,7 +5062,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
   let commandedAltitude = THREE.MathUtils.lerp(
     profile.cruiseAltitude,
     profile.terminalAltitude,
-    terminalFactor,
+    altitudeFactor,
   );
   if (
     m.kind === "RGM-84 Harpoon" &&
@@ -5096,6 +5251,14 @@ function updateIncomingMissile(m: Missile, dt: number) {
   );
   m.velocity.copy(direction.multiplyScalar(speed));
   m.mesh.position.addScaledVector(m.velocity, dt);
+  if (profile.terminalDescentAt && range < profile.terminalDescentAt) {
+    const altitudeCorrection = THREE.MathUtils.clamp(
+      commandedAltitude - m.mesh.position.y,
+      -dt * 1.2,
+      dt * 1.2,
+    );
+    m.mesh.position.y += altitudeCorrection;
+  }
   if (profile.trajectory === "sea-skimmer") {
     const radarAltimeterFloor = Math.max(0.06, profile.terminalAltitude * 0.75);
     if (m.mesh.position.y < radarAltimeterFloor) {

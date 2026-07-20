@@ -13,6 +13,7 @@ export interface ThreatProfile {
   cruiseAltitude: number;
   terminalAltitude: number;
   terminalAt: number;
+  terminalDescentAt?: number;
   cruiseSpeed: number;
   terminalSpeed: number;
   turnRate: number;
@@ -67,6 +68,31 @@ export const WEAPON_PROFILES: Record<WeaponType, InterceptorProfile> = {
 };
 
 export const THREAT_PROFILES: Record<EnemyType, ThreatProfile> = {
+  "P-15 Termit": {
+    cruiseAltitude: 1.95,
+    terminalAltitude: 0.25,
+    terminalAt: 240,
+    terminalDescentAt: 20,
+    cruiseSpeed: 6.2,
+    terminalSpeed: 6.4,
+    turnRate: 8,
+    damage: 32,
+    defaultRange: 400,
+    burnThroughRange: 28,
+    radarCrossSection: 0.65,
+    modelScale: 0.96,
+    selectionRadius: 4.5,
+    pathColor: 0xef7651,
+    threatPriority: 10,
+    trajectory: "sea-skimmer",
+    ciwsPenalty: 0.06,
+    weave: {
+      lateral: 0.45,
+      longitudinal: 0.25,
+      lateralRate: 1.7,
+      longitudinalRate: 1.35,
+    },
+  },
   "P-500": {
     cruiseAltitude: 1.2,
     terminalAltitude: 0.3,
