@@ -1,6 +1,9 @@
 import type * as THREE from "three";
 import type { SensorDefinition } from "./sim";
 import type { FixedSensorFaceConfig } from "./sensor-faces";
+import type { ModelWeaponHardpoint } from "./models/model-primitives";
+
+export type { ModelWeaponHardpoint } from "./models/model-primitives";
 
 export type ShipClass = string;
 export type ShipWeapon = "RIM-67" | "SM-2MR" | "SM-2ER";
@@ -62,5 +65,20 @@ export interface ShipDefinition {
     illuminators: number;
   };
   hullColor: number;
+  surfaceStrike?: {
+    weapon: "RGM-84 Harpoon";
+    displayName: string;
+    magazine: number;
+    minimumInterval: number;
+    minRange: number;
+    maxRange: number;
+    requiredTrackQuality: number;
+    damage: number;
+    salvoSize: number;
+  };
   build: () => THREE.Group;
+}
+
+export function shipSurfaceHardpoints(model: THREE.Group) {
+  return (model.userData.surfaceStrikeHardpoints ?? []) as ModelWeaponHardpoint[];
 }

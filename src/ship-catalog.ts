@@ -12,6 +12,17 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
   role: "NUCLEAR GUIDED MISSILE CRUISER",
   platform: { maxSpeedKnots: 30, turnRateDeg: 1.6, radarRcs: 12 },
   hullColor: 0x687574,
+  surfaceStrike: {
+    weapon: "RGM-84 Harpoon",
+    displayName: "2 x MK 141 QUAD HARPOON",
+    magazine: 8,
+    minimumInterval: 1.6,
+    minRange: 35,
+    maxRange: 680,
+    requiredTrackQuality: 0.62,
+    damage: 24,
+    salvoSize: 4,
+  },
   launcher: {
     kind: "mk10",
     displayName: "MK 10",

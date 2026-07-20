@@ -6,7 +6,12 @@ import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import "./style.css";
 import { CombatPicture } from "./sim";
-import { type ShipClass, type SubsystemId } from "./ship-types";
+import {
+  shipSurfaceHardpoints,
+  type ModelWeaponHardpoint,
+  type ShipClass,
+  type SubsystemId,
+} from "./ship-types";
 import { createShipCatalog } from "./ship-catalog";
 import {
   createFaceHealth,
@@ -51,6 +56,11 @@ import type {
   EnemyPlatformInstance,
   PlatformLaunchReservation,
 } from "./platforms/types";
+import {
+  createSurfaceStrikeMissile,
+  updateSurfaceStrikeMissile,
+  type SurfaceStrikeMissile,
+} from "./surface-combat";
 import type {
   AarCategory,
   AarEvent,
@@ -348,6 +358,22 @@ wake.position.set(-28, 0.22, 40);
 scene.add(wake);
 const missiles: Missile[] = [];
 let enemyPlatform: EnemyPlatformInstance | null = null;
+const surfaceStrikeMissiles: SurfaceStrikeMissile[] = [];
+const surfaceLaunchQueue: {
+  hardpoint: ModelWeaponHardpoint;
+  launchAt: number;
+  commandPoint: THREE.Vector3;
+}[] = [];
+let surfaceHardpointState = new Map<
+    string,
+    "ready" | "reserved" | "fired"
+  >(),
+  surfaceStrikeAmmo = activeShip.surfaceStrike?.magazine ?? 0,
+  nextSurfaceLaunch = 0,
+  nextSurfaceDecision = 0,
+  autoSurfaceStrike = true,
+  surfaceHits = 0,
+  surfaceHardKills = 0;
 const interceptors: Interceptor[] = [];
 const engagements = new Map<Missile, EngagementState>();
 const illuminators: IlluminatorState[] = [
@@ -357,6 +383,22 @@ const illuminators: IlluminatorState[] = [
   { id: 4, azimuth: Math.PI, target: null, lastTargetId: 0 },
 ];
 const combatPicture = new CombatPicture();
+const surfacePicture = new CombatPicture();
+function resetSurfaceStrikeLoadout() {
+  surfaceHardpointState = new Map(
+    shipSurfaceHardpoints(defender).map((hardpoint) => {
+      if (hardpoint.cover) hardpoint.cover.visible = true;
+      return [hardpoint.id, "ready" as const];
+    }),
+  );
+  surfaceStrikeAmmo = Math.min(
+    activeShip.surfaceStrike?.magazine ?? 0,
+    surfaceHardpointState.size,
+  );
+  nextSurfaceLaunch = 0;
+  nextSurfaceDecision = 0;
+}
+resetSurfaceStrikeLoadout();
 const radarCanvas = document.querySelector("#radar") as HTMLCanvasElement;
 const radarCtx = radarCanvas?.getContext("2d");
 let launcherCycle = 0;
@@ -1802,6 +1844,8 @@ function configureShip(shipClass: ShipClass) {
     system.health = 100;
   }
   combatPicture.setSensors(activeShip.sensors);
+  surfacePicture.setSensors(activeShip.sensors);
+  resetSurfaceStrikeLoadout();
   const grid = subsystemPanel.querySelector(".subsystem-grid")!;
   grid.innerHTML = subsystemRows();
   updateSubsystemPanel();
@@ -2230,6 +2274,9 @@ shipSelect.onchange = () => {
   (sandbox.querySelector("#sbCiws") as HTMLInputElement).value = String(
     defaults.ciws,
   );
+  (sandbox.querySelector("#sbHarpoon") as HTMLInputElement).value = String(
+    activeShip.surfaceStrike?.magazine ?? 0,
+  );
   (sandbox.querySelector("#sbChannels") as HTMLInputElement).value = String(
     defaults.channels,
   );
@@ -2246,6 +2293,12 @@ for (const [label, id, value, max] of [
   ["SM-2MR MAGAZINE", "sbSm2", String(activeShip.ammo.sm2mr), "96"],
   ["SM-2ER MAGAZINE", "sbSm2er", String(activeShip.ammo.sm2er), "64"],
   ["CIWS ROUNDS", "sbCiws", String(activeShip.ammo.ciws), "6000"],
+  [
+    "RGM-84 HARPOON MAGAZINE",
+    "sbHarpoon",
+    String(activeShip.surfaceStrike?.magazine ?? 0),
+    "16",
+  ],
 ]) {
   const field = document.createElement("label");
   field.textContent = label;
@@ -2429,6 +2482,16 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     m.path.geometry.dispose();
   });
   missiles.length = 0;
+  for (const missile of surfaceStrikeMissiles) {
+    scene.remove(missile.mesh, missile.path);
+    missile.path.geometry.dispose();
+  }
+  surfaceStrikeMissiles.length = 0;
+  surfaceLaunchQueue.length = 0;
+  surfacePicture.reset();
+  resetSurfaceStrikeLoadout();
+  surfaceHits = 0;
+  surfaceHardKills = 0;
   if (enemyPlatform) {
     scene.remove(enemyPlatform.model);
     disposeEnemyPlatform(enemyPlatform);
@@ -2645,6 +2708,13 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         damageSubsystem("forwardLauncher", 100 - forwardHealth);
       if (aftHealth < 100) damageSubsystem("aftLauncher", 100 - aftHealth);
       ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
+      surfaceStrikeAmmo = Math.max(
+        0,
+        Math.min(
+          surfaceHardpointState.size,
+          numberInput("#sbHarpoon"),
+        ),
+      );
       maxSamChannels = Math.max(1, Math.min(8, numberInput("#sbChannels")));
       maxIlluminators = Math.max(
         1,
@@ -2705,7 +2775,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
 );
 function classifyAarEvent(text: string): AarCategory {
   if (
-    /INTERCEPT|SOFT KILL|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(
+    /INTERCEPT|SOFT KILL|SURFACE KILL|POINT DEFENSE|HARPOON HIT|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(
       text,
     )
   )
@@ -2751,6 +2821,22 @@ function captureAarSnapshot(force = false) {
       z: c.position.z,
       side: c.side,
     })),
+    enemyPlatform: enemyPlatform
+      ? {
+          x: enemyPlatform.model.position.x,
+          z: enemyPlatform.model.position.z,
+          heading: enemyPlatform.model.rotation.y,
+          hull: enemyPlatform.hullIntegrity,
+          destroyed: enemyPlatform.destroyed,
+          name: enemyPlatform.definition.name,
+        }
+      : null,
+    surfaceStrikes: surfaceStrikeMissiles.map((missile) => ({
+      id: missile.id,
+      x: missile.mesh.position.x,
+      z: missile.mesh.position.z,
+      phase: missile.phase,
+    })),
   };
   if (
     force &&
@@ -2781,6 +2867,8 @@ function renderAarFrame(index: number) {
       { x: s.ship.x, z: s.ship.z },
       ...s.missiles,
       ...s.interceptors,
+      ...s.surfaceStrikes,
+      ...(s.enemyPlatform ? [s.enemyPlatform] : []),
     ]),
     minX = Math.min(...points.map((p) => p.x)),
     maxX = Math.max(...points.map((p) => p.x)),
@@ -2842,6 +2930,22 @@ function renderAarFrame(index: number) {
     }
     ctx.stroke();
   }
+  const surfaceIds = [...new Set(snapshot.surfaceStrikes.map((m) => m.id))];
+  for (const id of surfaceIds) {
+    ctx.strokeStyle = "rgba(103,200,255,.42)";
+    ctx.beginPath();
+    let started = false;
+    for (let s = 0; s <= index; s += 2) {
+      const state = aarSnapshots[s].surfaceStrikes.find((m) => m.id === id);
+      if (!state) continue;
+      const p = map(state);
+      if (!started) {
+        ctx.moveTo(p.x, p.y);
+        started = true;
+      } else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
   for (const cloud of snapshot.chaff) {
     const p = map(cloud);
     ctx.strokeStyle = cloud.side === "ship" ? "#71ddd7" : "#e4c66f";
@@ -2875,6 +2979,25 @@ function renderAarFrame(index: number) {
       ctx.fillText(`T${missile.id}`, p.x + 8, p.y - 7);
     }
   }
+  for (const missile of snapshot.surfaceStrikes) {
+    if (missile.phase === "destroyed") continue;
+    const p = map(missile);
+    ctx.fillStyle = "#67c8ff";
+    ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+  }
+  if (snapshot.enemyPlatform) {
+    const target = map(snapshot.enemyPlatform);
+    ctx.strokeStyle = snapshot.enemyPlatform.destroyed ? "#713f3b" : "#ff6758";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(target.x - 11, target.y - 6, 22, 12);
+    ctx.fillStyle = "#eaa39b";
+    ctx.font = "10px Consolas";
+    ctx.fillText(
+      `${snapshot.enemyPlatform.name} ${Math.round(snapshot.enemyPlatform.hull)}%`,
+      target.x + 14,
+      target.y - 8,
+    );
+  }
   const ship = map(snapshot.ship),
     fx = Math.cos(snapshot.ship.heading),
     fz = -Math.sin(snapshot.ship.heading);
@@ -2889,7 +3012,7 @@ function renderAarFrame(index: number) {
   ctx.beginPath();
   ctx.arc(ship.x, ship.y, 20, 0, Math.PI * 2);
   ctx.stroke();
-  label.textContent = `T+${aarTime(snapshot.time)} / HULL ${snapshot.ship.hull}% / ${snapshot.missiles.filter((m) => m.phase !== "destroyed").length} THREATS`;
+  label.textContent = `T+${aarTime(snapshot.time)} / HULL ${snapshot.ship.hull}% / ${snapshot.missiles.filter((m) => m.phase !== "destroyed").length} THREATS${snapshot.enemyPlatform ? ` / TARGET ${Math.round(snapshot.enemyPlatform.hull)}%` : ""}`;
   const eventButtons = [
     ...resultPanel.querySelectorAll<HTMLButtonElement>(".aar-event"),
   ];
@@ -2910,8 +3033,11 @@ function showAar(outcome: string, score: number) {
       / INTERCEPT |CIWS KILL/.test(e.text),
     ).length,
     softKills = aarEvents.filter((e) => /SOFT KILL/.test(e.text)).length,
-    impacts = aarEvents.filter((e) => / IMPACT /.test(e.text)).length;
-  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
+    impacts = aarEvents.filter((e) => / IMPACT /.test(e.text)).length,
+    harpoons = aarEvents.filter((e) =>
+      /RGM-84 HARPOON SURFACE LAUNCH/i.test(e.text),
+    ).length;
+  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
   const eventList = resultPanel.querySelector("#aarEvents")!;
   aarEvents.forEach((event, eventIndex) => {
     const button = document.createElement("button");
@@ -2986,7 +3112,7 @@ function augmentAarSubsystemSummary() {
   metric.innerHTML = `SYSTEMS<b>${operational}/${subsystemList.length} / ${average}%</b>`;
   metrics.appendChild(metric);
 }
-function finishMission(victory: boolean) {
+function finishMission(victory: boolean, outcomeOverride?: string) {
   if (missionEnded) return;
   missionEnded = true;
   running = false;
@@ -3005,11 +3131,11 @@ function finishMission(victory: boolean) {
           Math.max(0, elapsed - 20) * 5,
       ),
     ),
-    outcome = victory
+    outcome = outcomeOverride ?? (victory
       ? leakers === 0
         ? "AIRSPACE SECURED"
         : `RAID SURVIVED / ${leakers} LEAKER${leakers === 1 ? "" : "S"}`
-      : `${activeShip.name} DISABLED`;
+      : `${activeShip.name} DISABLED`);
   showAar(outcome, score);
   augmentAarSubsystemSummary();
 }
@@ -3096,6 +3222,12 @@ const srbocButton = controlButton("SRBOC: AUTO", () => {
   srbocEnabled = !srbocEnabled;
   srbocButton.textContent = `SRBOC: ${srbocEnabled ? "AUTO" : "HOLD"}`;
 });
+const surfaceAutoButton = controlButton("SURFACE STRIKE: AUTO", () => {
+  autoSurfaceStrike = !autoSurfaceStrike;
+  surfaceAutoButton.textContent = `SURFACE STRIKE: ${autoSurfaceStrike ? "AUTO" : "HOLD"}`;
+  log(`SURFACE STRIKE DOCTRINE / ${autoSurfaceStrike ? "AUTO" : "WEAPONS HOLD"}`);
+});
+controlButton("LAUNCH HARPOON", () => planSurfaceStrike(true));
 const weaponButton = controlButton(`WEAPON: ${selectedWeapon}`, () => {
   const weapons = activeShip.launcher.compatibleWeapons;
   selectedWeapon =
@@ -3955,17 +4087,26 @@ setInterval(() => {
   radarCtx.globalAlpha = 1;
   radarCtx.fillStyle = "#78e1c8";
   radarCtx.fillRect(cx - 3, cy - 3, 6, 6);
-  if (enemyPlatform) {
+  const surfaceTrack = surfacePicture.trackForTarget(1);
+  if (enemyPlatform && surfaceTrack) {
     const platformX =
         cx +
-        (enemyPlatform.model.position.x - defender.position.x) *
+        (surfaceTrack.position.x - defender.position.x) *
           RADAR_PIXELS_PER_WORLD_UNIT,
       platformY =
         cy +
-        (enemyPlatform.model.position.z - defender.position.z) *
-          RADAR_PIXELS_PER_WORLD_UNIT;
-    radarCtx.strokeStyle = "#ff6758";
+        (surfaceTrack.position.z - defender.position.z) *
+          RADAR_PIXELS_PER_WORLD_UNIT,
+      uncertainty = Math.max(
+        3,
+        (surfaceTrack.uncertainty / 100) * RADAR_PIXELS_PER_WORLD_UNIT,
+      );
+    radarCtx.strokeStyle = surfaceTrack.quality > 0.62 ? "#ff6758" : "#ffb347";
     radarCtx.fillStyle = "#ff6758";
+    radarCtx.globalAlpha = 0.25;
+    radarCtx.beginPath();
+    radarCtx.arc(platformX, platformY, uncertainty, 0, Math.PI * 2);
+    radarCtx.stroke();
     radarCtx.globalAlpha = 0.9;
     radarCtx.strokeRect(platformX - 7, platformY - 4, 14, 8);
     radarCtx.fillRect(platformX - 1, platformY - 1, 2, 2);
@@ -4065,6 +4206,202 @@ setInterval(() => {
   }
   radarCtx.globalAlpha = 1;
 }, 100);
+function planSurfaceStrike(manual = false) {
+  const strike = activeShip.surfaceStrike;
+  if (!strike || !enemyPlatform || enemyPlatform.destroyed) {
+    if (manual) log("SURFACE STRIKE INHIBIT / NO VALID PLATFORM TARGET");
+    return false;
+  }
+  const track = surfacePicture.trackForTarget(1);
+  if (!track || track.quality < strike.requiredTrackQuality) {
+    if (manual)
+      log(
+        `SURFACE STRIKE INHIBIT / TRACK QUALITY ${track ? Math.round(track.quality * 100) : 0}% / REQUIRES ${Math.round(strike.requiredTrackQuality * 100)}%`,
+      );
+    return false;
+  }
+  const range = track.position.distanceTo(defender.position);
+  if (range < strike.minRange || range > strike.maxRange) {
+    if (manual)
+      log(
+        `SURFACE STRIKE INHIBIT / RANGE ${(range / 10).toFixed(1)} km / ENVELOPE ${(strike.minRange / 10).toFixed(1)}-${(strike.maxRange / 10).toFixed(1)} km`,
+      );
+    return false;
+  }
+  const hardpoints = shipSurfaceHardpoints(defender).filter(
+    (hardpoint) => surfaceHardpointState.get(hardpoint.id) === "ready",
+  );
+  const count = Math.min(strike.salvoSize, surfaceStrikeAmmo, hardpoints.length);
+  if (count <= 0) {
+    if (manual) log("SURFACE STRIKE INHIBIT / HARPOON MAGAZINE EMPTY");
+    return false;
+  }
+  let launchAt = Math.max(elapsed, nextSurfaceLaunch);
+  for (let index = 0; index < count; index++) {
+    const hardpoint = hardpoints[index];
+    surfaceHardpointState.set(hardpoint.id, "reserved");
+    surfaceLaunchQueue.push({
+      hardpoint,
+      launchAt,
+      commandPoint: track.position
+        .clone()
+        .addScaledVector(track.velocity, 4 + index * 0.4),
+    });
+    launchAt += strike.minimumInterval;
+  }
+  nextSurfaceLaunch = launchAt;
+  nextSurfaceDecision = launchAt + 7;
+  log(
+    `SURFACE OODA / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
+  );
+  return true;
+}
+
+function updateSurfaceCombat(
+  dt: number,
+  primarySensor: string,
+  secondarySensor: string,
+  aspectHealth: Record<string, (bearing: number) => number>,
+) {
+  surfacePicture.update(
+    elapsed,
+    dt,
+    radarEnabled && enemyPlatform && !enemyPlatform.destroyed
+      ? [
+          {
+            id: 1,
+            position: enemyPlatform.model.position,
+            velocity: new THREE.Vector3(),
+            altitude: 30,
+            rcs: enemyPlatform.definition.radarCrossSection,
+          },
+        ]
+      : [],
+    {
+      [primarySensor]: subsystemHealth("primaryRadar"),
+      [secondarySensor]: subsystemHealth("secondaryRadar"),
+    },
+    defender.position,
+    aspectHealth,
+  );
+  surfacePicture
+    .drainEvents()
+    .forEach((event) => log(`SURFACE ${event}`));
+  const track = surfacePicture.trackForTarget(1);
+  if (
+    autoSurfaceStrike &&
+    elapsed >= nextSurfaceDecision &&
+    surfaceLaunchQueue.length === 0 &&
+    !surfaceStrikeMissiles.some((missile) => missile.phase !== "destroyed")
+  )
+    planSurfaceStrike(false);
+
+  for (let index = surfaceLaunchQueue.length - 1; index >= 0; index--) {
+    const request = surfaceLaunchQueue[index];
+    if (elapsed + 1e-6 < request.launchAt) continue;
+    surfaceLaunchQueue.splice(index, 1);
+    if (!enemyPlatform || enemyPlatform.destroyed) {
+      surfaceHardpointState.set(request.hardpoint.id, "ready");
+      continue;
+    }
+    const strike = activeShip.surfaceStrike!;
+    const missile = createSurfaceStrikeMissile(
+      surfaceStrikeMissiles.length + 1,
+      request.hardpoint,
+      enemyPlatform,
+      strike,
+      request.commandPoint,
+    );
+    surfaceHardpointState.set(request.hardpoint.id, "fired");
+    surfaceStrikeAmmo = Math.max(0, surfaceStrikeAmmo - 1);
+    surfaceStrikeMissiles.push(missile);
+    scene.add(missile.mesh, missile.path);
+    log(
+      `${activeShip.name} / ${request.hardpoint.id.toUpperCase()} / ${strike.weapon} SURFACE LAUNCH`,
+    );
+  }
+
+  for (const missile of surfaceStrikeMissiles) {
+    if (missile.phase === "destroyed") continue;
+    if (track && elapsed >= missile.nextDatalink && missile.phase !== "terminal") {
+      missile.commandPoint
+        .copy(track.position)
+        .addScaledVector(track.velocity, 4);
+      missile.nextDatalink = elapsed + 2.4;
+      log(
+        `${missile.target.definition.name} TRACK UPDATE / HARPOON ${missile.id} / TQ ${Math.round(track.quality * 100)}%`,
+      );
+    }
+    const density = surfaceStrikeMissiles.filter(
+      (other) =>
+        other.phase !== "destroyed" &&
+        other.mesh.position.distanceTo(missile.target.model.position) < 45,
+    ).length;
+    const event = updateSurfaceStrikeMissile(
+      missile,
+      dt,
+      elapsed,
+      density,
+    );
+    if (!event) continue;
+    if (event.kind === "seeker")
+      log(`RGM-84 HARPOON ${missile.id} ACTIVE SEEKER / TERMINAL SEARCH`);
+    else if (event.kind === "soft-kill")
+      log(
+        `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ECM-DECOY SEDUCTION`,
+      );
+    else if (event.kind === "point-defense") {
+      createExplosion(missile.mesh.position.clone());
+      log(
+        `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / PK ${Math.round(event.pk * 100)}% / LOCAL ${density}`,
+      );
+    } else {
+      surfaceHits++;
+      createExplosion(missile.target.model.position.clone().add(new THREE.Vector3(0, 7, 0)));
+      const hullMaterial = missile.target.model.userData
+        .hullMaterial as THREE.MeshStandardMaterial;
+      hullMaterial?.color.lerp(new THREE.Color(0x302a28), event.damage / 80);
+      log(
+        `HARPOON HIT / ${event.damage}% / ${event.subsystem.toUpperCase()} / ${missile.target.definition.name} HULL ${missile.target.hullIntegrity}%`,
+      );
+      if (event.platformDestroyed) {
+        surfaceHardKills++;
+        log(`SURFACE KILL / ${missile.target.definition.name} DISABLED`);
+      }
+    }
+  }
+  canvas.dataset.surfaceTrackQuality = (track?.quality ?? 0).toFixed(3);
+  canvas.dataset.surfaceTrackUncertainty = String(
+    Math.round(track?.uncertainty ?? 0),
+  );
+  canvas.dataset.surfaceStrikeAmmo = String(surfaceStrikeAmmo);
+  canvas.dataset.surfaceStrikeActive = String(
+    surfaceStrikeMissiles.filter((missile) => missile.phase !== "destroyed")
+      .length,
+  );
+  canvas.dataset.surfaceStrikeQueued = String(surfaceLaunchQueue.length);
+  canvas.dataset.surfaceHits = String(surfaceHits);
+  const liveSurfaceStrikes = surfaceStrikeMissiles.filter(
+    (missile) => missile.phase !== "destroyed",
+  );
+  canvas.dataset.surfaceStrikePhases = liveSurfaceStrikes
+    .map((missile) => missile.phase)
+    .join(",");
+  canvas.dataset.surfaceStrikeRanges = liveSurfaceStrikes
+    .map((missile) =>
+      missile.mesh.position.distanceTo(missile.target.model.position).toFixed(1),
+    )
+    .join(",");
+  canvas.dataset.surfaceStrikeClosest = liveSurfaceStrikes
+    .map((missile) => missile.closestTargetRange.toFixed(1))
+    .join(",");
+  canvas.dataset.enemyPlatformHull = String(
+    Math.round(enemyPlatform?.hullIntegrity ?? 0),
+  );
+  canvas.dataset.enemyPlatformDestroyed = String(
+    enemyPlatform?.destroyed ?? false,
+  );
+}
 function updateCombat(dt: number) {
   updateCiws();
   updateBoosterDebris(dt);
@@ -4126,6 +4463,12 @@ function updateCombat(dt: number) {
   canvas.dataset.radarScanMode = primaryDefinition.scanMode ?? "mechanical";
   canvas.dataset.radarPrimaryTracks = String(primaryTracks.length);
   canvas.dataset.radarBackgroundTracks = String(outsideFocus);
+  updateSurfaceCombat(
+    dt,
+    primarySensor,
+    secondarySensor,
+    aspectHealth,
+  );
   updateShipManeuver(dt);
   if (activeShip.launcher.kind === "mk10") updateMk10Launchers(dt);
   else updateVlsCells(dt);
@@ -4766,14 +5109,31 @@ function updateCombat(dt: number) {
     missiles.length > 0 &&
     missiles.every((m) => m.phase === "destroyed") &&
     hullIntegrity > 0 &&
-    launchSystemIdle
+    launchSystemIdle &&
+    surfaceLaunchQueue.length === 0 &&
+    surfaceStrikeMissiles.every((m) => m.phase === "destroyed")
   ) {
     interceptors.forEach((i) => {
       i.mesh.visible = false;
       i.illuminationBeam.visible = false;
     });
     updateShipStatus();
-    finishMission(true);
+    if (!enemyPlatform) finishMission(true);
+    else if (enemyPlatform.destroyed)
+      finishMission(
+        true,
+        `SURFACE ACTION WON / ${enemyPlatform.definition.name} DISABLED`,
+      );
+    else if (
+      surfaceStrikeAmmo === 0 ||
+      !shipSurfaceHardpoints(defender).some(
+        (hardpoint) => surfaceHardpointState.get(hardpoint.id) === "ready",
+      )
+    )
+      finishMission(
+        false,
+        `SURFACE STRIKE FAILED / ${enemyPlatform.definition.name} SURVIVED`,
+      );
   }
 }
 function updateIncomingMissile(m: Missile, dt: number) {
@@ -4781,6 +5141,39 @@ function updateIncomingMissile(m: Missile, dt: number) {
     m.mesh.userData.seekerLine.visible = false;
     m.mesh.userData.seekerFov.visible = false;
     return;
+  }
+  const pendingPlatformLaunch = m.platformLaunch;
+  if (pendingPlatformLaunch && !pendingPlatformLaunch.released) {
+    const platform = pendingPlatformLaunch.reservation.platform;
+    if (platform.destroyed) {
+      m.phase = "destroyed";
+      m.mesh.visible = false;
+      m.path.visible = false;
+      platform.hardpointState.set(
+        pendingPlatformLaunch.reservation.hardpoint.id,
+        "fired",
+      );
+      log(
+        `${platform.definition.name} LAUNCH ABORT / ${pendingPlatformLaunch.reservation.hardpoint.id.toUpperCase()} / PLATFORM DISABLED`,
+      );
+      return;
+    }
+    if (elapsed >= m.launchAt) {
+      const trackQuality = Math.max(
+        0,
+        ...[...platform.sensorState.values()].map((state) => state.quality),
+      );
+      if (
+        trackQuality <
+        pendingPlatformLaunch.reservation.weaponSlot.minimumTrackQuality
+      ) {
+        m.launchAt = elapsed + 0.25;
+        m.mesh.visible = false;
+        m.path.visible = false;
+        m.mesh.userData.seekerLine.visible = false;
+        return;
+      }
+    }
   }
   if (elapsed < m.launchAt) {
     m.mesh.visible = false;

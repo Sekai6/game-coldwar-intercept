@@ -69,6 +69,16 @@ export function instantiateEnemyPlatform(
     weaponSlotNextLaunch: new Map(
       definition.weaponSlots.map((slot) => [slot.id, 0]),
     ),
+    hullIntegrity: definition.survivability.hull,
+    subsystemHealth: new Map([
+      ...definition.sensorSlots.map((sensor) => [sensor.id, 100] as const),
+      ...definition.weaponSlots.map((slot) => [slot.id, 100] as const),
+      ["propulsion", 100] as const,
+      ["point-defense", 100] as const,
+      ["electronic-warfare", 100] as const,
+    ]),
+    nextPointDefense: 0,
+    destroyed: false,
   };
   return instance;
 }
@@ -191,17 +201,27 @@ export function updateEnemyPlatform(
   elapsed: number,
   targetPosition: THREE.Vector3,
 ) {
+  const sensorHealth =
+    platform.definition.sensorSlots.reduce(
+      (sum, sensor) => sum + (platform.subsystemHealth.get(sensor.id) ?? 100),
+      0,
+    ) / Math.max(1, platform.definition.sensorSlots.length * 100);
   for (const sensor of platform.slots.rotatingSensors)
-    sensor.rotation.y = elapsed * 0.42;
+    sensor.rotation.y += 0.007 * sensorHealth;
   const range = platform.model.position.distanceTo(targetPosition);
   for (const definition of platform.definition.sensorSlots) {
     const state = platform.sensorState.get(definition.id)!;
     if (elapsed < state.nextUpdate) continue;
     state.nextUpdate = elapsed + definition.updateInterval;
     const ratio = range / Math.max(1, definition.maxRange);
+    const health = (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
     state.quality =
       ratio <= 1
-        ? THREE.MathUtils.clamp((1 - ratio * ratio) * definition.precision, 0, 1)
+        ? THREE.MathUtils.clamp(
+            (1 - ratio * ratio) * definition.precision * health,
+            0,
+            1,
+          )
         : 0;
   }
 }
@@ -218,4 +238,5 @@ export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
   platform.hardpointState.clear();
   platform.sensorState.clear();
   platform.weaponSlotNextLaunch.clear();
+  platform.subsystemHealth.clear();
 }

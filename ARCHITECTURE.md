@@ -16,6 +16,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, and sensor updates.
 - `src/platforms/catalog.ts`: enemy-platform registry and lookup.
 - `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.
+- `src/surface-combat.ts`: generic friendly anti-ship missile runtime, terminal seeker, finite platform defenses, and platform damage.
 - `src/combat-types.ts`: shared runtime domain types.
 - `src/interceptor-data.ts`: ship-launched interceptor flight profiles.
 - `src/threats/catalog.ts`: incoming-threat registry and derived `EnemyType`.
@@ -52,6 +53,15 @@ The simulation is organized around capabilities rather than ship-name checks.
 4. Register the definition once in `ENEMY_PLATFORM_DEFINITIONS`. Sandbox selectors derive compatible threats and capacity from the catalog.
 5. Runtime must prove declared capacity equals physical hardpoint count. Primary and second waves share hardpoint state and `weaponSlotNextLaunch`; no wave may reuse a fired or reserved tube.
 6. Platform departure remains generic: the missile stores a `PlatformLaunchReservation`, releases the referenced cover, follows that hardpoint's transformed axis, and hands off to the threat profile after the configured takeover time. `main.ts` must not compare a platform ID or missile ID to choose this behavior.
+7. Declare `minimumTrackQuality` on every platform weapon slot. Pending launches are held until platform sensors satisfy that gate; destroying the platform aborts only unreleased reservations.
+
+## Adding friendly surface-strike capability
+
+1. Declare `surfaceStrike` in the ship catalog with weapon, magazine, interval, range, track-quality, damage, and salvo fields.
+2. Attach `ModelWeaponHardpoint[]` to `model.userData.surfaceStrikeHardpoints`; shared launchers such as Mk 141 should come from `model-primitives.ts`.
+3. Keep the launch and flight runtime generic. It consumes transformed hardpoint positions/directions and capability fields, never a ship ID.
+4. Enemy-platform survivability declares hull, point-defense range/interval/PK/finite engagements, saturation penalty, and soft-kill PK. Runtime subsystem health modifies those capabilities.
+5. Surface truth, surface tracks, Harpoons, and platform damage must be represented separately in AAR snapshots so replay never substitutes hidden truth for the tactical picture.
 
 ## Adding an interceptor
 

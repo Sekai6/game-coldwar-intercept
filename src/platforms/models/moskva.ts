@@ -139,6 +139,7 @@ function createMoskvaModel() {
   }
 
   ship.userData.platformSlots = slots;
+  ship.userData.hullMaterial = hullMaterial;
   ship.userData.hullLength = 83;
   ship.userData.hullBeam = 9.24;
   ship.userData.hullLengthBeamRatio = 83 / 9.24;
@@ -161,7 +162,18 @@ export const MOSKVA = {
     { id: "strike-control", displayName: "ARGUMENT / FRONT DOOR", role: "fire-control", anchorId: "argument", maxRange: 680, updateInterval: 0.55, precision: 0.9 },
   ],
   weaponSlots: [
-    { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8 },
+    { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8, minimumTrackQuality: 0.3 },
   ],
+  survivability: {
+    hull: 100,
+    pointDefense: {
+      range: 42,
+      interval: 0.42,
+      basePk: 0.38,
+      localSaturationPenalty: 0.08,
+      engagementsPerTarget: 1,
+    },
+    softKillPk: 0.2,
+  },
   buildModel: createMoskvaModel,
 } as const satisfies EnemyPlatformDefinition;

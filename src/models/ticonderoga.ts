@@ -9,7 +9,9 @@ import {
 } from "./hull-geometry";
 import {
   addModelStrut as strut,
+  createMk141Launcher,
   createSlopedBoxGeometry as slopedBox,
+  type ModelWeaponHardpoint,
 } from "./model-primitives";
 
 const TICONDEROGA_LENGTH_SCALE = 1.13;
@@ -104,32 +106,6 @@ function ciws(material: THREE.Material, dark: THREE.Material, name: string) {
   radome.position.set(-0.25, 1.55, 0);
   group.add(base, turret, pivot, radome);
   group.userData.elevationPivot = pivot;
-  return group;
-}
-function mk141Launcher(material: THREE.Material, dark: THREE.Material) {
-  const group = new THREE.Group();
-  const cradle = new THREE.Mesh(
-    new THREE.BoxGeometry(3.8, 0.25, 2.15),
-    dark,
-  );
-  cradle.position.y = 0.18;
-  group.add(cradle);
-  for (const y of [0.58, 1.18])
-    for (const z of [-0.52, 0.52]) {
-      const tube = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.39, 0.43, 3.5, 8),
-        material,
-      );
-      tube.rotation.z = Math.PI / 2;
-      tube.position.set(0, y, z);
-      const cap = new THREE.Mesh(
-        new THREE.CircleGeometry(0.34, 8),
-        dark,
-      );
-      cap.rotation.y = Math.PI / 2;
-      cap.position.set(1.76, y, z);
-      group.add(tube, cap);
-    }
   return group;
 }
 function slq32Array(material: THREE.Material, dark: THREE.Material) {
@@ -653,10 +629,18 @@ export function buildTiconderoga() {
       canister.position.set(longitudinal(x), 8.2, side * 4);
       highDetail.add(canister);
     }
+  const surfaceStrikeHardpoints: ModelWeaponHardpoint[] = [];
   for (const side of [-1, 1]) {
-    const harpoon = mk141Launcher(superMat, dark);
+    const harpoon = createMk141Launcher(
+      superMat,
+      dark,
+      `mk141-${side > 0 ? "starboard" : "port"}`,
+    );
     harpoon.position.set(longitudinal(-1.5), 7.2, side * 2.15);
     harpoon.rotation.y = side * 0.42;
+    surfaceStrikeHardpoints.push(
+      ...(harpoon.userData.weaponHardpoints as ModelWeaponHardpoint[]),
+    );
     highDetail.add(harpoon);
     const ewArray = slq32Array(arrayMat, dark);
     ewArray.position.set(longitudinal(1.8), 13.2, side * 3.38);
@@ -833,6 +817,7 @@ export function buildTiconderoga() {
     hullLength: longitudinal(68),
     hullBeam: 7.48,
     hullLengthBeamRatio: longitudinal(68) / 7.48,
+    surfaceStrikeHardpoints,
     vlsCells,
     radar,
     secondaryRadar: sps49,
@@ -878,6 +863,17 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
   role: "AEGIS AIR DEFENSE CRUISER",
   platform: { maxSpeedKnots: 32.5, turnRateDeg: 1.8, radarRcs: 10.5 },
   hullColor: 0x748183,
+  surfaceStrike: {
+    weapon: "RGM-84 Harpoon",
+    displayName: "2 x MK 141 QUAD HARPOON",
+    magazine: 8,
+    minimumInterval: 1.4,
+    minRange: 35,
+    maxRange: 720,
+    requiredTrackQuality: 0.58,
+    damage: 24,
+    salvoSize: 4,
+  },
   launcher: {
     kind: "mk41",
     displayName: "MK 41 VLS",

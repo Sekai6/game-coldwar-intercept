@@ -8,7 +8,9 @@ import {
 } from "./hull-geometry";
 import {
   addModelStrut as addStrut,
+  createMk141Launcher,
   createSlopedBoxGeometry,
+  type ModelWeaponHardpoint,
 } from "./model-primitives";
 
 const LONG_BEACH_HULL: readonly HullStation[] = [
@@ -689,6 +691,20 @@ export function buildLongBeach(color = 0x687574, scale = 1) {
     if (o.name === "launcherArm") forwardLauncher.userData.arms.push(o);
   });
   g.add(forwardLauncher);
+  const surfaceStrikeHardpoints: ModelWeaponHardpoint[] = [];
+  for (const side of [-1, 1]) {
+    const harpoon = createMk141Launcher(
+      deckMat,
+      darkMat,
+      `mk141-${side > 0 ? "starboard" : "port"}`,
+    );
+    harpoon.position.set(-12.5, 6.28, side * 2.05);
+    harpoon.rotation.y = side * 0.4;
+    surfaceStrikeHardpoints.push(
+      ...(harpoon.userData.weaponHardpoints as ModelWeaponHardpoint[]),
+    );
+    g.add(harpoon);
+  }
   const safetyMat = new THREE.MeshStandardMaterial({
     color: 0xd5b64e,
     metalness: 0.2,
@@ -1082,6 +1098,7 @@ export function buildLongBeach(color = 0x687574, scale = 1) {
   g.userData = {
     hullStations: LONG_BEACH_HULL.length,
     hullSectionPoints: 8,
+    surfaceStrikeHardpoints,
     radar,
     secondaryRadar: sps49,
     fireControl,

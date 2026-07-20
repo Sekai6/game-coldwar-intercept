@@ -32,6 +32,7 @@ export interface PlatformWeaponSlot {
   exitSpeed: number;
   boostDuration: number;
   guidanceTakeover: number;
+  minimumTrackQuality: number;
 }
 
 export interface PlatformWeaponHardpoint {
@@ -60,6 +61,17 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   defaultThreat: EnemyType;
   sensorSlots: readonly PlatformSensorSlot[];
   weaponSlots: readonly PlatformWeaponSlot[];
+  survivability: {
+    hull: number;
+    pointDefense: {
+      range: number;
+      interval: number;
+      basePk: number;
+      localSaturationPenalty: number;
+      engagementsPerTarget: number;
+    };
+    softKillPk: number;
+  };
   buildModel: () => THREE.Group;
 }
 
@@ -70,6 +82,10 @@ export interface EnemyPlatformInstance {
   hardpointState: Map<string, "ready" | "reserved" | "fired">;
   sensorState: Map<string, { nextUpdate: number; quality: number }>;
   weaponSlotNextLaunch: Map<string, number>;
+  hullIntegrity: number;
+  subsystemHealth: Map<string, number>;
+  nextPointDefense: number;
+  destroyed: boolean;
 }
 
 export interface PlatformLaunchReservation {

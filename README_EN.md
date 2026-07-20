@@ -91,7 +91,7 @@ Radar scan -> noisy track -> 3D fire-control solution -> launcher slew
 <a id="current-scope"></a>
 ### Current Scope
 
-The current build is a single-ship air-defense sandbox. It can use the Slava-class Moskva as a visible enemy missile-launch platform with physical weapon slots, but it does not yet support anti-ship attacks or damage against that platform. Fleet-level CEC, aviation, submarines, multiplayer, and a complete mission-authoring system also remain out of scope. Ship and weapon visuals are generated procedurally and do not depend on external 3D model files.
+The current build is a single-ship air-defense and surface-action sandbox. The Slava-class Moskva is both a visible launch platform with sixteen physical P-500 slots and a searchable, trackable, damageable surface target. Both CGN-9 and CG-57 can launch RGM-84 Harpoons from physical Mk 141 hardpoints. Fleet-level CEC, aviation, submarines, multiplayer, and a complete mission-authoring system remain out of scope. Ship and weapon visuals are generated procedurally.
 
 <a id="quick-start"></a>
 ## 2. Quick Start
@@ -268,6 +268,16 @@ P-15 uses separate seeker-activation and descent gates. It enters active-radar g
 The Slava-class Moskva is the first cataloged enemy platform. Its definition declares MR-800, MR-700, and Argument sensor slots plus one P-500-compatible `inclined-canister` weapon slot. Its model exposes a standard `platformSlots` manifest with sixteen physical Bazalt hardpoints, tube-axis directions, and individual releasable covers. Runtime first proves that declared capacity equals model hardpoint count, then reserves unused hardpoints across the primary and second waves while sharing one `nextAvailable` time for mechanical spacing.
 
 A platform-launched P-500 is not spawned in open air. It starts at a specific tube's world position and moves through `TUBE EXIT -> BOOST -> PROGRAM TURN -> MIDCOURSE TAKEOVER` using the slot-defined axis, exit speed, boost duration, and takeover time. Only after takeover does it enter the generic P-500 envelope, radar-altimeter, and terminal-guidance logic. Cover and hardpoint states remain one-to-one, so a fired tube cannot be reserved again by a later wave.
+
+Each platform weapon slot also declares a minimum track quality. A reservation does not guarantee immediate launch: Moskva must first establish an adequate track with its own sensors. If the platform is disabled, unreleased reservations are aborted while missiles already clear of their tubes continue the attack.
+
+### Surface-action loop
+
+Both selectable ships declare a data-driven `surfaceStrike` capability and eight physical Mk 141 hardpoints. A separate surface picture tracks the enemy platform with refresh, uncertainty, RCS, sensor health, and quality effects. Once range and quality gates are met, auto doctrine launches four-round salvos; `SURFACE STRIKE` hold and `LAUNCH HARPOON` provide manual control.
+
+Each Harpoon departs along its actual launcher axis and transitions through `boost -> midcourse -> terminal`. Midcourse guidance follows an uncertain datalink command point; the active seeker switches to platform truth only in terminal flight. Speed response, turn rate, sea-skimming altitude, terminal weave, and closest approach remain physical constraints. Platform ECM/decoys receive one soft-kill resolution, while point defense uses a shared firing interval, finite engagements per target, subsystem health, and local saturation penalties instead of unlimited repeated attempts.
+
+Hits reduce hull integrity and a deterministic subsystem. Sensor damage degrades track quality and antenna rotation; point-defense and EW damage reduce their corresponding kill probabilities. Mission completion waits for all incoming weapons, Harpoons, queues, and ship launch mechanisms before declaring a surface kill or a failed strike with the target surviving.
 
 <a id="sam-guidance"></a>
 ## 7. SAMs and Guidance
@@ -496,7 +506,7 @@ USS Long Beach is represented by a procedural model built around recognizable fe
 <a id="aar"></a>
 ## 14. After Action Review
 
-The simulation records a tactical snapshot every 0.25 seconds with ship position/heading/hull, incoming missiles, interceptors, and chaff clouds. At mission end the AAR provides:
+The simulation records a tactical snapshot every 0.25 seconds with the friendly ship, enemy platform and hull state, incoming missiles, interceptors, Harpoons, and chaff clouds. At mission end the AAR provides:
 
 - Threats, SAM shots, hard kills, soft kills, leakers, hull, and system-health metrics.
 - A 2D tactical replay with play, pause, scrub, start, and end controls.
@@ -607,7 +617,7 @@ The repository contains development verification screenshots for the hull, radar
 ## 18. Known Boundaries and Future Work
 
 - USS Long Beach and USS Lake Champlain are selectable, but each scenario still contains one defending ship with no escorts, AEW aircraft, or CEC network.
-- Moskva is currently a visible attack origin with sensors, launch slots, and a physical departure sequence; it is not yet a searchable surface target that can receive anti-ship fire or damage.
+- Surface combat currently covers one friendly ship against one enemy launch platform; formation-level target assignment and CEC remain future work.
 - Curvature, weather, sea state, and radar propagation use simplified relationships.
 - There is no continuous six-degree-of-freedom aerodynamic rigid body; flight is a 3D point-mass approximation.
 - Seekers and ECM are explainable probability/signal models, not RF engineering simulations.

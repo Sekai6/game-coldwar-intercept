@@ -173,4 +173,18 @@ export type AarSnapshot = {
     targetId: number;
   }[];
   chaff: { x: number; z: number; side: "threat" | "ship" }[];
+  enemyPlatform: {
+    x: number;
+    z: number;
+    heading: number;
+    hull: number;
+    destroyed: boolean;
+    name: string;
+  } | null;
+  surfaceStrikes: {
+    id: number;
+    x: number;
+    z: number;
+    phase: "boost" | "midcourse" | "terminal" | "destroyed";
+  }[];
 };
