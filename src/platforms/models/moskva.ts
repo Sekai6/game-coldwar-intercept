@@ -158,8 +158,12 @@ export const MOSKVA = {
   mobility: {
     maxSpeedKnots: 32,
     cruiseSpeedKnots: 20,
+    patrolSpeedKnots: 12,
     accelerationKnotsPerSecond: 0.42,
     turnRateDeg: 1.35,
+    decisionInterval: 1,
+    standoffRange: 520,
+    standoffTolerance: 70,
   },
   defaultThreat: "P-500",
   sensorSlots: [

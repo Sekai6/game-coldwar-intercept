@@ -14,7 +14,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/models/us-navy-equipment.ts`: reusable Mk 41, Mk 45, Phalanx, SPG-62, SPY-1, and SLQ-32 visual components with stable animation anchors.
 - `src/platforms/types.ts`: enemy-platform definitions, sensor slots, weapon slots, physical hardpoints, and runtime instances.
 - `src/platforms/model-slots.ts`: typed model-anchor registration without platform-name checks.
-- `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, and sensor updates.
+- `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, sensor updates, and observed-track-driven platform maneuver OODA.
 - `src/platforms/catalog.ts`: enemy-platform registry and lookup.
 - `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.
 - `src/surface-combat.ts`: generic friendly anti-ship missile runtime, terminal seeker, finite platform defenses, and platform damage.
@@ -58,6 +58,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 8. Platform mobility is capability data (`maxSpeedKnots`, cruise setting, acceleration, and turn rate). Runtime owns velocity and heading integration; sensor tracks consume that velocity instead of assuming a static target.
 9. Platform target tracks are measured state, never aliases of defender truth. Weapon slots declare datalink interval, latency, and minimum quality. Released weapons coast on their last command point when the link fails.
 10. Terminal seeker acquisition is capability-driven by range and field of view. A platform-launched threat may use truth only after acquisition; ECM, decoys, and autonomous terminal aim must not leak truth into midcourse guidance.
+11. Platform maneuver decisions consume only the platform target track and qualified incoming-weapon tracks. Defender truth may enter runtime as a radar measurement input, but must not directly select close, standoff, withdraw, or defensive-beam states. Mobility doctrine belongs in the platform definition rather than platform-ID branches.
 
 ## Adding friendly surface-strike capability
 

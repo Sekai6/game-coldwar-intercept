@@ -6205,7 +6205,7 @@ function tick(now: number) {
         const defenderVelocity = new THREE.Vector3(1, 0, 0)
           .applyAxisAngle(new THREE.Vector3(0, 1, 0), defender.rotation.y)
           .multiplyScalar(shipSpeedKnots * 0.005144);
-        updateEnemyPlatform(
+        const platformUpdate = updateEnemyPlatform(
           enemyPlatform,
           elapsed,
           0.05,
@@ -6213,6 +6213,10 @@ function tick(now: number) {
           defenderVelocity,
           opforRadarEnabled,
         );
+        if (platformUpdate.maneuverChanged)
+          log(
+            `OODA MANEUVER / ${platformUpdate.maneuverMode.toUpperCase()} / ${enemyPlatform.definition.name} / CMD ${enemyPlatform.commandedSpeedKnots.toFixed(0)} KT`,
+          );
       }
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
@@ -6270,6 +6274,12 @@ function tick(now: number) {
     );
     canvas.dataset.enemyPlatformSpeedKnots = enemyPlatform.speedKnots.toFixed(2);
     canvas.dataset.enemyPlatformVelocity = enemyPlatform.velocity.length().toFixed(4);
+    canvas.dataset.enemyPlatformManeuverMode = enemyPlatform.maneuverMode;
+    canvas.dataset.enemyPlatformCommandedSpeedKnots =
+      enemyPlatform.commandedSpeedKnots.toFixed(2);
+    canvas.dataset.enemyPlatformDesiredHeadingDeg = THREE.MathUtils.radToDeg(
+      enemyPlatform.desiredHeading,
+    ).toFixed(2);
   } else {
     canvas.dataset.enemyPlatform = "AIRBORNE";
     canvas.dataset.enemyPlatformReady = "0";
@@ -6285,6 +6295,9 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformCoversVisible = "0";
     canvas.dataset.enemyPlatformSpeedKnots = "0.00";
     canvas.dataset.enemyPlatformVelocity = "0.0000";
+    canvas.dataset.enemyPlatformManeuverMode = "not-applicable";
+    canvas.dataset.enemyPlatformCommandedSpeedKnots = "0.00";
+    canvas.dataset.enemyPlatformDesiredHeadingDeg = "0.00";
   }
   ocean.update(elapsed);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,

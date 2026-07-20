@@ -2,6 +2,13 @@ import type * as THREE from "three";
 import type { EnemyType } from "../threats/catalog";
 
 export type EnemyPlatformId = string;
+export type PlatformManeuverMode =
+  | "patrol"
+  | "close"
+  | "standoff"
+  | "withdraw"
+  | "defensive-beam"
+  | "disabled";
 export type PlatformSensorRole =
   | "air-search"
   | "surface-search"
@@ -66,8 +73,12 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   mobility: {
     maxSpeedKnots: number;
     cruiseSpeedKnots: number;
+    patrolSpeedKnots: number;
     accelerationKnotsPerSecond: number;
     turnRateDeg: number;
+    decisionInterval: number;
+    standoffRange: number;
+    standoffTolerance: number;
   };
   defaultThreat: EnemyType;
   sensorSlots: readonly PlatformSensorSlot[];
@@ -118,6 +129,9 @@ export interface EnemyPlatformInstance {
   velocity: THREE.Vector3;
   speedKnots: number;
   desiredHeading: number;
+  commandedSpeedKnots: number;
+  nextManeuverDecision: number;
+  maneuverMode: PlatformManeuverMode;
   targetTrack: {
     position: THREE.Vector3;
     velocity: THREE.Vector3;

@@ -94,6 +94,9 @@ export function instantiateEnemyPlatform(
     velocity: new THREE.Vector3(),
     speedKnots: 0,
     desiredHeading: heading,
+    commandedSpeedKnots: definition.mobility.patrolSpeedKnots,
+    nextManeuverDecision: 0,
+    maneuverMode: "patrol",
     targetTrack: {
       position: position.clone(),
       velocity: new THREE.Vector3(),
@@ -229,6 +232,7 @@ export function updateEnemyPlatform(
   targetVelocity: THREE.Vector3,
   sensorsEnabled: boolean,
 ) {
+  const previousManeuverMode = platform.maneuverMode;
   const sensorHealth = platform.destroyed || !sensorsEnabled
     ? 0
     : platform.definition.sensorSlots.reduce(
@@ -239,19 +243,92 @@ export function updateEnemyPlatform(
     sensor.rotation.y += 0.007 * sensorHealth;
   const propulsion =
       (platform.subsystemHealth.get("propulsion") ?? 100) / 100,
-    mobility = platform.definition.mobility,
-    toTarget = targetPosition.clone().sub(platform.model.position).setY(0),
-    targetRange = toTarget.length();
-  if (targetRange > 1) {
-    const axis = toTarget.normalize(),
-      beam = new THREE.Vector3(-axis.z, 0, axis.x);
-    platform.desiredHeading = Math.atan2(-beam.z, beam.x);
+    mobility = platform.definition.mobility;
+  if (elapsed >= platform.nextManeuverDecision) {
+    platform.nextManeuverDecision = elapsed + mobility.decisionInterval;
+    const headingFor = (direction: THREE.Vector3) =>
+      Math.atan2(-direction.z, direction.x);
+    const headingDelta = (heading: number) =>
+      Math.abs(
+        Math.atan2(
+          Math.sin(heading - platform.model.rotation.y),
+          Math.cos(heading - platform.model.rotation.y),
+        ),
+      );
+    const defense = platform.definition.survivability.pointDefense;
+    const incoming = [...platform.incomingTracks.values()]
+      .filter(
+        (track) =>
+          track.detectionLogged &&
+          track.quality >= defense.minimumTrackQuality &&
+          elapsed - track.lastUpdate <= defense.trackMemory,
+      )
+      .sort(
+        (a, b) =>
+          a.position.distanceToSquared(platform.model.position) -
+          b.position.distanceToSquared(platform.model.position),
+      )[0];
+    if (platform.destroyed) {
+      platform.maneuverMode = "disabled";
+      platform.commandedSpeedKnots = 0;
+    } else if (incoming) {
+      const threatAxis = incoming.position
+        .clone()
+        .sub(platform.model.position)
+        .setY(0)
+        .normalize();
+      const beams = [
+        new THREE.Vector3(-threatAxis.z, 0, threatAxis.x),
+        new THREE.Vector3(threatAxis.z, 0, -threatAxis.x),
+      ];
+      const beamHeadings = beams.map(headingFor);
+      platform.desiredHeading =
+        headingDelta(beamHeadings[0]) <= headingDelta(beamHeadings[1])
+          ? beamHeadings[0]
+          : beamHeadings[1];
+      platform.commandedSpeedKnots = mobility.maxSpeedKnots;
+      platform.maneuverMode = "defensive-beam";
+    } else if (platform.targetTrack.valid) {
+      const toTrack = platform.targetTrack.position
+        .clone()
+        .sub(platform.model.position)
+        .setY(0);
+      const trackRange = toTrack.length();
+      if (trackRange > 1) {
+        const axis = toTrack.normalize();
+        if (trackRange > mobility.standoffRange + mobility.standoffTolerance) {
+          platform.desiredHeading = headingFor(axis);
+          platform.maneuverMode = "close";
+        } else if (
+          trackRange <
+          mobility.standoffRange - mobility.standoffTolerance
+        ) {
+          platform.desiredHeading = headingFor(axis.multiplyScalar(-1));
+          platform.maneuverMode = "withdraw";
+        } else {
+          const beams = [
+            new THREE.Vector3(-axis.z, 0, axis.x),
+            new THREE.Vector3(axis.z, 0, -axis.x),
+          ];
+          const beamHeadings = beams.map(headingFor);
+          platform.desiredHeading =
+            headingDelta(beamHeadings[0]) <= headingDelta(beamHeadings[1])
+              ? beamHeadings[0]
+              : beamHeadings[1];
+          platform.maneuverMode = "standoff";
+        }
+      }
+      platform.commandedSpeedKnots = mobility.cruiseSpeedKnots;
+    } else {
+      platform.maneuverMode = "patrol";
+      platform.commandedSpeedKnots = mobility.patrolSpeedKnots;
+    }
   }
   const maximumSpeed =
       mobility.maxSpeedKnots * propulsion * Math.max(0.35, platform.hullIntegrity / 100),
     commandedSpeed = platform.destroyed
       ? 0
-      : Math.min(maximumSpeed, mobility.cruiseSpeedKnots),
+      : Math.min(maximumSpeed, platform.commandedSpeedKnots),
     speedStep = mobility.accelerationKnotsPerSecond * (0.2 + 0.8 * propulsion) * dt;
   platform.speedKnots += THREE.MathUtils.clamp(
     commandedSpeed - platform.speedKnots,
@@ -337,6 +414,10 @@ export function updateEnemyPlatform(
     );
     if (!sufficient) platform.weaponTrackReadyLogged.delete(slot.id);
   }
+  return {
+    maneuverChanged: previousManeuverMode !== platform.maneuverMode,
+    maneuverMode: platform.maneuverMode,
+  };
 }
 
 export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
