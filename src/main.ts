@@ -6417,6 +6417,7 @@ function tick(now: number) {
           defender.position,
           defenderVelocity,
           activeShip.platform.significantHeightMeters,
+          activeShip.platform.radarRcs,
           opforRadarEnabled,
         );
         if (platformUpdate.maneuverChanged)

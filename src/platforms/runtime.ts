@@ -233,6 +233,7 @@ export function updateEnemyPlatform(
   targetPosition: THREE.Vector3,
   targetVelocity: THREE.Vector3,
   targetSignificantHeightMeters: number,
+  targetRadarCrossSection: number,
   sensorsEnabled: boolean,
 ) {
   const previousManeuverMode = platform.maneuverMode;
@@ -344,13 +345,15 @@ export function updateEnemyPlatform(
   platform.velocity.copy(forward).multiplyScalar(platform.speedKnots * 0.005144);
   platform.model.position.addScaledVector(platform.velocity, dt);
   const range = platform.model.position.distanceTo(targetPosition);
-  let sensorUpdated = false;
+  let sensorDetected = false;
   for (const definition of platform.definition.sensorSlots) {
     const state = platform.sensorState.get(definition.id)!;
     if (elapsed < state.nextUpdate) continue;
-    sensorUpdated = true;
     state.nextUpdate = elapsed + definition.updateInterval;
-    const ratio = range / Math.max(1, definition.maxRange);
+    const effectiveRange =
+      definition.maxRange *
+      Math.pow(Math.max(0.05, targetRadarCrossSection / 10), 0.25);
+    const ratio = range / Math.max(1, effectiveRange);
     const health = platform.destroyed || !sensorsEnabled
       ? 0
       : (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
@@ -362,7 +365,7 @@ export function updateEnemyPlatform(
         range > horizon
           ? Math.max(0.02, 0.16 * Math.exp(-(range - horizon) / 180))
           : 1;
-    state.quality =
+    const candidateQuality =
       ratio <= 1
         ? THREE.MathUtils.clamp(
             (1 - ratio * ratio) *
@@ -373,13 +376,31 @@ export function updateEnemyPlatform(
             1,
           )
         : 0;
+    const detectionProbability = THREE.MathUtils.clamp(
+      (0.94 - ratio * ratio * 0.64) * horizonFactor * health,
+      0.02,
+      0.95,
+    );
+    const deterministicSample =
+      Math.abs(
+        Math.sin(
+          elapsed * 13.17 +
+            definition.id.length * 71.31 +
+            platform.model.position.x * 0.17 +
+            platform.model.position.z * 0.11,
+        ),
+      ) % 1;
+    if (deterministicSample < detectionProbability) {
+      state.quality = candidateQuality;
+      sensorDetected = true;
+    } else state.quality *= 0.78;
   }
   const bestTrackQuality = Math.max(
     0,
     ...[...platform.sensorState.values()].map((state) => state.quality),
   );
   const track = platform.targetTrack;
-  if (sensorUpdated && bestTrackQuality > 0.04) {
+  if (sensorDetected && bestTrackQuality > 0.04) {
     const uncertainty = 2 + (1 - bestTrackQuality) * 24,
       phase = elapsed * 0.41 + platform.definition.radarCrossSection * 0.17,
       error = new THREE.Vector3(
@@ -410,7 +431,8 @@ export function updateEnemyPlatform(
       track.valid = false;
   }
   for (const slot of platform.definition.weaponSlots) {
-    const sufficient = bestTrackQuality >= slot.minimumTrackQuality;
+    const sufficient =
+      track.valid && track.quality >= slot.minimumTrackQuality;
     platform.weaponTrackAge.set(
       slot.id,
       sufficient ? (platform.weaponTrackAge.get(slot.id) ?? 0) + dt : 0,
