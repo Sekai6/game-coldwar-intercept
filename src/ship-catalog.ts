@@ -28,6 +28,11 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
     datalinkMinimumQuality: 0.22,
     damage: 34,
     salvoSize: 4,
+    minimumSalvoSize: 2,
+    maximumWeaponsInFlight: 4,
+    assessmentDelay: 3.5,
+    expectedLeakProbability: 0.44,
+    targetHullEstimate: 100,
   },
   launcher: {
     kind: "mk10",

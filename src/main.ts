@@ -61,6 +61,7 @@ import {
   updateSurfaceStrikeMissile,
   type SurfaceStrikeMissile,
 } from "./surface-combat";
+import { planSurfaceSalvo } from "./surface-doctrine";
 import type {
   AarCategory,
   AarEvent,
@@ -378,6 +379,11 @@ let surfaceHardpointState = new Map<
   surfaceHardKills = 0,
   surfaceSoftKills = 0,
   surfacePointDefenseKills = 0,
+  surfaceMisses = 0,
+  nextSurfaceAssessment = 0,
+  surfaceStrikeWave = 0,
+  surfaceRequiredHits = 0,
+  surfacePlanningLeakProbability = 0,
   surfaceTrackId = 0,
   surfaceTrackStableTime = 0,
   surfaceFireControlReadyAt = Infinity,
@@ -409,6 +415,10 @@ function resetSurfaceStrikeLoadout() {
   surfaceTrackStableTime = 0;
   surfaceFireControlReadyAt = Infinity;
   surfaceFireControlReadyLogged = false;
+  nextSurfaceAssessment = 0;
+  surfaceStrikeWave = 0;
+  surfaceRequiredHits = 0;
+  surfacePlanningLeakProbability = 0;
 }
 resetSurfaceStrikeLoadout();
 const radarCanvas = document.querySelector("#radar") as HTMLCanvasElement;
@@ -2662,6 +2672,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   surfaceHardKills = 0;
   surfaceSoftKills = 0;
   surfacePointDefenseKills = 0;
+  surfaceMisses = 0;
   if (enemyPlatform) {
     scene.remove(enemyPlatform.model);
     disposeEnemyPlatform(enemyPlatform);
@@ -3212,7 +3223,7 @@ function showAar(outcome: string, score: number) {
     harpoons = aarEvents.filter((e) =>
       /RGM-84 HARPOON SURFACE LAUNCH/i.test(e.text),
     ).length;
-  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
+  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>SFC MISSES<b>${surfaceMisses}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
   const eventList = resultPanel.querySelector("#aarEvents")!;
   aarEvents.forEach((event, eventIndex) => {
     const button = document.createElement("button");
@@ -4439,6 +4450,13 @@ function planSurfaceStrike(manual = false) {
     }
     return false;
   }
+  if (elapsed < nextSurfaceAssessment) {
+    if (manual)
+      log(
+        `SURFACE STRIKE INHIBIT / BDA WINDOW / ${(nextSurfaceAssessment - elapsed).toFixed(1)}s REMAINING`,
+      );
+    return false;
+  }
   const range = track.position.distanceTo(defender.position);
   if (range < strike.minRange || range > strike.maxRange) {
     if (manual)
@@ -4450,9 +4468,34 @@ function planSurfaceStrike(manual = false) {
   const hardpoints = shipSurfaceHardpoints(defender).filter(
     (hardpoint) => surfaceHardpointState.get(hardpoint.id) === "ready",
   );
-  const count = Math.min(strike.salvoSize, surfaceStrikeAmmo, hardpoints.length);
+  const liveWeapons = surfaceStrikeMissiles.filter(
+      (missile) => missile.phase !== "destroyed",
+    ).length,
+    resolvedWeapons =
+      surfaceHits + surfaceSoftKills + surfacePointDefenseKills + surfaceMisses,
+    salvoPlan = planSurfaceSalvo({
+      availableWeapons: surfaceStrikeAmmo,
+      availableHardpoints: hardpoints.length,
+      weaponsInFlight: liveWeapons + surfaceLaunchQueue.length,
+      maximumWeaponsInFlight: strike.maximumWeaponsInFlight,
+      maximumSalvoSize: strike.salvoSize,
+      minimumSalvoSize: strike.minimumSalvoSize,
+      expectedLeakProbability: strike.expectedLeakProbability,
+      targetHullEstimate: strike.targetHullEstimate,
+      weaponDamage: strike.damage,
+      assessedHits: surfaceHits,
+      resolvedWeapons,
+    }),
+    count = salvoPlan.count;
   if (count <= 0) {
-    if (manual) log("SURFACE STRIKE INHIBIT / HARPOON MAGAZINE EMPTY");
+    if (manual)
+      log(
+        surfaceStrikeAmmo <= 0 || hardpoints.length <= 0
+          ? "SURFACE STRIKE INHIBIT / HARPOON MAGAZINE EMPTY"
+          : salvoPlan.remainingCapacity <= 0
+            ? `SURFACE STRIKE INHIBIT / ${liveWeapons + surfaceLaunchQueue.length} WEAPONS COMMITTED / AWAIT ASSESSMENT`
+            : "SURFACE STRIKE INHIBIT / ASSESSED WEAPONS EFFECT SUFFICIENT",
+      );
     return false;
   }
   let launchAt = Math.max(elapsed, nextSurfaceLaunch);
@@ -4471,8 +4514,11 @@ function planSurfaceStrike(manual = false) {
   }
   nextSurfaceLaunch = launchAt;
   nextSurfaceDecision = launchAt + 7;
+  surfaceStrikeWave++;
+  surfaceRequiredHits = salvoPlan.requiredHits;
+  surfacePlanningLeakProbability = salvoPlan.planningLeakProbability;
   log(
-    `SURFACE OODA / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
+    `SURFACE OODA / WAVE ${surfaceStrikeWave} / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / ${salvoPlan.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvoPlan.planningLeakProbability * 100)}% / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
   );
   return true;
 }
@@ -4548,6 +4594,7 @@ function updateSurfaceCombat(
   if (
     autoSurfaceStrike &&
     elapsed >= nextSurfaceDecision &&
+    elapsed >= nextSurfaceAssessment &&
     surfaceLaunchQueue.length === 0 &&
     !surfaceStrikeMissiles.some((missile) => missile.phase !== "destroyed")
   )
@@ -4629,7 +4676,14 @@ function updateSurfaceCombat(
         `RGM-84 HARPOON ${missile.id} TARGET ACQUIRED / ${(event.range / 10).toFixed(1)} km / OFF-BORESIGHT ${event.offBoresightDeg.toFixed(1)} DEG`,
       );
     else if (event.kind === "miss")
-      log(`HARPOON ${missile.id} MISS / ${event.reason}`);
+      {
+        surfaceMisses++;
+        nextSurfaceAssessment = Math.max(
+          nextSurfaceAssessment,
+          elapsed + strike.assessmentDelay,
+        );
+        log(`HARPOON ${missile.id} MISS / ${event.reason}`);
+      }
     else if (event.kind === "platform-track")
       log(
         `${missile.target.definition.name} INCOMING TRACK / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}% / ${(event.range / 10).toFixed(1)} km`,
@@ -4641,18 +4695,30 @@ function updateSurfaceCombat(
     else if (event.kind === "soft-kill")
       {
         surfaceSoftKills++;
+        nextSurfaceAssessment = Math.max(
+          nextSurfaceAssessment,
+          elapsed + strike.assessmentDelay,
+        );
         log(
         `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ${event.mode} / PK ${Math.round(event.pk * 100)}%`,
         );
       }
     else if (event.kind === "point-defense") {
       surfacePointDefenseKills++;
+      nextSurfaceAssessment = Math.max(
+        nextSurfaceAssessment,
+        elapsed + strike.assessmentDelay,
+      );
       createExplosion(missile.mesh.position.clone());
       log(
         `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / PK ${Math.round(event.pk * 100)}% / PRIORITY ${event.threatScore.toFixed(0)} / TTI ${Number.isFinite(event.estimatedTimeToImpact) ? `${event.estimatedTimeToImpact.toFixed(1)}s` : "OPENING"} / TRACKS ${event.localTrackDensity}`,
       );
     } else {
       surfaceHits++;
+      nextSurfaceAssessment = Math.max(
+        nextSurfaceAssessment,
+        elapsed + strike.assessmentDelay,
+      );
       createExplosion(missile.target.model.position.clone().add(new THREE.Vector3(0, 7, 0)));
       createPlatformDamage(missile.target, event.damage, surfaceHits);
       const hullMaterial = missile.target.model.userData
@@ -4697,6 +4763,15 @@ function updateSurfaceCombat(
   canvas.dataset.surfacePointDefenseKills = String(
     surfacePointDefenseKills,
   );
+  canvas.dataset.surfaceMisses = String(surfaceMisses);
+  canvas.dataset.surfaceAssessmentRemaining = Math.max(
+    0,
+    nextSurfaceAssessment - elapsed,
+  ).toFixed(2);
+  canvas.dataset.surfaceStrikeWave = String(surfaceStrikeWave);
+  canvas.dataset.surfaceRequiredHits = String(surfaceRequiredHits);
+  canvas.dataset.surfacePlanningLeakProbability =
+    surfacePlanningLeakProbability.toFixed(3);
   const liveSurfaceStrikes = surfaceStrikeMissiles.filter(
     (missile) => missile.phase !== "destroyed",
   );

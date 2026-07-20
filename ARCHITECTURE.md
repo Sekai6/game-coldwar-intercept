@@ -19,6 +19,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/platforms/catalog.ts`: enemy-platform registry and lookup.
 - `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.
 - `src/surface-combat.ts`: generic friendly anti-ship missile runtime, terminal seeker, finite platform defenses, and platform damage.
+- `src/surface-doctrine.ts`: pure salvo-sizing logic for in-flight limits, estimated effects, and ammunition conservation.
 - `src/combat-types.ts`: shared runtime domain types.
 - `src/interceptor-data.ts`: ship-launched interceptor flight profiles.
 - `src/threats/catalog.ts`: incoming-threat registry and derived `EnemyType`.
@@ -71,6 +72,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 6. Surface truth, surface tracks, Harpoons, and platform damage must be represented separately in AAR snapshots so replay never substitutes hidden truth for the tactical picture.
 7. Player-facing surface status derives identity and bounded BDA from track quality. Exact platform truth is reserved for simulation and verification datasets, not the HUD.
 8. `OPFOR ECM` is one doctrine input shared by incoming-weapon jamming and platform soft-kill logic. Platform ECM is continuous radiation, while finite decoy inventory, deployment range, cooldown, cloud RCS, HOJ, and burn-through remain capability-driven state. Point defense remains a separate hard-kill capability.
+9. Surface salvo planning limits committed weapons, waits for a capability-defined assessment interval after each resolved round, and sizes re-attacks from a friendly-doctrine target-durability prior plus a blended prior/observed leak probability. It must not read the enemy platform's true hull capability. Manual launch requests pass through the same gates and cannot bypass an active wave or BDA window.
 
 ## Adding an interceptor
 

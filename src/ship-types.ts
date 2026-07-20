@@ -81,6 +81,11 @@ export interface ShipDefinition {
     datalinkMinimumQuality: number;
     damage: number;
     salvoSize: number;
+    minimumSalvoSize: number;
+    maximumWeaponsInFlight: number;
+    assessmentDelay: number;
+    expectedLeakProbability: number;
+    targetHullEstimate: number;
   };
   build: () => THREE.Group;
 }
