@@ -373,7 +373,11 @@ let surfaceHardpointState = new Map<
   nextSurfaceDecision = 0,
   autoSurfaceStrike = true,
   surfaceHits = 0,
-  surfaceHardKills = 0;
+  surfaceHardKills = 0,
+  surfaceTrackId = 0,
+  surfaceTrackStableTime = 0,
+  surfaceFireControlReadyAt = Infinity,
+  surfaceFireControlReadyLogged = false;
 const interceptors: Interceptor[] = [];
 const engagements = new Map<Missile, EngagementState>();
 const illuminators: IlluminatorState[] = [
@@ -397,6 +401,10 @@ function resetSurfaceStrikeLoadout() {
   );
   nextSurfaceLaunch = 0;
   nextSurfaceDecision = 0;
+  surfaceTrackId = 0;
+  surfaceTrackStableTime = 0;
+  surfaceFireControlReadyAt = Infinity;
+  surfaceFireControlReadyLogged = false;
 }
 resetSurfaceStrikeLoadout();
 const radarCanvas = document.querySelector("#radar") as HTMLCanvasElement;
@@ -2134,6 +2142,14 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
     ? `${liveAir} AIR / ${(track.position.distanceTo(defender.position) / 10).toFixed(1)} km / TQ ${Math.round(quality * 100)}% / EW ${ecmEnabled ? "ON" : "OFF"}`
     : `${liveAir} AIR / SEARCHING / EW ${ecmEnabled ? "ON" : "OFF"}`;
   let bda = "BDA PENDING";
+  if (
+    surfaceStrikeAmmo === strikeMagazine &&
+    surfaceLaunchQueue.length === 0 &&
+    !surfaceFireControlReadyLogged
+  )
+    bda = Number.isFinite(surfaceFireControlReadyAt)
+      ? "FC ASSIGN"
+      : "TRACK BUILD";
   if (enemyPlatform.destroyed) bda = "TARGET DISABLED";
   else if (surfaceHits > 0 && track) {
     const spread = Math.ceil(((1 - quality) * 25 + 5) / 5) * 5,
@@ -4316,6 +4332,25 @@ function planSurfaceStrike(manual = false) {
       );
     return false;
   }
+  if (
+    surfaceTrackStableTime < strike.minimumTrackAge ||
+    elapsed < surfaceFireControlReadyAt
+  ) {
+    if (manual) {
+      const confirmationRemaining = Math.max(
+          0,
+          strike.minimumTrackAge - surfaceTrackStableTime,
+        ),
+        commandRemaining = Number.isFinite(surfaceFireControlReadyAt)
+          ? Math.max(0, surfaceFireControlReadyAt - elapsed)
+          : confirmationRemaining + strike.fireControlDelay,
+        remaining = Math.max(confirmationRemaining, commandRemaining);
+      log(
+        `SURFACE STRIKE INHIBIT / FIRE CONTROL BUILD / ${Math.max(0, remaining).toFixed(1)}s REMAINING`,
+      );
+    }
+    return false;
+  }
   const range = track.position.distanceTo(defender.position);
   if (range < strike.minRange || range > strike.maxRange) {
     if (manual)
@@ -4384,6 +4419,38 @@ function updateSurfaceCombat(
     .drainEvents()
     .forEach((event) => log(`SURFACE ${event}`));
   const track = surfacePicture.trackForTarget(1);
+  const strike = activeShip.surfaceStrike;
+  if (track && strike && track.quality >= strike.requiredTrackQuality) {
+    if (surfaceTrackId !== track.id) {
+      surfaceTrackId = track.id;
+      surfaceTrackStableTime = 0;
+      surfaceFireControlReadyAt = Infinity;
+      surfaceFireControlReadyLogged = false;
+      log(`SURFACE TRACK ${track.id} / CONTINUITY BUILD`);
+    }
+    surfaceTrackStableTime += dt;
+    if (
+      surfaceTrackStableTime >= strike.minimumTrackAge &&
+      !Number.isFinite(surfaceFireControlReadyAt)
+    ) {
+      surfaceFireControlReadyAt = elapsed + strike.fireControlDelay;
+      log(
+        `SURFACE FIRE CONTROL / TRACK ${track.id} CORRELATED / COMMAND DELAY ${strike.fireControlDelay.toFixed(1)}s`,
+      );
+    }
+    if (
+      elapsed >= surfaceFireControlReadyAt &&
+      !surfaceFireControlReadyLogged
+    ) {
+      surfaceFireControlReadyLogged = true;
+      log(`SURFACE FIRE CONTROL READY / TRACK ${track.id}`);
+    }
+  } else {
+    surfaceTrackId = track?.id ?? 0;
+    surfaceTrackStableTime = 0;
+    surfaceFireControlReadyAt = Infinity;
+    surfaceFireControlReadyLogged = false;
+  }
   if (
     autoSurfaceStrike &&
     elapsed >= nextSurfaceDecision &&
@@ -4479,6 +4546,12 @@ function updateSurfaceCombat(
     Math.round(track?.uncertainty ?? 0),
   );
   canvas.dataset.surfaceTrackSpeed = (track?.velocity.length() ?? 0).toFixed(4);
+  canvas.dataset.surfaceTrackStableTime = surfaceTrackStableTime.toFixed(2);
+  canvas.dataset.surfaceFireControlState = surfaceFireControlReadyLogged
+    ? "ready"
+    : Number.isFinite(surfaceFireControlReadyAt)
+      ? "command-delay"
+      : "track-build";
   canvas.dataset.surfaceStrikeAmmo = String(surfaceStrikeAmmo);
   canvas.dataset.surfaceStrikeActive = String(
     surfaceStrikeMissiles.filter((missile) => missile.phase !== "destroyed")
@@ -5267,12 +5340,35 @@ function updateIncomingMissile(m: Missile, dt: number) {
       const trackQuality = Math.max(
         0,
         ...[...platform.sensorState.values()].map((state) => state.quality),
-      );
+      ),
+        weaponSlot = pendingPlatformLaunch.reservation.weaponSlot,
+        trackAge = platform.weaponTrackAge.get(weaponSlot.id) ?? 0,
+        requiredAge = weaponSlot.minimumTrackAge + weaponSlot.fireControlDelay;
       if (
-        trackQuality <
-        pendingPlatformLaunch.reservation.weaponSlot.minimumTrackQuality
+        trackQuality < weaponSlot.minimumTrackQuality ||
+        trackAge < requiredAge
       ) {
+        if (!m.mesh.userData.platformTrackHoldLogged) {
+          m.mesh.userData.platformTrackHoldLogged = true;
+          log(
+            `${platform.definition.name} TRACK BUILD / ${weaponSlot.displayName} / TQ ${Math.round(trackQuality * 100)}% / AGE ${trackAge.toFixed(1)}/${requiredAge.toFixed(1)}s`,
+          );
+        }
         m.launchAt = elapsed + 0.25;
+        m.mesh.visible = false;
+        m.path.visible = false;
+        m.mesh.userData.seekerLine.visible = false;
+        return;
+      }
+      if (!platform.weaponTrackReadyLogged.has(weaponSlot.id)) {
+        platform.weaponTrackReadyLogged.add(weaponSlot.id);
+        log(
+          `${platform.definition.name} FIRE CONTROL READY / ${weaponSlot.displayName} / TQ ${Math.round(trackQuality * 100)}% / TRACK AGE ${trackAge.toFixed(1)}s`,
+        );
+      }
+      const nextRelease = platform.weaponSlotNextRelease.get(weaponSlot.id) ?? 0;
+      if (elapsed + 1e-6 < nextRelease) {
+        m.launchAt = nextRelease;
         m.mesh.visible = false;
         m.path.visible = false;
         m.mesh.userData.seekerLine.visible = false;
@@ -5293,6 +5389,10 @@ function updateIncomingMissile(m: Missile, dt: number) {
   if (platformLaunch && !platformLaunch.released) {
     platformLaunch.released = true;
     releasePlatformHardpoint(platformLaunch.reservation);
+    platformLaunch.reservation.platform.weaponSlotNextRelease.set(
+      platformLaunch.reservation.weaponSlot.id,
+      elapsed + platformLaunch.reservation.releaseInterval,
+    );
     m.mesh.userData.platformDeparturePhase = "TUBE EXIT";
     log(
       `${platformLaunch.reservation.platform.definition.name} / ${platformLaunch.reservation.hardpoint.id.toUpperCase()} / ${m.kind} CANISTER LAUNCH`,
@@ -5811,6 +5911,10 @@ function tick(now: number) {
       0,
       ...[...enemyPlatform.sensorState.values()].map((state) => state.quality),
     ).toFixed(3);
+    canvas.dataset.enemyPlatformTrackAge = Math.max(
+      0,
+      ...enemyPlatform.weaponTrackAge.values(),
+    ).toFixed(2);
     canvas.dataset.enemyPlatformHardpoints = String(
       enemyPlatform.slots.weaponHardpoints.length,
     );
@@ -5828,6 +5932,7 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformFired = "0";
     canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
+    canvas.dataset.enemyPlatformTrackAge = "0.00";
     canvas.dataset.enemyPlatformHardpoints = "0";
     canvas.dataset.enemyPlatformCoversVisible = "0";
     canvas.dataset.enemyPlatformSpeedKnots = "0.00";

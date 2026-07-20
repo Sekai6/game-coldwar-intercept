@@ -33,6 +33,8 @@ export interface PlatformWeaponSlot {
   boostDuration: number;
   guidanceTakeover: number;
   minimumTrackQuality: number;
+  minimumTrackAge: number;
+  fireControlDelay: number;
 }
 
 export interface PlatformWeaponHardpoint {
@@ -88,6 +90,9 @@ export interface EnemyPlatformInstance {
   hardpointState: Map<string, "ready" | "reserved" | "fired" | "canceled">;
   sensorState: Map<string, { nextUpdate: number; quality: number }>;
   weaponSlotNextLaunch: Map<string, number>;
+  weaponSlotNextRelease: Map<string, number>;
+  weaponTrackAge: Map<string, number>;
+  weaponTrackReadyLogged: Set<string>;
   hullIntegrity: number;
   subsystemHealth: Map<string, number>;
   nextPointDefense: number;
@@ -103,4 +108,5 @@ export interface PlatformLaunchReservation {
   weaponSlot: PlatformWeaponSlot;
   threat: EnemyType;
   launchAt: number;
+  releaseInterval: number;
 }

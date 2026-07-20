@@ -53,7 +53,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 4. Register the definition once in `ENEMY_PLATFORM_DEFINITIONS`. Sandbox selectors derive compatible threats and capacity from the catalog.
 5. Runtime must prove declared capacity equals physical hardpoint count. Primary and second waves share hardpoint state and `weaponSlotNextLaunch`; no wave may reuse a fired or reserved tube.
 6. Platform departure remains generic: the missile stores a `PlatformLaunchReservation`, releases the referenced cover, follows that hardpoint's transformed axis, and hands off to the threat profile after the configured takeover time. `main.ts` must not compare a platform ID or missile ID to choose this behavior.
-7. Declare `minimumTrackQuality` on every platform weapon slot. Pending launches are held until platform sensors satisfy that gate; destroying the platform changes only unreleased reservations to `canceled`, while already released weapons continue independently.
+7. Declare `minimumTrackQuality`, `minimumTrackAge`, and `fireControlDelay` on every platform weapon slot. Pending launches require continuous quality and command reaction time. Actual release uses a separate per-slot clock so delayed reservations cannot collapse into one frame. Destroying the platform changes only unreleased reservations to `canceled`, while already released weapons continue independently.
 8. Platform mobility is capability data (`maxSpeedKnots`, cruise setting, acceleration, and turn rate). Runtime owns velocity and heading integration; sensor tracks consume that velocity instead of assuming a static target.
 
 ## Adding friendly surface-strike capability
@@ -61,10 +61,11 @@ The simulation is organized around capabilities rather than ship-name checks.
 1. Declare `surfaceStrike` in the ship catalog with weapon, magazine, interval, range, track-quality, damage, and salvo fields.
 2. Attach `ModelWeaponHardpoint[]` to `model.userData.surfaceStrikeHardpoints`; shared launchers such as Mk 141 should come from `model-primitives.ts`.
 3. Keep the launch and flight runtime generic. It consumes transformed hardpoint positions/directions and capability fields, never a ship ID.
-4. Enemy-platform survivability declares hull, point-defense range/interval/PK/finite engagements, saturation penalty, and soft-kill PK. Runtime subsystem health modifies those capabilities; platform mobility and persistent damage visuals must remain generic rather than platform-ID branches.
-5. Surface truth, surface tracks, Harpoons, and platform damage must be represented separately in AAR snapshots so replay never substitutes hidden truth for the tactical picture.
-6. Player-facing surface status derives identity and bounded BDA from track quality. Exact platform truth is reserved for simulation and verification datasets, not the HUD.
-7. `OPFOR ECM` is one doctrine input shared by incoming-weapon jamming and platform soft-kill logic; point defense remains a separate hard-kill capability.
+4. Surface-strike definitions also declare continuous confirmation and fire-control delay. Track-ID changes and quality loss reset continuity; do not reuse `Track.age`, which means time since last sensor update rather than track lifetime.
+5. Enemy-platform survivability declares hull, point-defense range/interval/PK/finite engagements, saturation penalty, and soft-kill PK. Runtime subsystem health modifies those capabilities; platform mobility and persistent damage visuals must remain generic rather than platform-ID branches.
+6. Surface truth, surface tracks, Harpoons, and platform damage must be represented separately in AAR snapshots so replay never substitutes hidden truth for the tactical picture.
+7. Player-facing surface status derives identity and bounded BDA from track quality. Exact platform truth is reserved for simulation and verification datasets, not the HUD.
+8. `OPFOR ECM` is one doctrine input shared by incoming-weapon jamming and platform soft-kill logic; point defense remains a separate hard-kill capability.
 
 ## Adding an interceptor
 

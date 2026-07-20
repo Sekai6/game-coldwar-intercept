@@ -69,6 +69,13 @@ export function instantiateEnemyPlatform(
     weaponSlotNextLaunch: new Map(
       definition.weaponSlots.map((slot) => [slot.id, 0]),
     ),
+    weaponSlotNextRelease: new Map(
+      definition.weaponSlots.map((slot) => [slot.id, 0]),
+    ),
+    weaponTrackAge: new Map(
+      definition.weaponSlots.map((slot) => [slot.id, 0]),
+    ),
+    weaponTrackReadyLogged: new Set(),
     hullIntegrity: definition.survivability.hull,
     subsystemHealth: new Map([
       ...definition.sensorSlots.map((sensor) => [sensor.id, 100] as const),
@@ -121,6 +128,7 @@ export function reservePlatformLaunches(
       weaponSlot,
       threat,
       launchAt: slotStart + index * interval,
+      releaseInterval: interval,
     });
   }
   if (count > 0)
@@ -266,6 +274,18 @@ export function updateEnemyPlatform(
           )
         : 0;
   }
+  const bestTrackQuality = Math.max(
+    0,
+    ...[...platform.sensorState.values()].map((state) => state.quality),
+  );
+  for (const slot of platform.definition.weaponSlots) {
+    const sufficient = bestTrackQuality >= slot.minimumTrackQuality;
+    platform.weaponTrackAge.set(
+      slot.id,
+      sufficient ? (platform.weaponTrackAge.get(slot.id) ?? 0) + dt : 0,
+    );
+    if (!sufficient) platform.weaponTrackReadyLogged.delete(slot.id);
+  }
 }
 
 export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
@@ -280,5 +300,8 @@ export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
   platform.hardpointState.clear();
   platform.sensorState.clear();
   platform.weaponSlotNextLaunch.clear();
+  platform.weaponSlotNextRelease.clear();
+  platform.weaponTrackAge.clear();
+  platform.weaponTrackReadyLogged.clear();
   platform.subsystemHealth.clear();
 }

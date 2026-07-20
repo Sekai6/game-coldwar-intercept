@@ -871,6 +871,8 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
     minRange: 35,
     maxRange: 720,
     requiredTrackQuality: 0.58,
+    minimumTrackAge: 2.2,
+    fireControlDelay: 1.6,
     damage: 34,
     salvoSize: 4,
   },
