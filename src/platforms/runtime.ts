@@ -345,7 +345,8 @@ export function updateEnemyPlatform(
   platform.velocity.copy(forward).multiplyScalar(platform.speedKnots * 0.005144);
   platform.model.position.addScaledVector(platform.velocity, dt);
   const range = platform.model.position.distanceTo(targetPosition);
-  let sensorDetected = false;
+  let sensorDetected = false,
+    detectedQuality = 0;
   for (const definition of platform.definition.sensorSlots) {
     const state = platform.sensorState.get(definition.id)!;
     if (elapsed < state.nextUpdate) continue;
@@ -393,6 +394,7 @@ export function updateEnemyPlatform(
     if (deterministicSample < detectionProbability) {
       state.quality = candidateQuality;
       sensorDetected = true;
+      detectedQuality = Math.max(detectedQuality, candidateQuality);
     } else state.quality *= 0.78;
   }
   const bestTrackQuality = Math.max(
@@ -400,15 +402,15 @@ export function updateEnemyPlatform(
     ...[...platform.sensorState.values()].map((state) => state.quality),
   );
   const track = platform.targetTrack;
-  if (sensorDetected && bestTrackQuality > 0.04) {
-    const uncertainty = 2 + (1 - bestTrackQuality) * 24,
+  if (sensorDetected && detectedQuality > 0.04) {
+    const uncertainty = 2 + (1 - detectedQuality) * 24,
       phase = elapsed * 0.41 + platform.definition.radarCrossSection * 0.17,
       error = new THREE.Vector3(
         Math.sin(phase) * uncertainty,
         0,
         Math.cos(phase * 0.83) * uncertainty * 0.72,
       ),
-      velocityError = (1 - bestTrackQuality) * 0.045;
+      velocityError = (1 - detectedQuality) * 0.045;
     track.position.copy(targetPosition).add(error);
     track.velocity
       .copy(targetVelocity)
@@ -419,7 +421,7 @@ export function updateEnemyPlatform(
           Math.cos(phase * 1.17) * velocityError,
         ),
       );
-    track.quality = bestTrackQuality;
+    track.quality = detectedQuality;
     track.uncertainty = uncertainty;
     track.lastUpdate = elapsed;
     track.valid = true;
