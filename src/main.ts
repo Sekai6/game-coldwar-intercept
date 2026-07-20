@@ -133,6 +133,13 @@ function updateMaterialDiagnostics() {
   canvas.dataset.hullSectionPoints = String(
     defender.userData.hullSectionPoints ?? 0,
   );
+  canvas.dataset.hullLength = Number(defender.userData.hullLength ?? 0).toFixed(
+    2,
+  );
+  canvas.dataset.hullBeam = Number(defender.userData.hullBeam ?? 0).toFixed(2);
+  canvas.dataset.hullLengthBeamRatio = Number(
+    defender.userData.hullLengthBeamRatio ?? 0,
+  ).toFixed(2);
 }
 const grid = new THREE.GridHelper(1200, 48, 0x1d6570, 0x123f4b);
 grid.position.y = 0.15;
