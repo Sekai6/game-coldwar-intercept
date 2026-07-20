@@ -8,9 +8,10 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/ship-catalog.ts`: ship registration and per-class capability metadata.
 - `src/ship-types.ts`: ship capability contracts shared by the catalog and runtime.
 - `src/models/long-beach.ts`: CGN-9 procedural model and Mk 10 visual components.
-- `src/models/ticonderoga.ts`: CG-47-class procedural model and Mk 41 visual components.
+- `src/models/ticonderoga.ts`: CG-47-class proportions, layout, and class-specific procedural model assembly.
 - `src/models/hull-geometry.ts`: shared multi-chine longitudinal loft, sheer deck, and waterline-band geometry; ship-specific station tables remain in each model.
 - `src/models/model-primitives.ts`: shared sloped-box and structural-strut geometry used by US and Soviet models.
+- `src/models/us-navy-equipment.ts`: reusable Mk 41, Mk 45, Phalanx, SPG-62, SPY-1, and SLQ-32 visual components with stable animation anchors.
 - `src/platforms/types.ts`: enemy-platform definitions, sensor slots, weapon slots, physical hardpoints, and runtime instances.
 - `src/platforms/model-slots.ts`: typed model-anchor registration without platform-name checks.
 - `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, and sensor updates.
@@ -81,7 +82,9 @@ Model modules expose equipment anchors through `Object3D.userData`; combat behav
 
 Hull precision is data-driven but not shape-generic. Each ship owns a station table describing deck edge, shoulder chine, waterline, keel width, and vertical sheer. `hull-geometry.ts` only triangulates those profiles. This keeps bow flare, parallel midbody, stern form, and proportions specific to the real class while avoiding duplicate index-generation code. Hull-side attachments must be repositioned when station breadth changes; old absolute beam offsets are not valid after a hull revision.
 
-Longitudinal calibration must update geometry, equipment roots, subsystem positions, and damage zones as one coordinate contract. CG-57 uses `TICONDEROGA_LENGTH_SCALE` and the `longitudinal()` transform for that purpose. Do not apply nonuniform scale to the returned ship group because it would turn cylindrical mounts and sensors into ellipses and would hide coordinate mismatches from combat logic.
+Longitudinal calibration must update geometry, equipment roots, subsystem positions, and damage zones as one coordinate contract. CG-57 derives `TICONDEROGA_LENGTH_SCALE` from its `172.8 m` real length and the model's meters-per-unit constant, then applies the `longitudinal()` transform. Do not apply nonuniform scale to the returned ship group because it would turn cylindrical mounts and sensors into ellipses and would hide coordinate mismatches from combat logic.
+
+Reusable equipment factories own equipment geometry and animation anchors, but not ship layout. A class model supplies mount position, heading, material, and class-specific count. Combat code continues to consume semantic anchors and capability data rather than equipment geometry or ship IDs.
 
 ## Rendering pipeline
 

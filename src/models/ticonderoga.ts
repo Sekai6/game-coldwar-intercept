@@ -13,20 +13,37 @@ import {
   createSlopedBoxGeometry as slopedBox,
   type ModelWeaponHardpoint,
 } from "./model-primitives";
+import {
+  createMk41VlsBank,
+  createMk45Gun,
+  createPhalanxCiws,
+  createSlq32Array,
+  createSpg62Director,
+  createSpy1Array,
+  type VlsCell,
+} from "./us-navy-equipment";
 
-const TICONDEROGA_LENGTH_SCALE = 1.13;
+const TICONDEROGA_REAL_LENGTH_M = 172.8;
+const TICONDEROGA_REAL_BEAM_M = 16.8;
+const MODEL_METERS_PER_UNIT = 2.25;
+const TICONDEROGA_LENGTH_SCALE =
+  TICONDEROGA_REAL_LENGTH_M / MODEL_METERS_PER_UNIT / 68;
+const TICONDEROGA_MODEL_BEAM = TICONDEROGA_REAL_BEAM_M / MODEL_METERS_PER_UNIT;
 const longitudinal = (value: number) => value * TICONDEROGA_LENGTH_SCALE;
 const TICONDEROGA_HULL: readonly HullStation[] = [
-  { x: longitudinal(-34), deckHalf: 3.02, shoulderHalf: 2.94, waterlineHalf: 2.72, keelHalf: 1.1, deckY: 5.52, shoulderY: 3.25, waterlineY: 0.32, keelY: -0.68 },
-  { x: longitudinal(-31.5), deckHalf: 3.46, shoulderHalf: 3.34, waterlineHalf: 3.02, keelHalf: 1.16, deckY: 5.6, shoulderY: 3.2, waterlineY: 0.3, keelY: -0.78 },
-  { x: longitudinal(-24), deckHalf: 3.64, shoulderHalf: 3.5, waterlineHalf: 3.12, keelHalf: 1.18, deckY: 5.72, shoulderY: 3.18, waterlineY: 0.28, keelY: -0.88 },
-  { x: longitudinal(-8), deckHalf: 3.74, shoulderHalf: 3.58, waterlineHalf: 3.18, keelHalf: 1.2, deckY: 5.82, shoulderY: 3.16, waterlineY: 0.27, keelY: -0.94 },
-  { x: longitudinal(10), deckHalf: 3.72, shoulderHalf: 3.56, waterlineHalf: 3.12, keelHalf: 1.16, deckY: 5.88, shoulderY: 3.2, waterlineY: 0.28, keelY: -0.92 },
-  { x: longitudinal(19), deckHalf: 3.55, shoulderHalf: 3.38, waterlineHalf: 2.9, keelHalf: 1.02, deckY: 5.98, shoulderY: 3.36, waterlineY: 0.31, keelY: -0.78 },
-  { x: longitudinal(25.5), deckHalf: 3.02, shoulderHalf: 2.82, waterlineHalf: 2.3, keelHalf: 0.76, deckY: 6.18, shoulderY: 3.66, waterlineY: 0.36, keelY: -0.56 },
-  { x: longitudinal(29.5), deckHalf: 2.02, shoulderHalf: 1.8, waterlineHalf: 1.34, keelHalf: 0.4, deckY: 6.46, shoulderY: 4.02, waterlineY: 0.43, keelY: -0.25 },
-  { x: longitudinal(32.5), deckHalf: 0.78, shoulderHalf: 0.62, waterlineHalf: 0.4, keelHalf: 0.12, deckY: 6.75, shoulderY: 4.42, waterlineY: 0.52, keelY: 0.08 },
-  { x: longitudinal(34), deckHalf: 0.045, shoulderHalf: 0.035, waterlineHalf: 0.02, keelHalf: 0.008, deckY: 6.92, shoulderY: 4.72, waterlineY: 0.58, keelY: 0.34 },
+  { x: longitudinal(-34), deckHalf: 2.92, shoulderHalf: 2.82, waterlineHalf: 2.62, keelHalf: 1.02, deckY: 5.5, shoulderY: 3.28, waterlineY: 0.34, keelY: -0.62 },
+  { x: longitudinal(-32.2), deckHalf: 3.28, shoulderHalf: 3.16, waterlineHalf: 2.92, keelHalf: 1.12, deckY: 5.56, shoulderY: 3.23, waterlineY: 0.31, keelY: -0.74 },
+  { x: longitudinal(-28), deckHalf: 3.52, shoulderHalf: 3.4, waterlineHalf: 3.08, keelHalf: 1.18, deckY: 5.64, shoulderY: 3.18, waterlineY: 0.29, keelY: -0.84 },
+  { x: longitudinal(-20), deckHalf: 3.66, shoulderHalf: 3.52, waterlineHalf: 3.16, keelHalf: 1.2, deckY: 5.74, shoulderY: 3.16, waterlineY: 0.28, keelY: -0.9 },
+  { x: longitudinal(-8), deckHalf: 3.73, shoulderHalf: 3.58, waterlineHalf: 3.19, keelHalf: 1.2, deckY: 5.82, shoulderY: 3.16, waterlineY: 0.27, keelY: -0.94 },
+  { x: longitudinal(6), deckHalf: 3.73, shoulderHalf: 3.58, waterlineHalf: 3.17, keelHalf: 1.18, deckY: 5.86, shoulderY: 3.18, waterlineY: 0.27, keelY: -0.94 },
+  { x: longitudinal(14), deckHalf: 3.68, shoulderHalf: 3.52, waterlineHalf: 3.07, keelHalf: 1.12, deckY: 5.91, shoulderY: 3.24, waterlineY: 0.29, keelY: -0.88 },
+  { x: longitudinal(20.5), deckHalf: 3.45, shoulderHalf: 3.26, waterlineHalf: 2.78, keelHalf: 0.96, deckY: 6.01, shoulderY: 3.42, waterlineY: 0.32, keelY: -0.72 },
+  { x: longitudinal(25.5), deckHalf: 3.0, shoulderHalf: 2.78, waterlineHalf: 2.28, keelHalf: 0.74, deckY: 6.18, shoulderY: 3.67, waterlineY: 0.36, keelY: -0.54 },
+  { x: longitudinal(29), deckHalf: 2.2, shoulderHalf: 1.96, waterlineHalf: 1.5, keelHalf: 0.44, deckY: 6.42, shoulderY: 3.98, waterlineY: 0.42, keelY: -0.28 },
+  { x: longitudinal(31.5), deckHalf: 1.2, shoulderHalf: 0.98, waterlineHalf: 0.68, keelHalf: 0.2, deckY: 6.66, shoulderY: 4.3, waterlineY: 0.48, keelY: -0.02 },
+  { x: longitudinal(33.1), deckHalf: 0.42, shoulderHalf: 0.31, waterlineHalf: 0.18, keelHalf: 0.05, deckY: 6.84, shoulderY: 4.57, waterlineY: 0.55, keelY: 0.2 },
+  { x: longitudinal(34), deckHalf: 0.045, shoulderHalf: 0.035, waterlineHalf: 0.02, keelHalf: 0.008, deckY: 6.94, shoulderY: 4.75, waterlineY: 0.59, keelY: 0.36 },
 ];
 function hullNumberTexture() {
   const canvas = document.createElement("canvas");
@@ -64,211 +81,6 @@ function flagTexture() {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
-function gun(material: THREE.Material, dark: THREE.Material) {
-  const group = new THREE.Group(),
-    base = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.45, 1.75, 0.65, 12),
-      dark,
-    ),
-    turret = new THREE.Mesh(slopedBox(2.9, 1.6, 2.5, 0.65, 0.25), material),
-    barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.13, 0.2, 5.2, 8),
-      dark,
-    );
-  base.position.y = 0.3;
-  turret.position.set(0.15, 1.15, 0);
-  barrel.rotation.z = Math.PI / 2;
-  barrel.position.set(3.1, 1.55, 0);
-  group.add(base, turret, barrel);
-  return group;
-}
-function ciws(material: THREE.Material, dark: THREE.Material, name: string) {
-  const group = new THREE.Group();
-  group.name = name;
-  const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.7, 0.95, 0.7, 12),
-      dark,
-    ),
-    turret = new THREE.Mesh(new THREE.BoxGeometry(1, 1.05, 0.9), material),
-    pivot = new THREE.Group(),
-    radome = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 7), material);
-  turret.position.y = 0.88;
-  pivot.position.set(0, 1.08, 0);
-  for (let n = -1; n <= 1; n++) {
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.035, 2.2, 6),
-      dark,
-    );
-    barrel.rotation.z = Math.PI / 2;
-    barrel.position.set(1.3, 0, n * 0.11);
-    pivot.add(barrel);
-  }
-  radome.position.set(-0.25, 1.55, 0);
-  group.add(base, turret, pivot, radome);
-  group.userData.elevationPivot = pivot;
-  return group;
-}
-function slq32Array(material: THREE.Material, dark: THREE.Material) {
-  const group = new THREE.Group();
-  const housing = new THREE.Mesh(
-    new THREE.BoxGeometry(1.15, 1.7, 0.28),
-    dark,
-  );
-  group.add(housing);
-  for (let y = -0.48; y <= 0.48; y += 0.32)
-    for (let x = -0.32; x <= 0.32; x += 0.32) {
-      const emitter = new THREE.Mesh(
-        new THREE.SphereGeometry(0.085, 7, 5),
-        material,
-      );
-      emitter.position.set(x, y, 0.19);
-      group.add(emitter);
-    }
-  return group;
-}
-function director(
-  material: THREE.Material,
-  dark: THREE.Material,
-  x: number,
-  z: number,
-  heading: number,
-) {
-  const group = new THREE.Group();
-  group.position.set(x, 13.5, z);
-  group.rotation.y = heading;
-  group.userData.stowHeading = heading;
-  const pedestal = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.58, 0.82, 1.05, 12),
-      dark,
-    ),
-    pivot = new THREE.Group(),
-    dish = new THREE.Mesh(
-      new THREE.SphereGeometry(1.05, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.46),
-      material,
-    ),
-    back = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.88, 0.72, 0.28, 14),
-      dark,
-    ),
-    feed = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.055, 0.11, 1.45, 7),
-      dark,
-    ),
-    tip = new THREE.Object3D();
-  pivot.position.y = 0.65;
-  dish.rotation.z = -Math.PI / 2;
-  dish.position.x = 0.74;
-  back.rotation.z = Math.PI / 2;
-  back.position.x = 0.55;
-  feed.rotation.z = Math.PI / 2;
-  feed.position.x = 1.35;
-  tip.position.x = 2.1;
-  pivot.add(back, dish, feed, tip);
-  group.add(pedestal, pivot);
-  group.userData.elevationPivot = pivot;
-  group.userData.feedTip = tip;
-  return group;
-}
-function vlsBank(
-  rows: number,
-  columns: number,
-  spacing: number,
-  material: THREE.Material,
-  dark: THREE.Material,
-  omitted: number[] = [],
-) {
-  const group = new THREE.Group(),
-    cells: { lid: THREE.Group; origin: THREE.Object3D; index: number }[] = [],
-    width = (rows - 1) * spacing + 1.05,
-    depth = (columns - 1) * spacing + 1.05,
-    plinth = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.55, 0.28, depth + 0.55),
-      dark,
-    );
-  plinth.position.y = 0.05;
-  group.add(plinth);
-  for (let row = 0; row < rows; row++)
-    for (let column = 0; column < columns; column++) {
-      const physicalIndex = row * columns + column,
-        x = (row - (rows - 1) / 2) * spacing,
-        z = (column - (columns - 1) / 2) * spacing;
-      if (omitted.includes(physicalIndex)) {
-        const cranePlate = new THREE.Mesh(
-          new THREE.BoxGeometry(0.68, 0.1, 0.68),
-          dark,
-        );
-        cranePlate.position.set(x, 0.25, z);
-        group.add(cranePlate);
-        continue;
-      }
-      const frame = new THREE.Mesh(
-          new THREE.BoxGeometry(0.67, 0.1, 0.67),
-          material,
-        ),
-        well = new THREE.Mesh(
-          new THREE.BoxGeometry(0.51, 0.04, 0.51),
-          new THREE.MeshBasicMaterial({ color: 0x182326 }),
-        ),
-        lid = new THREE.Group(),
-        panel = new THREE.Mesh(
-          new THREE.BoxGeometry(0.53, 0.055, 0.53),
-          material,
-        ),
-        hinge = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.035, 0.035, 0.5, 6),
-          dark,
-        ),
-        origin = new THREE.Object3D();
-      frame.position.set(x, 0.22, z);
-      well.position.set(x, 0.29, z);
-      lid.position.set(x - 0.265, 0.34, z);
-      panel.position.x = 0.265;
-      hinge.rotation.x = Math.PI / 2;
-      hinge.position.z = -0.265;
-      origin.position.set(x, 0.42, z);
-      lid.add(panel, hinge);
-      group.add(frame, well, lid, origin);
-      cells.push({ lid, origin, index: physicalIndex });
-    }
-  group.userData.cells = cells;
-  return group;
-}
-function fixedArray(
-  material: THREE.Material,
-  dark: THREE.Material,
-  position: THREE.Vector3,
-  rotation: THREE.Euler,
-) {
-  const group = new THREE.Group();
-  group.position.copy(position);
-  group.rotation.copy(rotation);
-  const border = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.45, 2.45, 0.14, 8),
-      dark,
-    ),
-    panelMaterial = material.clone(),
-    panel = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.18, 2.18, 0.18, 8),
-      panelMaterial,
-    );
-  border.rotation.x = Math.PI / 2;
-  panel.rotation.x = Math.PI / 2;
-  panel.position.z = 0.09;
-  group.add(border, panel);
-  for (let x = -1.2; x <= 1.2; x += 0.6)
-    for (let y = -1.2; y <= 1.2; y += 0.6) {
-      if (Math.hypot(x, y) > 1.65) continue;
-      const module = new THREE.Mesh(
-        new THREE.CircleGeometry(0.055, 8),
-        new THREE.MeshBasicMaterial({ color: 0xdfe3d9 }),
-      );
-      module.position.set(x, y, 0.2);
-      group.add(module);
-    }
-  group.userData.panel = panel;
-  return group;
-}
-
 export function buildTiconderoga() {
   const ship = new THREE.Group(),
     hullMat = new THREE.MeshStandardMaterial({
@@ -393,7 +205,7 @@ export function buildTiconderoga() {
   }
   const arrays: THREE.Group[] = [];
   arrays.push(
-    fixedArray(
+    createSpy1Array(
       arrayMat,
       dark,
       new THREE.Vector3(longitudinal(12.95), 12.25, 0),
@@ -401,7 +213,7 @@ export function buildTiconderoga() {
     ),
   );
   arrays.push(
-    fixedArray(
+    createSpy1Array(
       arrayMat,
       dark,
       new THREE.Vector3(longitudinal(5.8), 12.25, -3.22),
@@ -409,7 +221,7 @@ export function buildTiconderoga() {
     ),
   );
   arrays.push(
-    fixedArray(
+    createSpy1Array(
       arrayMat,
       dark,
       new THREE.Vector3(longitudinal(-14.9), 11.65, 0),
@@ -417,7 +229,7 @@ export function buildTiconderoga() {
     ),
   );
   arrays.push(
-    fixedArray(
+    createSpy1Array(
       arrayMat,
       dark,
       new THREE.Vector3(longitudinal(-8.6), 11.65, 3.22),
@@ -524,37 +336,57 @@ export function buildTiconderoga() {
   aftPole.position.y = 10.5;
   aftMast.add(aftPole);
   ship.add(aftMast);
-  const forwardVls = vlsBank(8, 8, 0.72, superMat, dark, [0, 1, 8]);
+  const forwardVls = createMk41VlsBank(8, 8, 0.72, superMat, dark, [0, 1, 8]);
   forwardVls.position.set(longitudinal(21.5), 5.9, 0);
-  const aftVls = vlsBank(8, 8, 0.72, superMat, dark, [55, 62, 63]);
+  const aftVls = createMk41VlsBank(8, 8, 0.72, superMat, dark, [55, 62, 63]);
   aftVls.position.set(longitudinal(-25.2), 5.9, 0);
   ship.add(forwardVls, aftVls);
   const vlsCells = [
-    ...(forwardVls.userData.cells as any[]).map((cell) => ({
+    ...(forwardVls.userData.cells as VlsCell[]).map((cell) => ({
       ...cell,
       bank: "FWD",
     })),
-    ...(aftVls.userData.cells as any[]).map((cell) => ({
+    ...(aftVls.userData.cells as VlsCell[]).map((cell) => ({
       ...cell,
       bank: "AFT",
     })),
   ];
-  const foreGun = gun(superMat, dark);
+  const foreGun = createMk45Gun(superMat, dark);
   foreGun.position.set(longitudinal(29.2), 6.15, 0);
-  const aftGun = gun(superMat, dark);
+  const aftGun = createMk45Gun(superMat, dark);
   aftGun.position.set(longitudinal(-31), 6.15, 0);
   aftGun.rotation.y = Math.PI;
   ship.add(foreGun, aftGun);
   const directors = [
-    director(arrayMat, dark, longitudinal(10), -3.7, -0.25),
-    director(arrayMat, dark, longitudinal(10), 3.7, 0.25),
-    director(arrayMat, dark, longitudinal(-10.8), -3.7, Math.PI + 0.3),
-    director(arrayMat, dark, longitudinal(-10.8), 3.7, Math.PI - 0.3),
+    createSpg62Director(
+      arrayMat,
+      dark,
+      new THREE.Vector3(longitudinal(10), 13.5, -3.7),
+      -0.25,
+    ),
+    createSpg62Director(
+      arrayMat,
+      dark,
+      new THREE.Vector3(longitudinal(10), 13.5, 3.7),
+      0.25,
+    ),
+    createSpg62Director(
+      arrayMat,
+      dark,
+      new THREE.Vector3(longitudinal(-10.8), 13.5, -3.7),
+      Math.PI + 0.3,
+    ),
+    createSpg62Director(
+      arrayMat,
+      dark,
+      new THREE.Vector3(longitudinal(-10.8), 13.5, 3.7),
+      Math.PI - 0.3,
+    ),
   ];
   ship.add(...directors);
-  const foreCiws = ciws(superMat, dark, "ciwsFore");
+  const foreCiws = createPhalanxCiws(superMat, dark, "ciwsFore");
   foreCiws.position.set(longitudinal(13.5), 9.3, 0);
-  const aftCiws = ciws(superMat, dark, "ciwsAft");
+  const aftCiws = createPhalanxCiws(superMat, dark, "ciwsAft");
   aftCiws.position.set(longitudinal(-15.5), 10.2, -3.55);
   aftCiws.rotation.y = Math.PI;
   ship.add(foreCiws, aftCiws);
@@ -642,7 +474,7 @@ export function buildTiconderoga() {
       ...(harpoon.userData.weaponHardpoints as ModelWeaponHardpoint[]),
     );
     highDetail.add(harpoon);
-    const ewArray = slq32Array(arrayMat, dark);
+    const ewArray = createSlq32Array(arrayMat, dark);
     ewArray.position.set(longitudinal(1.8), 13.2, side * 3.38);
     ewArray.rotation.y = side > 0 ? 0 : Math.PI;
     highDetail.add(ewArray);
@@ -815,8 +647,11 @@ export function buildTiconderoga() {
     hullStations: TICONDEROGA_HULL.length,
     hullSectionPoints: 8,
     hullLength: longitudinal(68),
-    hullBeam: 7.48,
-    hullLengthBeamRatio: longitudinal(68) / 7.48,
+    hullBeam: TICONDEROGA_MODEL_BEAM,
+    hullLengthBeamRatio: longitudinal(68) / TICONDEROGA_MODEL_BEAM,
+    realLengthMeters: TICONDEROGA_REAL_LENGTH_M,
+    realBeamMeters: TICONDEROGA_REAL_BEAM_M,
+    modelMetersPerUnit: MODEL_METERS_PER_UNIT,
     surfaceStrikeHardpoints,
     vlsCells,
     radar,
