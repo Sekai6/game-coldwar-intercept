@@ -1,5 +1,8 @@
 import * as THREE from "three";
-import type { EnemyPlatformInstance } from "./platforms/types";
+import type {
+  EnemyPlatformInstance,
+  PlatformIncomingTrack,
+} from "./platforms/types";
 import type { ModelWeaponHardpoint, ShipDefinition } from "./ship-types";
 import { getThreatDefinition } from "./threats/catalog";
 import {
@@ -48,6 +51,17 @@ export type SurfaceStrikeEvent =
       offBoresightDeg: number;
     }
   | { kind: "miss"; missile: SurfaceStrikeMissile; reason: string }
+  | {
+      kind: "platform-track";
+      missile: SurfaceStrikeMissile;
+      quality: number;
+      range: number;
+    }
+  | {
+      kind: "point-defense-ready";
+      missile: SurfaceStrikeMissile;
+      quality: number;
+    }
   | { kind: "soft-kill"; missile: SurfaceStrikeMissile }
   | { kind: "point-defense"; missile: SurfaceStrikeMissile; pk: number }
   | {
@@ -123,6 +137,115 @@ function deterministicRoll(missile: SurfaceStrikeMissile, salt: number) {
   return raw - Math.floor(raw);
 }
 
+function updatePlatformIncomingTrack(
+  missile: SurfaceStrikeMissile,
+  dt: number,
+  elapsed: number,
+  sensorsEnabled: boolean,
+) {
+  const platform = missile.target;
+  const defense = platform.definition.survivability.pointDefense;
+  let track = platform.incomingTracks.get(missile.id);
+  if (!track) {
+    track = {
+      missileId: missile.id,
+      position: missile.mesh.position.clone(),
+      velocity: new THREE.Vector3(),
+      quality: 0,
+      uncertainty: Infinity,
+      lastUpdate: -Infinity,
+      nextScan: elapsed,
+      scanCount: 0,
+      fireControlReadyAt: Infinity,
+      detectionLogged: false,
+      readyLogged: false,
+    } satisfies PlatformIncomingTrack;
+    platform.incomingTracks.set(missile.id, track);
+  }
+  track.position.addScaledVector(track.velocity, dt);
+  track.quality = Math.max(0, track.quality - dt * 0.025);
+  track.uncertainty = Math.min(40, track.uncertainty + dt * 0.55);
+
+  const trueRange = missile.mesh.position.distanceTo(platform.model.position);
+  let event: SurfaceStrikeEvent | null = null;
+  if (elapsed >= track.nextScan) {
+    track.nextScan = elapsed + defense.sensorUpdateInterval;
+    track.scanCount++;
+    const sensorHealth =
+      platform.definition.sensorSlots.reduce(
+        (sum, sensor) =>
+          sum + (platform.subsystemHealth.get(sensor.id) ?? 100) / 100,
+        0,
+      ) / Math.max(1, platform.definition.sensorSlots.length);
+    const ratio = trueRange / Math.max(1, defense.sensorRange);
+    const lowAltitudePenalty = THREE.MathUtils.clamp(
+      (1 - missile.mesh.position.y / 0.9) * 0.16,
+      0,
+      0.16,
+    );
+    const detectionProbability = THREE.MathUtils.clamp(
+      (0.92 - ratio * ratio * 0.62 - lowAltitudePenalty) * sensorHealth,
+      0.03,
+      0.94,
+    );
+    if (
+      sensorsEnabled &&
+      !platform.destroyed &&
+      trueRange <= defense.sensorRange &&
+      deterministicRoll(missile, 20 + track.scanCount * 0.37) <
+        detectionProbability
+    ) {
+      const quality = THREE.MathUtils.clamp(
+        (1 - ratio * 0.62 - lowAltitudePenalty * 0.7) * sensorHealth,
+        0.05,
+        0.96,
+      );
+      const uncertainty = 0.8 + (1 - quality) * 8;
+      const phase = missile.id * 1.71 + track.scanCount * 0.83;
+      track.position
+        .copy(missile.mesh.position)
+        .add(
+          new THREE.Vector3(
+            Math.sin(phase) * uncertainty,
+            0,
+            Math.cos(phase * 1.13) * uncertainty,
+          ),
+        );
+      track.velocity.lerp(missile.velocity, 0.72);
+      track.quality = quality;
+      track.uncertainty = uncertainty;
+      track.lastUpdate = elapsed;
+      if (!track.detectionLogged) {
+        track.detectionLogged = true;
+        event = {
+          kind: "platform-track",
+          missile,
+          quality,
+          range: trueRange,
+        };
+      }
+    }
+  }
+
+  const valid =
+    track.quality >= defense.minimumTrackQuality &&
+    elapsed - track.lastUpdate <= defense.trackMemory;
+  if (!valid) {
+    track.fireControlReadyAt = Infinity;
+    track.readyLogged = false;
+  } else if (!Number.isFinite(track.fireControlReadyAt)) {
+    track.fireControlReadyAt = elapsed + defense.reactionTime;
+  } else if (elapsed >= track.fireControlReadyAt && !track.readyLogged) {
+    track.readyLogged = true;
+    event = {
+      kind: "point-defense-ready",
+      missile,
+      quality: track.quality,
+    };
+  }
+  return { track, valid, event };
+}
+
 function damagePlatform(
   missile: SurfaceStrikeMissile,
   damage: number,
@@ -147,6 +270,7 @@ export function updateSurfaceStrikeMissile(
   elapsed: number,
   localTerminalDensity: number,
   softKillEnabled: boolean,
+  platformSensorsEnabled: boolean,
 ) {
   if (missile.phase === "destroyed") return null;
   if (missile.target.destroyed && missile.targetLostAt === null) {
@@ -165,8 +289,13 @@ export function updateSurfaceStrikeMissile(
   const trueRange = missile.mesh.position.distanceTo(trueTargetPosition);
   const profile = getThreatDefinition("RGM-84 Harpoon").profile;
   const terminal = commandRange < profile.terminalAt;
-  const defenseRange = missile.seekerAcquired ? trueRange : commandRange;
   missile.phase = missile.age < 1.35 ? "boost" : terminal ? "terminal" : "midcourse";
+  const platformTrack = updatePlatformIncomingTrack(
+    missile,
+    dt,
+    elapsed,
+    platformSensorsEnabled,
+  );
 
   if (terminal && !missile.seekerLogged) {
     missile.seekerLogged = true;
@@ -210,28 +339,39 @@ export function updateSurfaceStrikeMissile(
     if (!softKillEnabled) {
       missile.mesh.userData.seekerState = "ACTIVE / NO JAM";
     } else {
-    const ecmHealth =
-      (missile.target.subsystemHealth.get("electronic-warfare") ?? 100) / 100;
-    const pk = missile.target.definition.survivability.softKillPk * ecmHealth;
-    if (deterministicRoll(missile, 1) < pk) {
-      missile.phase = "destroyed";
-      missile.mesh.visible = false;
-      missile.path.visible = false;
-      return { kind: "soft-kill", missile } satisfies SurfaceStrikeEvent;
-    }
-    missile.mesh.userData.seekerState = "ACTIVE / HOJ";
+      const ecmHealth =
+        (missile.target.subsystemHealth.get("electronic-warfare") ?? 100) /
+        100;
+      const pk =
+        missile.target.definition.survivability.softKillPk * ecmHealth;
+      if (deterministicRoll(missile, 1) < pk) {
+        missile.phase = "destroyed";
+        missile.mesh.visible = false;
+        missile.path.visible = false;
+        return { kind: "soft-kill", missile } satisfies SurfaceStrikeEvent;
+      }
+      missile.mesh.userData.seekerState = "ACTIVE / HOJ";
     }
   }
 
   const pointDefense = missile.target.definition.survivability.pointDefense;
+  const defenseTrackRange = platformTrack.track.position.distanceTo(
+    missile.target.model.position,
+  );
+  const availableChannel = missile.target.pointDefenseChannelReady.findIndex(
+    (readyAt) => elapsed >= readyAt,
+  );
   if (
     !missile.target.destroyed &&
     terminal &&
-    defenseRange < pointDefense.range &&
+    platformTrack.valid &&
+    elapsed >= platformTrack.track.fireControlReadyAt &&
+    defenseTrackRange < pointDefense.range &&
     missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
-    elapsed >= missile.target.nextPointDefense
+    availableChannel >= 0
   ) {
-    missile.target.nextPointDefense = elapsed + pointDefense.interval;
+    missile.target.pointDefenseChannelReady[availableChannel] =
+      elapsed + pointDefense.interval;
     missile.pointDefenseEngagements++;
     const health =
       (missile.target.subsystemHealth.get("point-defense") ?? 100) / 100;
@@ -239,7 +379,9 @@ export function updateSurfaceStrikeMissile(
       (pointDefense.basePk -
         Math.max(0, localTerminalDensity - 1) *
           pointDefense.localSaturationPenalty) *
-        health,
+        health *
+        THREE.MathUtils.lerp(0.62, 1, platformTrack.track.quality) *
+        THREE.MathUtils.clamp(1 - platformTrack.track.uncertainty / 32, 0.55, 1),
       0.05,
       0.72,
     );
@@ -376,5 +518,5 @@ export function updateSurfaceStrikeMissile(
           : "TARGET DESTROYED / AIMPOINT LOST",
     } satisfies SurfaceStrikeEvent;
   }
-  return null;
+  return platformTrack.event;
 }

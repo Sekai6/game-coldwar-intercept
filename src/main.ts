@@ -4558,6 +4558,7 @@ function updateSurfaceCombat(
       elapsed,
       density,
       ecmEnabled,
+      opforRadarEnabled,
     );
     if (!event) continue;
     if (event.kind === "seeker-search")
@@ -4568,6 +4569,14 @@ function updateSurfaceCombat(
       );
     else if (event.kind === "miss")
       log(`HARPOON ${missile.id} MISS / ${event.reason}`);
+    else if (event.kind === "platform-track")
+      log(
+        `${missile.target.definition.name} INCOMING TRACK / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}% / ${(event.range / 10).toFixed(1)} km`,
+      );
+    else if (event.kind === "point-defense-ready")
+      log(
+        `${missile.target.definition.name} POINT DEFENSE READY / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}%`,
+      );
     else if (event.kind === "soft-kill")
       log(
         `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ECM-DECOY SEDUCTION`,
@@ -4592,6 +4601,13 @@ function updateSurfaceCombat(
         log(`SURFACE KILL / ${missile.target.definition.name} DISABLED`);
       }
     }
+    if (
+      event.kind === "miss" ||
+      event.kind === "soft-kill" ||
+      event.kind === "point-defense" ||
+      event.kind === "hit"
+    )
+      missile.target.incomingTracks.delete(missile.id);
   }
   canvas.dataset.surfaceTrackQuality = (track?.quality ?? 0).toFixed(3);
   canvas.dataset.surfaceTrackAge = (track?.age ?? 0).toFixed(2);
@@ -4645,6 +4661,44 @@ function updateSurfaceCombat(
         .toFixed(1),
     )
     .join(",");
+  const platformDefense = enemyPlatform?.definition.survivability.pointDefense;
+  const incomingDefenseTracks = liveSurfaceStrikes.map((missile) =>
+    missile.target.incomingTracks.get(missile.id),
+  );
+  canvas.dataset.platformIncomingTrackStates = incomingDefenseTracks
+    .map((incomingTrack) => {
+      if (!incomingTrack || !platformDefense) return "none";
+      const valid =
+        incomingTrack.quality >= platformDefense.minimumTrackQuality &&
+        elapsed - incomingTrack.lastUpdate <= platformDefense.trackMemory;
+      if (!valid) return incomingTrack.detectionLogged ? "stale" : "searching";
+      return elapsed >= incomingTrack.fireControlReadyAt
+        ? "ready"
+        : "reaction";
+    })
+    .join(",");
+  canvas.dataset.platformIncomingTrackQualities = incomingDefenseTracks
+    .map((incomingTrack) => (incomingTrack?.quality ?? 0).toFixed(3))
+    .join(",");
+  canvas.dataset.platformIncomingTrackAges = incomingDefenseTracks
+    .map((incomingTrack) =>
+      Number.isFinite(incomingTrack?.lastUpdate)
+        ? Math.max(0, elapsed - incomingTrack!.lastUpdate).toFixed(2)
+        : "inf",
+    )
+    .join(",");
+  canvas.dataset.platformDefenseChannels = (
+    enemyPlatform?.pointDefenseChannelReady ?? []
+  )
+    .map((readyAt) => Math.max(0, readyAt - elapsed).toFixed(2))
+    .join(",");
+  canvas.dataset.platformIncomingTrackCount = String(
+    enemyPlatform
+      ? [...enemyPlatform.incomingTracks.values()].filter(
+          (incomingTrack) => incomingTrack.detectionLogged,
+        ).length
+      : 0,
+  );
   canvas.dataset.enemyPlatformHull = String(
     Math.round(enemyPlatform?.hullIntegrity ?? 0),
   );

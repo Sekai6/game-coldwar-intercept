@@ -173,6 +173,12 @@ export const MOSKVA = {
   survivability: {
     hull: 100,
     pointDefense: {
+      sensorRange: 115,
+      sensorUpdateInterval: 0.72,
+      minimumTrackQuality: 0.3,
+      trackMemory: 3.2,
+      reactionTime: 1.35,
+      channels: 2,
       range: 42,
       interval: 0.42,
       basePk: 0.38,

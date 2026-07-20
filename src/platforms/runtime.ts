@@ -84,7 +84,11 @@ export function instantiateEnemyPlatform(
       ["point-defense", 100] as const,
       ["electronic-warfare", 100] as const,
     ]),
-    nextPointDefense: 0,
+    incomingTracks: new Map(),
+    pointDefenseChannelReady: Array.from(
+      { length: definition.survivability.pointDefense.channels },
+      () => 0,
+    ),
     velocity: new THREE.Vector3(),
     speedKnots: 0,
     desiredHeading: heading,
@@ -348,5 +352,7 @@ export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
   platform.weaponSlotNextRelease.clear();
   platform.weaponTrackAge.clear();
   platform.weaponTrackReadyLogged.clear();
+  platform.incomingTracks.clear();
+  platform.pointDefenseChannelReady.length = 0;
   platform.subsystemHealth.clear();
 }

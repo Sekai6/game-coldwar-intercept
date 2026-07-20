@@ -75,6 +75,12 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   survivability: {
     hull: number;
     pointDefense: {
+      sensorRange: number;
+      sensorUpdateInterval: number;
+      minimumTrackQuality: number;
+      trackMemory: number;
+      reactionTime: number;
+      channels: number;
       range: number;
       interval: number;
       basePk: number;
@@ -98,7 +104,8 @@ export interface EnemyPlatformInstance {
   weaponTrackReadyLogged: Set<string>;
   hullIntegrity: number;
   subsystemHealth: Map<string, number>;
-  nextPointDefense: number;
+  incomingTracks: Map<number, PlatformIncomingTrack>;
+  pointDefenseChannelReady: number[];
   velocity: THREE.Vector3;
   speedKnots: number;
   desiredHeading: number;
@@ -111,6 +118,20 @@ export interface EnemyPlatformInstance {
     valid: boolean;
   };
   destroyed: boolean;
+}
+
+export interface PlatformIncomingTrack {
+  missileId: number;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  quality: number;
+  uncertainty: number;
+  lastUpdate: number;
+  nextScan: number;
+  scanCount: number;
+  fireControlReadyAt: number;
+  detectionLogged: boolean;
+  readyLogged: boolean;
 }
 
 export interface PlatformLaunchReservation {
