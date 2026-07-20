@@ -1527,7 +1527,17 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
   const track = platform.incomingTracks.get(missile.id);
   const ewHealth =
     (platform.subsystemHealth.get("electronic-warfare") ?? 100) / 100;
-  const range = missile.mesh.position.distanceTo(platform.model.position);
+  const trackValid =
+    !!track &&
+    track.detectionLogged &&
+    track.quality >=
+      platform.definition.survivability.pointDefense.minimumTrackQuality &&
+    elapsed - track.lastUpdate <=
+      platform.definition.survivability.pointDefense.trackMemory;
+  const observedPosition = trackValid ? track!.position : undefined;
+  const range = observedPosition
+    ? observedPosition.distanceTo(platform.model.position)
+    : Infinity;
   if (
     !ecmEnabled ||
     platform.destroyed ||
@@ -1536,12 +1546,10 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
     elapsed < platform.nextDecoy ||
     range > softKill.decoyDeployRange ||
     missile.mesh.userData.platformDecoyDeployed ||
-    !track?.detectionLogged ||
-    elapsed - track.lastUpdate >
-      platform.definition.survivability.pointDefense.trackMemory
+    !trackValid
   )
     return false;
-  const threatAxis = missile.mesh.position
+  const threatAxis = observedPosition!
     .clone()
     .sub(platform.model.position)
     .setY(0)

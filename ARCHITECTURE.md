@@ -76,6 +76,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 10. Tactical BDA uses the same friendly durability prior, confirmed-hit count, weapon-effect uncertainty, and current surface-track quality. The live HUD and combat log must not print true remaining platform hull or true damaged-subsystem identity; exact values remain simulation/AAR verification state.
 11. Friendly ship maneuver doctrine is catalog data: patrol/cruise/max speeds, acceleration, deceleration, turn rate, decision cadence, and standoff ring. Runtime prioritizes qualified incoming-air tracks for defensive beam maneuvering, then uses only the surface picture for close/standoff/withdraw decisions. A reserved platform weapon is not a radar contact or active raid member until its physical hardpoint release occurs.
 12. Enemy-platform sensor scans use target-RCS fourth-root range scaling, antenna/target radar horizon, health, refresh cadence, and deterministic detection probability. A missed scan decays sensor quality and preserves a fresh track memory; it does not silently grant a new measurement.
+13. Platform soft-kill deployment uses the same qualified incoming track position for range and bearing. Platform ECM/decoy logic may not use an airborne missile's truth transform before seeker acquisition; seeker-side signal competition may use its own post-acquisition range measurement.
 
 ## Adding an interceptor
 
