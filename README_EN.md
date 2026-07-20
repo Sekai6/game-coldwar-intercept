@@ -269,15 +269,15 @@ The Slava-class Moskva is the first cataloged enemy platform. Its definition dec
 
 A platform-launched P-500 is not spawned in open air. It starts at a specific tube's world position and moves through `TUBE EXIT -> BOOST -> PROGRAM TURN -> MIDCOURSE TAKEOVER` using the slot-defined axis, exit speed, boost duration, and takeover time. Only after takeover does it enter the generic P-500 envelope, radar-altimeter, and terminal-guidance logic. Cover and hardpoint states remain one-to-one, so a fired tube cannot be reserved again by a later wave.
 
-Each platform weapon slot also declares a minimum track quality. A reservation does not guarantee immediate launch: Moskva must first establish an adequate track with its own sensors. If the platform is disabled, unreleased reservations are aborted while missiles already clear of their tubes continue the attack.
+Each platform weapon slot also declares a minimum track quality. A reservation does not guarantee immediate launch: Moskva must first establish an adequate track with its own sensors. If the platform is disabled, unreleased reservations enter a distinct `canceled` state and retain their covers, while missiles already clear of their tubes continue the attack. Canceled rounds are never counted as fired.
 
 ### Surface-action loop
 
 Both selectable ships declare a data-driven `surfaceStrike` capability and eight physical Mk 141 hardpoints. A separate surface picture tracks the enemy platform with refresh, uncertainty, RCS, sensor health, and quality effects. Once range and quality gates are met, auto doctrine launches four-round salvos; `SURFACE STRIKE` hold and `LAUNCH HARPOON` provide manual control.
 
-Each Harpoon departs along its actual launcher axis and transitions through `boost -> midcourse -> terminal`. Midcourse guidance follows an uncertain datalink command point; the active seeker switches to platform truth only in terminal flight. Speed response, turn rate, sea-skimming altitude, terminal weave, and closest approach remain physical constraints. Platform ECM/decoys receive one soft-kill resolution, while point defense uses a shared firing interval, finite engagements per target, subsystem health, and local saturation penalties instead of unlimited repeated attempts.
+Each Harpoon departs along its actual launcher axis and transitions through `boost -> midcourse -> terminal`. Midcourse guidance follows an uncertain position/velocity track and datalink command point; the active seeker switches to platform truth only in terminal flight and applies limited velocity lead. Speed response, turn rate, sea-skimming altitude, terminal weave, and closest approach remain physical constraints. Platform ECM/decoys receive one soft-kill resolution, while point defense uses a shared firing interval, finite engagements per target, subsystem health, and local saturation penalties instead of unlimited repeated attempts.
 
-Hits reduce hull integrity and a deterministic subsystem. Sensor damage degrades track quality and antenna rotation; point-defense and EW damage reduce their corresponding kill probabilities. Mission completion waits for all incoming weapons, Harpoons, queues, and ship launch mechanisms before declaring a surface kill or a failed strike with the target surviving.
+Platform speed, cruise setting, acceleration, and turn rate come from its definition. Runtime executes a beam maneuver limited by propulsion and hull health, and the resulting true velocity feeds the uncertain surface track. Each Harpoon hit applies 34 game-scaled structural damage, damages a deterministic subsystem, and leaves persistent fire and smoke. Sensor damage degrades track quality and antenna rotation; point-defense and EW damage reduce their corresponding kill probabilities. Mission completion waits for all incoming weapons, Harpoons, queues, and ship launch mechanisms before declaring a surface kill or a failed strike with the target surviving.
 
 <a id="sam-guidance"></a>
 ## 7. SAMs and Guidance
@@ -536,6 +536,7 @@ game-codewar-intercept/
 │  ├─ ship-types.ts           # Ship capabilities, semantic subsystems, launcher contracts
 │  ├─ ship-catalog.ts         # Ship registry, magazines, platform data, damage zones
 │  ├─ combat-types.ts         # Missile, interceptor, launcher, and AAR domain types
+│  ├─ surface-combat.ts       # Anti-ship flight, platform defenses, and damage runtime
 │  ├─ interceptor-data.ts     # Game-scaled ship-launched interceptor profiles
 │  ├─ sim.ts                  # Radar scans, association, uncertainty, fire-control solutions
 │  ├─ sensor-faces.ts         # Fixed-array aspect coverage and localized damage

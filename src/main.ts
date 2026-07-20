@@ -1753,6 +1753,55 @@ function createShipDamage(
     Math.min(0.45, severity / 100),
   );
 }
+function createPlatformDamage(
+  platform: EnemyPlatformInstance,
+  severity: number,
+  serial: number,
+) {
+  const group = new THREE.Group();
+  group.position.set(
+    THREE.MathUtils.clamp((serial % 3 - 1) * 12, -20, 20),
+    5.2 + (serial % 2) * 1.8,
+    serial % 2 ? 3.6 : -3.6,
+  );
+  const fire = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.2, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xff6528,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  fire.position.y = 0.8;
+  group.add(fire);
+  const smoke: THREE.Mesh[] = [];
+  for (let index = 0; index < 7; index++) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.9, 7, 5),
+      new THREE.MeshBasicMaterial({
+        color: 0x5d6668,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false,
+      }),
+    );
+    smoke.push(puff);
+    group.add(puff);
+  }
+  const light = new THREE.PointLight(0xff5422, 4 + severity * 0.1, 30);
+  light.position.y = 1.2;
+  group.add(light);
+  platform.model.add(group);
+  shipDamageEffects.push({
+    group,
+    fire,
+    smoke,
+    light,
+    seed: 19.4 + serial * 2.17,
+  });
+}
 function updateSubsystemPanel() {
   let damaged = 0,
     failed = 0;
@@ -2505,7 +2554,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   explodedTargets.clear();
   explosions.forEach((e) => scene.remove(e.core, e.ring, e.light));
   explosions.length = 0;
-  shipDamageEffects.forEach((effect) => defender.remove(effect.group));
+  shipDamageEffects.forEach((effect) => effect.group.removeFromParent());
   shipDamageEffects.length = 0;
   boosterDebris.forEach((debris) => scene.remove(debris.mesh, debris.light));
   boosterDebris.length = 0;
@@ -4271,7 +4320,7 @@ function updateSurfaceCombat(
           {
             id: 1,
             position: enemyPlatform.model.position,
-            velocity: new THREE.Vector3(),
+            velocity: enemyPlatform.velocity,
             altitude: 30,
             rcs: enemyPlatform.definition.radarCrossSection,
           },
@@ -4328,9 +4377,15 @@ function updateSurfaceCombat(
         .copy(track.position)
         .addScaledVector(track.velocity, 4);
       missile.nextDatalink = elapsed + 2.4;
-      log(
-        `${missile.target.definition.name} TRACK UPDATE / HARPOON ${missile.id} / TQ ${Math.round(track.quality * 100)}%`,
-      );
+      if (
+        missile.lastDatalinkQuality < 0 ||
+        Math.abs(track.quality - missile.lastDatalinkQuality) >= 0.12
+      ) {
+        log(
+          `HARPOON ${missile.id} DATALINK UPDATE / ${missile.target.definition.name} TRACK ${track.id} / TQ ${Math.round(track.quality * 100)}%`,
+        );
+        missile.lastDatalinkQuality = track.quality;
+      }
     }
     const density = surfaceStrikeMissiles.filter(
       (other) =>
@@ -4358,6 +4413,7 @@ function updateSurfaceCombat(
     } else {
       surfaceHits++;
       createExplosion(missile.target.model.position.clone().add(new THREE.Vector3(0, 7, 0)));
+      createPlatformDamage(missile.target, event.damage, surfaceHits);
       const hullMaterial = missile.target.model.userData
         .hullMaterial as THREE.MeshStandardMaterial;
       hullMaterial?.color.lerp(new THREE.Color(0x302a28), event.damage / 80);
@@ -4374,6 +4430,7 @@ function updateSurfaceCombat(
   canvas.dataset.surfaceTrackUncertainty = String(
     Math.round(track?.uncertainty ?? 0),
   );
+  canvas.dataset.surfaceTrackSpeed = (track?.velocity.length() ?? 0).toFixed(4);
   canvas.dataset.surfaceStrikeAmmo = String(surfaceStrikeAmmo);
   canvas.dataset.surfaceStrikeActive = String(
     surfaceStrikeMissiles.filter((missile) => missile.phase !== "destroyed")
@@ -5151,7 +5208,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
       m.path.visible = false;
       platform.hardpointState.set(
         pendingPlatformLaunch.reservation.hardpoint.id,
-        "fired",
+        "canceled",
       );
       log(
         `${platform.definition.name} LAUNCH ABORT / ${pendingPlatformLaunch.reservation.hardpoint.id.toUpperCase()} / PLATFORM DISABLED`,
@@ -5668,7 +5725,7 @@ function tick(now: number) {
     while (simAccumulator >= 0.05 && running) {
       elapsed += 0.05;
       if (enemyPlatform)
-        updateEnemyPlatform(enemyPlatform, elapsed, defender.position);
+        updateEnemyPlatform(enemyPlatform, elapsed, 0.05, defender.position);
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
       captureAarSnapshot();
@@ -5696,6 +5753,9 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformFired = String(
       states.filter((state) => state === "fired").length,
     );
+    canvas.dataset.enemyPlatformCanceled = String(
+      states.filter((state) => state === "canceled").length,
+    );
     canvas.dataset.enemyPlatformSensorQuality = Math.max(
       0,
       ...[...enemyPlatform.sensorState.values()].map((state) => state.quality),
@@ -5708,14 +5768,19 @@ function tick(now: number) {
         (hardpoint) => hardpoint.cover?.visible !== false,
       ).length,
     );
+    canvas.dataset.enemyPlatformSpeedKnots = enemyPlatform.speedKnots.toFixed(2);
+    canvas.dataset.enemyPlatformVelocity = enemyPlatform.velocity.length().toFixed(4);
   } else {
     canvas.dataset.enemyPlatform = "AIRBORNE";
     canvas.dataset.enemyPlatformReady = "0";
     canvas.dataset.enemyPlatformReserved = "0";
     canvas.dataset.enemyPlatformFired = "0";
+    canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformHardpoints = "0";
     canvas.dataset.enemyPlatformCoversVisible = "0";
+    canvas.dataset.enemyPlatformSpeedKnots = "0.00";
+    canvas.dataset.enemyPlatformVelocity = "0.0000";
   }
   ocean.update(elapsed);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,

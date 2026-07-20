@@ -78,6 +78,9 @@ export function instantiateEnemyPlatform(
       ["electronic-warfare", 100] as const,
     ]),
     nextPointDefense: 0,
+    velocity: new THREE.Vector3(),
+    speedKnots: 0,
+    desiredHeading: heading,
     destroyed: false,
   };
   return instance;
@@ -199,15 +202,54 @@ export function releasePlatformHardpoint(
 export function updateEnemyPlatform(
   platform: EnemyPlatformInstance,
   elapsed: number,
+  dt: number,
   targetPosition: THREE.Vector3,
 ) {
-  const sensorHealth =
-    platform.definition.sensorSlots.reduce(
-      (sum, sensor) => sum + (platform.subsystemHealth.get(sensor.id) ?? 100),
-      0,
-    ) / Math.max(1, platform.definition.sensorSlots.length * 100);
+  const sensorHealth = platform.destroyed
+    ? 0
+    : platform.definition.sensorSlots.reduce(
+        (sum, sensor) => sum + (platform.subsystemHealth.get(sensor.id) ?? 100),
+        0,
+      ) / Math.max(1, platform.definition.sensorSlots.length * 100);
   for (const sensor of platform.slots.rotatingSensors)
     sensor.rotation.y += 0.007 * sensorHealth;
+  const propulsion =
+      (platform.subsystemHealth.get("propulsion") ?? 100) / 100,
+    mobility = platform.definition.mobility,
+    toTarget = targetPosition.clone().sub(platform.model.position).setY(0),
+    targetRange = toTarget.length();
+  if (targetRange > 1) {
+    const axis = toTarget.normalize(),
+      beam = new THREE.Vector3(-axis.z, 0, axis.x);
+    platform.desiredHeading = Math.atan2(-beam.z, beam.x);
+  }
+  const maximumSpeed =
+      mobility.maxSpeedKnots * propulsion * Math.max(0.35, platform.hullIntegrity / 100),
+    commandedSpeed = platform.destroyed
+      ? 0
+      : Math.min(maximumSpeed, mobility.cruiseSpeedKnots),
+    speedStep = mobility.accelerationKnotsPerSecond * (0.2 + 0.8 * propulsion) * dt;
+  platform.speedKnots += THREE.MathUtils.clamp(
+    commandedSpeed - platform.speedKnots,
+    -speedStep,
+    speedStep,
+  );
+  const headingError = Math.atan2(
+      Math.sin(platform.desiredHeading - platform.model.rotation.y),
+      Math.cos(platform.desiredHeading - platform.model.rotation.y),
+    ),
+    turnRate = THREE.MathUtils.degToRad(mobility.turnRateDeg) * (0.25 + 0.75 * propulsion);
+  platform.model.rotation.y += THREE.MathUtils.clamp(
+    headingError,
+    -turnRate * dt,
+    turnRate * dt,
+  );
+  const forward = new THREE.Vector3(1, 0, 0).applyAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    platform.model.rotation.y,
+  );
+  platform.velocity.copy(forward).multiplyScalar(platform.speedKnots * 0.005144);
+  platform.model.position.addScaledVector(platform.velocity, dt);
   const range = platform.model.position.distanceTo(targetPosition);
   for (const definition of platform.definition.sensorSlots) {
     const state = platform.sensorState.get(definition.id)!;

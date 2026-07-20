@@ -31,6 +31,7 @@ export type SurfaceStrikeMissile = {
   history: THREE.Vector3[];
   closestTargetRange: number;
   pointDefenseEngagements: number;
+  lastDatalinkQuality: number;
 };
 
 export type SurfaceStrikeEvent =
@@ -95,6 +96,7 @@ export function createSurfaceStrikeMissile(
     history,
     closestTargetRange: Infinity,
     pointDefenseEngagements: 0,
+    lastDatalinkQuality: -1,
   };
 }
 
@@ -203,7 +205,14 @@ export function updateSurfaceStrikeMissile(
         Math.cos(missile.age * 2.25) * 0.22,
       )
     : new THREE.Vector3();
-  const aimPosition = terminal ? trueTargetPosition : missile.commandPoint;
+  const aimPosition = terminal
+    ? trueTargetPosition
+        .clone()
+        .addScaledVector(
+          missile.target.velocity,
+          Math.min(6, trueRange / Math.max(1, missile.velocity.length())),
+        )
+    : missile.commandPoint;
   const aim = aimPosition
     .clone()
     .add(weave)

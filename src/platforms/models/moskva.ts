@@ -155,6 +155,12 @@ export const MOSKVA = {
   era: "1980s-2000s",
   role: "GUIDED MISSILE CRUISER / SURFACE STRIKE",
   radarCrossSection: 15,
+  mobility: {
+    maxSpeedKnots: 32,
+    cruiseSpeedKnots: 20,
+    accelerationKnotsPerSecond: 0.42,
+    turnRateDeg: 1.35,
+  },
   defaultThreat: "P-500",
   sensorSlots: [
     { id: "air-search", displayName: "MR-800 VOSKHOD / TOP PAIR", role: "air-search", anchorId: "top-pair", maxRange: 920, updateInterval: 0.9, precision: 0.78 },

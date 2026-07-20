@@ -20,7 +20,7 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
     minRange: 35,
     maxRange: 680,
     requiredTrackQuality: 0.62,
-    damage: 24,
+    damage: 34,
     salvoSize: 4,
   },
   launcher: {

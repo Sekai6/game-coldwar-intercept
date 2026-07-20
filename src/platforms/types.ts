@@ -58,6 +58,12 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   era: string;
   role: string;
   radarCrossSection: number;
+  mobility: {
+    maxSpeedKnots: number;
+    cruiseSpeedKnots: number;
+    accelerationKnotsPerSecond: number;
+    turnRateDeg: number;
+  };
   defaultThreat: EnemyType;
   sensorSlots: readonly PlatformSensorSlot[];
   weaponSlots: readonly PlatformWeaponSlot[];
@@ -79,12 +85,15 @@ export interface EnemyPlatformInstance {
   definition: EnemyPlatformDefinition;
   model: THREE.Group;
   slots: EnemyPlatformModelSlots;
-  hardpointState: Map<string, "ready" | "reserved" | "fired">;
+  hardpointState: Map<string, "ready" | "reserved" | "fired" | "canceled">;
   sensorState: Map<string, { nextUpdate: number; quality: number }>;
   weaponSlotNextLaunch: Map<string, number>;
   hullIntegrity: number;
   subsystemHealth: Map<string, number>;
   nextPointDefense: number;
+  velocity: THREE.Vector3;
+  speedKnots: number;
+  desiredHeading: number;
   destroyed: boolean;
 }
 
