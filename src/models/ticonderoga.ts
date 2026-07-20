@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { ShipDefinition } from "../ship-types";
+import { applySurfaceDetail } from "../visual/material-textures";
 
 function slopedBox(
   length: number,
@@ -367,6 +368,11 @@ export function buildTiconderoga() {
     highDetail = new THREE.Group(),
     mediumDetail = new THREE.Group(),
     lowDetail = new THREE.Group();
+  applySurfaceDetail(hullMat, "painted-metal", 0.3);
+  applySurfaceDetail(deckMat, "weather-deck", 0.5);
+  applySurfaceDetail(superMat, "painted-metal", 0.26);
+  applySurfaceDetail(dark, "dark-metal", 0.34);
+  applySurfaceDetail(arrayMat, "painted-metal", 0.2);
   const hull = new THREE.Mesh(hullGeometry(), hullMat),
     waterline = new THREE.Mesh(
       hullGeometry(),

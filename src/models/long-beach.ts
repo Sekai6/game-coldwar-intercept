@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { applySurfaceDetail } from "../visual/material-textures";
 
 function createHullGeometry() {
   const sections = [
@@ -319,6 +320,9 @@ export function buildLongBeach(color = 0x4b5a59, scale = 1) {
     metalness: 0.5,
     roughness: 0.45,
   });
+  applySurfaceDetail(hullMat, "painted-metal", 0.32);
+  applySurfaceDetail(deckMat, "weather-deck", 0.48);
+  applySurfaceDetail(darkMat, "dark-metal", 0.34);
   const hull = new THREE.Mesh(createHullGeometry(), hullMat);
   g.add(hull);
   const deckShape = new THREE.Shape();

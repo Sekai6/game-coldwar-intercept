@@ -1,4 +1,9 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import "./style.css";
 import { CombatPicture } from "./sim";
 import { type ShipClass, type SubsystemId } from "./ship-types";
@@ -22,6 +27,11 @@ import {
   THREAT_DEFINITIONS,
   THREAT_PROFILES as incomingProfiles,
 } from "./threats/catalog";
+import {
+  updateThreatParticleTrail,
+  type ThreatParticleTrail,
+} from "./visual/threat-particles";
+import { createOceanSurface } from "./visual/ocean";
 import type {
   AarCategory,
   AarEvent,
@@ -70,6 +80,27 @@ renderer.shadowMap.enabled = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
+const composer = new EffectComposer(renderer),
+  renderPass = new RenderPass(scene, camera),
+  ssaoPass = new SSAOPass(scene, camera, innerWidth, innerHeight),
+  bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight),
+    0.42,
+    0.38,
+    0.78,
+  ),
+  outputPass = new OutputPass();
+ssaoPass.kernelRadius = 8;
+ssaoPass.minDistance = 0.001;
+ssaoPass.maxDistance = 0.09;
+ssaoPass.enabled = innerWidth > 720;
+composer.setPixelRatio(Math.min(devicePixelRatio, 2));
+composer.addPass(renderPass);
+composer.addPass(ssaoPass);
+composer.addPass(bloomPass);
+composer.addPass(outputPass);
+canvas.dataset.renderPipeline = "webgl2-pbr-ssao-bloom-aces";
+canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
 scene.add(new THREE.HemisphereLight(0x9cc7dd, 0x10212b, 1.55));
 const sun = new THREE.DirectionalLight(0xffe3ad, 2.5);
 sun.position.set(-120, 200, 100);
@@ -80,20 +111,25 @@ sun.shadow.camera.right = 250;
 sun.shadow.camera.top = 250;
 sun.shadow.camera.bottom = -250;
 scene.add(sun);
-const seaGeometry = new THREE.PlaneGeometry(1800, 1800, 64, 64);
-const sea = new THREE.Mesh(
-  seaGeometry,
-  new THREE.MeshStandardMaterial({
-    color: 0x0a3340,
-    roughness: 0.68,
-    metalness: 0.18,
-    flatShading: false,
-  }),
-);
-sea.rotation.x = -Math.PI / 2;
-scene.add(sea);
-const seaPositions = seaGeometry.attributes.position as THREE.BufferAttribute;
-const seaBase = Float32Array.from(seaPositions.array as ArrayLike<number>);
+const ocean = createOceanSurface();
+scene.add(ocean.object);
+canvas.dataset.oceanBackend = ocean.backend;
+function updateMaterialDiagnostics() {
+  let mappedMaterials = 0;
+  scene.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    mappedMaterials += materials.filter(
+      (material) =>
+        material instanceof THREE.MeshStandardMaterial &&
+        material.roughnessMap &&
+        material.normalMap,
+    ).length;
+  });
+  canvas.dataset.pbrMappedMaterials = String(mappedMaterials);
+}
 const grid = new THREE.GridHelper(1200, 48, 0x1d6570, 0x123f4b);
 grid.position.y = 0.15;
 (grid.material as THREE.Material).opacity = 0.25;
@@ -1918,7 +1954,6 @@ let dragging = false,
   el = 0.48,
   dist = 210,
   cinematic = false,
-  waveFrame = 0,
   viewMode: 1 | 2 | 3 | 4 = 2;
 let shipSpeedKnots = 0,
   shipDesiredHeading = 0,
@@ -2339,6 +2374,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
       i * interval,
     );
   }
+  updateMaterialDiagnostics();
   selectedTargetId = 1;
   searchWidth = 360;
   combatPicture.setSearch(
@@ -4844,11 +4880,10 @@ function updateIncomingMissile(m: Missile, dt: number) {
     Math.min(1, dt * 2.4),
   );
   setMissileAttitude(m.mesh, m.velocity, "-Z", m.bank);
-  if (m.mesh.userData.seaMist)
-    m.mesh.userData.seaMist.visible =
-      profile.trajectory === "sea-skimmer" &&
-      m.phase === "terminal" &&
-      m.mesh.position.y < 1.25;
+  m.mesh.userData.seaMistActive =
+    profile.trajectory === "sea-skimmer" &&
+    m.phase === "terminal" &&
+    m.mesh.position.y < 1.25;
   if (m.mesh.userData.shockCone)
     m.mesh.userData.shockCone.visible =
       profile.trajectory === "high-altitude" && m.phase === "terminal";
@@ -5002,19 +5037,7 @@ function tick(now: number) {
     document.querySelector("#targetCount")!.textContent =
       `${live} ACTIVE / ${missiles.filter((m) => m.phase !== "destroyed").length - live} RESERVE / ${distances.length ? (Math.max(...distances) / 10).toFixed(1) : "0.0"} km`;
   }
-  for (let i = 0; i < seaPositions.count; i++) {
-    const p = i * 3,
-      x = seaBase[p],
-      y = seaBase[p + 1];
-    seaPositions.setZ(
-      i,
-      Math.sin(x * 0.026 + elapsed * 0.72) * 0.48 +
-        Math.sin(y * 0.019 - elapsed * 0.54) * 0.34 +
-        Math.sin((x + y) * 0.011 + elapsed * 0.31) * 0.2,
-    );
-  }
-  seaPositions.needsUpdate = true;
-  if (++waveFrame % 8 === 0) seaGeometry.computeVertexNormals();
+  ocean.update(elapsed);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
     ewThreat = missiles.some((m) => m.mesh.visible && m.phase === "terminal"),
     ecmHealth = subsystemHealth("ecm");
@@ -5029,6 +5052,7 @@ function tick(now: number) {
       }
     });
   }
+  let activeThreatParticles = 0;
   missiles.forEach((m, index) => {
     if (!m.mesh.visible) return;
     const selection = m.mesh.userData.selection as THREE.Mesh | undefined;
@@ -5039,20 +5063,24 @@ function tick(now: number) {
       );
     }
     const pulse = 0.88 + Math.sin(elapsed * 19 + index * 1.7) * 0.12;
-    (m.mesh.userData.exhaust as THREE.Mesh | undefined)?.scale.set(1, pulse, 1);
-    (m.mesh.userData.hotCore as THREE.Mesh | undefined)?.scale.setScalar(
-      0.9 + pulse * 0.12,
-    );
-    (m.mesh.userData.seaMist as THREE.Mesh | undefined)?.scale.set(
-      1 + pulse * 0.12,
-      1 + pulse * 0.28,
-      1 + pulse * 0.12,
-    );
+    const particleTrail = m.mesh.userData.particleTrail as
+      | ThreatParticleTrail
+      | undefined;
+    if (particleTrail) {
+      updateThreatParticleTrail(
+        particleTrail,
+        elapsed + index * 0.17,
+        0.9 + pulse * 0.12,
+        !!m.mesh.userData.seaMistActive,
+      );
+      activeThreatParticles += m.mesh.userData.particleCount ?? 0;
+    }
     const shock = m.mesh.userData.shockCone as THREE.Mesh | undefined;
     if (shock)
       (shock.material as THREE.MeshBasicMaterial).opacity =
         0.09 + pulse * 0.035;
   });
+  canvas.dataset.activeThreatParticles = String(activeThreatParticles);
   clockEl.textContent = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(Math.floor(elapsed % 60)).padStart(2, "0")}`;
   updateShipWeaponVisuals(realDt);
   updateCamera();
@@ -5100,7 +5128,7 @@ function tick(now: number) {
     });
   });
   updateTargetMarker();
-  renderer.render(scene, camera);
+  composer.render();
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -5108,6 +5136,10 @@ addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  ocean.resize(innerWidth, innerHeight);
+  ssaoPass.enabled = innerWidth > 720;
+  canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
 });
 canvas.addEventListener("pointerdown", (e) => {
   dragging = true;

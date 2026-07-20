@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { applySurfaceDetail } from "../visual/material-textures";
+import { createThreatParticleTrail } from "../visual/threat-particles";
 
 interface EffectOptions {
   length: number;
@@ -16,45 +18,16 @@ interface EffectOptions {
 }
 
 export function attachThreatEffects(group: THREE.Group, options: EffectOptions) {
-  const exhaust = new THREE.Mesh(
-    new THREE.ConeGeometry(
-      options.radius * 0.5,
-      options.exhaustLength,
-      12,
-      1,
-      true,
+  const particleTrail = createThreatParticleTrail({
+    nozzleZ: options.length * 0.5 + 0.2,
+    trailLength: Math.max(
+      options.exhaustLength * 1.35,
+      options.mistLength * 0.82,
     ),
-    new THREE.MeshBasicMaterial({
-      color: options.exhaustColor ?? 0xff7138,
-      transparent: true,
-      opacity: options.exhaustOpacity ?? 0.72,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  exhaust.rotation.x = -Math.PI / 2;
-  exhaust.position.z = options.length * 0.5 + options.exhaustLength * 0.68;
-  group.add(exhaust);
-
-  const hotCore = new THREE.Mesh(
-    new THREE.ConeGeometry(
-      options.radius * 0.18,
-      options.exhaustLength * 0.64,
-      10,
-      1,
-      true,
-    ),
-    new THREE.MeshBasicMaterial({
-      color: 0xfff2c0,
-      transparent: true,
-      opacity: 0.88,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  hotCore.rotation.x = -Math.PI / 2;
-  hotCore.position.z = options.length * 0.5 + options.exhaustLength * 0.48;
-  group.add(hotCore);
+    radius: Math.max(options.radius * 0.6, options.mistRadius * 0.5),
+    color: options.exhaustColor ?? 0xff7138,
+  });
+  group.add(particleTrail);
 
   if (options.glow) {
     const glow = new THREE.PointLight(
@@ -65,28 +38,6 @@ export function attachThreatEffects(group: THREE.Group, options: EffectOptions) 
     glow.position.z = options.length * 0.5 + options.exhaustLength * 0.4;
     group.add(glow);
   }
-
-  const seaMist = new THREE.Mesh(
-    new THREE.ConeGeometry(
-      options.mistRadius,
-      options.mistLength,
-      12,
-      1,
-      true,
-    ),
-    new THREE.MeshBasicMaterial({
-      color: 0xbce8ec,
-      transparent: true,
-      opacity: options.mistOpacity ?? 0.16,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seaMist.rotation.x = -Math.PI / 2;
-  seaMist.position.z = options.length * 0.5 + options.mistLength * 0.64;
-  seaMist.visible = false;
-  group.add(seaMist);
 
   let shockCone: THREE.Mesh | undefined;
   if (options.shockCone) {
@@ -130,9 +81,9 @@ export function attachThreatEffects(group: THREE.Group, options: EffectOptions) 
   seekerFov.visible = false;
   group.add(seekerFov);
 
-  group.userData.exhaust = exhaust;
-  group.userData.hotCore = hotCore;
-  group.userData.seaMist = seaMist;
+  group.userData.particleTrail = particleTrail;
+  group.userData.particleCount = particleTrail.geometry.attributes.position.count;
+  group.userData.seaMistActive = false;
   group.userData.shockCone = shockCone;
   group.userData.seekerFov = seekerFov;
   group.userData.modelLength = options.length;
@@ -161,16 +112,24 @@ export interface SovietThreatModelOptions {
 
 export function createSovietThreatModel(options: SovietThreatModelOptions) {
   const group = new THREE.Group(),
-    skin = new THREE.MeshStandardMaterial({
-      color: options.skinColor,
-      metalness: 0.58,
-      roughness: 0.4,
-    }),
-    dark = new THREE.MeshStandardMaterial({
-      color: 0x242b2c,
-      metalness: 0.55,
-      roughness: 0.5,
-    });
+    skin = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: options.skinColor,
+        metalness: 0.58,
+        roughness: 0.4,
+      }),
+      "missile-skin",
+      0.22,
+    ),
+    dark = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0x242b2c,
+        metalness: 0.55,
+        roughness: 0.5,
+      }),
+      "dark-metal",
+      0.3,
+    );
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(
       options.radius * 0.9,
@@ -189,11 +148,15 @@ export function createSovietThreatModel(options: SovietThreatModelOptions) {
       0.42,
       14,
     ),
-    new THREE.MeshStandardMaterial({
-      color: options.bandColor,
-      metalness: 0.65,
-      roughness: 0.35,
-    }),
+    applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: options.bandColor,
+        metalness: 0.65,
+        roughness: 0.35,
+      }),
+      "dark-metal",
+      0.2,
+    ),
   );
   forwardBand.rotation.x = Math.PI / 2;
   forwardBand.position.z = -options.length * 0.28;

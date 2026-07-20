@@ -1,24 +1,37 @@
 import * as THREE from "three";
+import { applySurfaceDetail } from "../visual/material-textures";
 import { attachThreatEffects } from "./model-helpers";
 import type { ThreatDefinition } from "./types";
 
 function createModel() {
   const group = new THREE.Group(),
-    skin = new THREE.MeshStandardMaterial({
-      color: 0xd5d6d1,
-      metalness: 0.42,
-      roughness: 0.46,
-    }),
-    dark = new THREE.MeshStandardMaterial({
-      color: 0x343a3b,
-      metalness: 0.5,
-      roughness: 0.4,
-    }),
-    band = new THREE.MeshStandardMaterial({
-      color: 0xb49336,
-      metalness: 0.35,
-      roughness: 0.48,
-    }),
+    skin = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0xd5d6d1,
+        metalness: 0.42,
+        roughness: 0.46,
+      }),
+      "missile-skin",
+      0.18,
+    ),
+    dark = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0x343a3b,
+        metalness: 0.5,
+        roughness: 0.4,
+      }),
+      "dark-metal",
+      0.26,
+    ),
+    band = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0xb49336,
+        metalness: 0.35,
+        roughness: 0.48,
+      }),
+      "painted-metal",
+      0.16,
+    ),
     length = 6.2,
     radius = 0.45;
   const body = new THREE.Mesh(

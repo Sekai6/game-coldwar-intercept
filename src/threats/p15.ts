@@ -1,24 +1,37 @@
 import * as THREE from "three";
+import { applySurfaceDetail } from "../visual/material-textures";
 import { attachThreatEffects } from "./model-helpers";
 import type { ThreatDefinition } from "./types";
 
 function createModel() {
   const group = new THREE.Group(),
-    skin = new THREE.MeshStandardMaterial({
-      color: 0xd7d8d2,
-      metalness: 0.46,
-      roughness: 0.43,
-    }),
-    radomeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x596b70,
-      metalness: 0.28,
-      roughness: 0.55,
-    }),
-    dark = new THREE.MeshStandardMaterial({
-      color: 0x30383a,
-      metalness: 0.5,
-      roughness: 0.42,
-    }),
+    skin = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0xd7d8d2,
+        metalness: 0.46,
+        roughness: 0.43,
+      }),
+      "missile-skin",
+      0.2,
+    ),
+    radomeMaterial = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0x596b70,
+        metalness: 0.28,
+        roughness: 0.55,
+      }),
+      "dark-metal",
+      0.18,
+    ),
+    dark = applySurfaceDetail(
+      new THREE.MeshStandardMaterial({
+        color: 0x30383a,
+        metalness: 0.5,
+        roughness: 0.42,
+      }),
+      "dark-metal",
+      0.28,
+    ),
     length = 8.8,
     radius = 0.82;
   const body = new THREE.Mesh(
@@ -103,7 +116,7 @@ export const P15 = {
     cruiseAltitude: 1.95,
     terminalAltitude: 0.25,
     terminalAt: 240,
-    terminalDescentAt: 20,
+    terminalDescentAt: 54,
     cruiseSpeed: 6.2,
     terminalSpeed: 6.4,
     turnRate: 8,

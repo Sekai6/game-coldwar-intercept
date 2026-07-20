@@ -247,7 +247,7 @@ Radar reports do not copy target truth. Each measurement receives position and a
 
 | Type | Cruise Altitude | Terminal Altitude | Cruise/Terminal Speed | Terminal Starts | Game Damage | Character |
 |---|---:|---:|---:|---:|---:|---|
-| P-15 Termit | 98 m | 12.5 m | 6.2 / 6.4 u/s | 24 km | 32% | Active radar at roughly 13 nmi; holds 320 ft until a steep descent in the final 2 km |
+| P-15 Termit | 98 m | 12.5 m | 6.2 / 6.4 u/s | 24 km | 32% | Active radar at roughly 13 nmi; holds 320 ft until a steep descent in the final 5.4 km |
 | P-500 | 60 m | 15 m | 8.8 / 9.6 u/s | 18 km | 28% | Sea skimming and terminal maneuver |
 | P-700 | 130 m | 20 m | 9.8 / 10.8 u/s | 22 km | 38% | Faster with stronger terminal weaving |
 | RGM-84 Harpoon | 45 m | 6 m | 5.8 / 6.4 u/s | 13 km | 20% | Compact low-RCS subsonic sea skimmer with active terminal homing and quick, restrained maneuver |
@@ -255,7 +255,7 @@ Radar reports do not copy target truth. Each measurement receives position and a
 
 Incoming weapons transition through `inbound -> midcourse -> terminal`. Altitude, speed, and maneuver amplitude interpolate continuously during terminal entry. Each missile has a turn-rate limit, speed response, bank visualization, active-seeker activation, line-of-sight aim point, and closest-approach history. Harpoon enters terminal flight at roughly 13 km, activates its seeker, and descends continuously from about 45 m to about 6 m. Its terminal weave is quicker but substantially smaller than P-700's, while the 3D view shows sea mist, seeker field of view, and bank response. The game-scaled model assigns most rounds a direct skim profile and a minority a late pop-up/dive profile; strong shipboard jamming can expose an emitter bearing and trigger a simplified home-on-jam state.
 
-P-15 uses separate seeker-activation and descent gates. It enters active-radar guidance at roughly 24 km while retaining its approximately 320-foot cruise altitude, then descends sharply only inside the final 2 km. This reproduces the long level segment and late drop visible in the supplied envelope graph instead of treating P-15 as an end-to-end sea skimmer.
+P-15 uses separate seeker-activation and descent gates. It enters active-radar guidance at roughly 24 km while retaining its approximately 320-foot cruise altitude, then descends sharply only inside the final 5.4 km. The reference envelope gives a 21.6 nmi total path and still shows 320 ft at 18.7 nmi, leaving about 2.9 nmi (5.4 km) for the independent terminal descent instead of treating P-15 as an end-to-end sea skimmer.
 
 ![P-15 Termit active guidance and procedural model](verification-p15.png)
 
@@ -476,6 +476,9 @@ USS Long Beach is represented by a procedural model built around recognizable fe
 - Forward/aft CIWS and visual abstractions for Mk 36/EW antennas.
 - Track lines, seeker fields of view, illumination beams, exhaust, booster separation, and debris.
 - Sea surface, wake, explosions, persistent fire/smoke, and electronic-warfare pulses.
+- Procedural roughness and normal maps add PBR surface detail to ships and missiles; incoming exhaust and smoke use fixed particle pools, `THREE.Points`, and custom shaders instead of per-frame Mesh allocation.
+- The WebGL image passes through `RenderPass -> SSAO -> UnrealBloom -> OutputPass` with ACES Filmic tone mapping. SSAO is disabled at viewport widths of 720 px or less to control mobile GPU cost.
+- The sea is connected through an `OceanSurface` backend contract. The compatible backend is currently `webgl-cpu-waves`; a future WebGPU FFT implementation can replace it without entering the combat loop.
 - Three-stage near/medium/far LOD groups, animated navigation and deck lights, and a health-aware SPS-48 search sector.
 
 ![Mk 10 firing and ship detail](mk10-firing.png)
@@ -590,6 +593,8 @@ The repository contains development verification screenshots for the hull, radar
 - The procedural ship emphasizes recognizable silhouette and combat equipment, not survey-grade digital-twin accuracy.
 - Damage control does not yet model repair teams, fire spread, power distribution, or redundant wiring.
 - There is no automated test suite yet; current gates are the TypeScript build and Playwright browser scenarios.
+- The sea mesh is still updated on the CPU. The planned WebGPU FFT backend requires spectrum generation, horizontal/vertical inverse FFT passes, displacement/normal textures, a Jacobian foam pass, and a postprocessing path compatible with WebGPU nodes; WebGL remains the fallback.
+- Incoming smoke currently uses one missile-local fixed particle pool, so it bends with the missile during a turn. Persistent world-space trails require a separate scene-level particle history pool.
 
 Logical next steps include fleet track sharing, CEC network penalties, additional platforms, repair/power networks, mission saves, and richer AAR data export.
 

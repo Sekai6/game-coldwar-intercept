@@ -15,6 +15,9 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/threats/types.ts`: threat envelope, presentation, EW, and terminal-capability contracts.
 - `src/threats/<missile>.ts`: one complete incoming-missile definition per file, including its profile, sandbox preset, and procedural model.
 - `src/threats/model-helpers.ts`: reusable visual effects and geometry factories; it contains no missile-ID checks.
+- `src/visual/material-textures.ts`: cached deterministic roughness and tangent-space normal maps for procedural PBR materials.
+- `src/visual/threat-particles.ts`: fixed GPU particle buffers and custom exhaust/smoke shaders.
+- `src/visual/ocean.ts`: renderer-neutral `OceanSurface` lifecycle and the current WebGL CPU-wave backend.
 - `src/sim.ts`: sensor scans, uncertain tracks, and fire-control solutions.
 - `src/sensor-faces.ts`: fixed-array aspect coverage and localized damage.
 - `src/vls.ts`: pure VLS load planning, geometry, and damage math.
@@ -43,3 +46,9 @@ The simulation is organized around capabilities rather than ship-name checks.
 The incoming-threat engine is intentionally generic. `src/main.ts` may read a threat capability, but it must not compare an incoming missile ID to select a model, envelope, preset, trajectory, EW mode, or terminal attack behavior.
 
 Model modules expose equipment anchors through `Object3D.userData`; combat behavior reads capabilities from `ShipDefinition` and must not infer them from a model or ship name.
+
+## Rendering pipeline
+
+The current renderer is WebGL 2 with PBR materials, ACES Filmic tone mapping, and `RenderPass -> SSAO -> UnrealBloom -> OutputPass`. SSAO is disabled on narrow mobile viewports. Rendering diagnostics are exposed through canvas dataset fields, including `renderPipeline`, `oceanBackend`, and `activeThreatParticles`.
+
+`OceanSurface` owns its object, animation, resize lifecycle, and disposal. The combat frame loop only calls that contract and must not read geometry buffers. A future `WebgpuFftOcean` backend should provide spectrum initialization, horizontal and vertical inverse FFT compute passes, displacement/normal textures, and a Jacobian-derived foam texture. Backend selection must include feature detection, a WebGL fallback, and a WebGPU-compatible replacement for the current postprocessing chain; it must not claim WebGPU support while routing compute work back through the CPU implementation.
