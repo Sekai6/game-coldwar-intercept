@@ -4613,16 +4613,10 @@ function updateSurfaceCombat(
       log(`HARPOON ${missile.id} DATALINK LOST / INERTIAL COAST`);
     }
     deployPlatformDecoy(missile);
-    const density = surfaceStrikeMissiles.filter(
-      (other) =>
-        other.phase !== "destroyed" &&
-        other.mesh.position.distanceTo(missile.target.model.position) < 45,
-    ).length;
     const event = updateSurfaceStrikeMissile(
       missile,
       dt,
       elapsed,
-      density,
       ecmEnabled,
       opforRadarEnabled,
       chaffClouds.filter((cloud) => cloud.side === "platform"),
@@ -4655,7 +4649,7 @@ function updateSurfaceCombat(
       surfacePointDefenseKills++;
       createExplosion(missile.mesh.position.clone());
       log(
-        `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / PK ${Math.round(event.pk * 100)}% / LOCAL ${density}`,
+        `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / PK ${Math.round(event.pk * 100)}% / PRIORITY ${event.threatScore.toFixed(0)} / TTI ${Number.isFinite(event.estimatedTimeToImpact) ? `${event.estimatedTimeToImpact.toFixed(1)}s` : "OPENING"} / TRACKS ${event.localTrackDensity}`,
       );
     } else {
       surfaceHits++;
@@ -4764,6 +4758,31 @@ function updateSurfaceCombat(
         ? Math.max(0, elapsed - incomingTrack!.lastUpdate).toFixed(2)
         : "inf",
     )
+    .join(",");
+  const prioritizedIncomingTracks = enemyPlatform
+    ? [...enemyPlatform.incomingTracks.values()]
+        .filter((incomingTrack) => incomingTrack.threatScore > 0)
+        .sort(
+          (left, right) =>
+            right.threatScore - left.threatScore ||
+            left.missileId - right.missileId,
+        )
+    : [];
+  canvas.dataset.platformThreatPriority = prioritizedIncomingTracks
+    .map((incomingTrack) => incomingTrack.missileId)
+    .join(",");
+  canvas.dataset.platformThreatScores = prioritizedIncomingTracks
+    .map((incomingTrack) => incomingTrack.threatScore.toFixed(1))
+    .join(",");
+  canvas.dataset.platformThreatTtis = prioritizedIncomingTracks
+    .map((incomingTrack) =>
+      Number.isFinite(incomingTrack.estimatedTimeToImpact)
+        ? incomingTrack.estimatedTimeToImpact.toFixed(1)
+        : "inf",
+    )
+    .join(",");
+  canvas.dataset.platformThreatLocalDensities = prioritizedIncomingTracks
+    .map((incomingTrack) => incomingTrack.localTrackDensity)
     .join(",");
   canvas.dataset.platformDefenseChannels = (
     enemyPlatform?.pointDefenseChannelReady ?? []

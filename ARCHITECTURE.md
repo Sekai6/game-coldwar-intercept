@@ -14,6 +14,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/models/us-navy-equipment.ts`: reusable Mk 41, Mk 45, Phalanx, SPG-62, SPY-1, and SLQ-32 visual components with stable animation anchors.
 - `src/platforms/types.ts`: enemy-platform definitions, sensor slots, weapon slots, physical hardpoints, and runtime instances.
 - `src/platforms/model-slots.ts`: typed model-anchor registration without platform-name checks.
+- `src/platforms/defense.ts`: observed-track threat scoring shared by platform maneuver and point-defense allocation.
 - `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, sensor updates, and observed-track-driven platform maneuver OODA.
 - `src/platforms/catalog.ts`: enemy-platform registry and lookup.
 - `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.
@@ -84,6 +85,8 @@ Model modules expose equipment anchors through `Object3D.userData`; combat behav
 Surface fire control and missile datalinks consume track estimates rather than target transforms. Track quality alone is insufficient authorization: reports older than four seconds are stale and may remain displayable but cannot build fire-control continuity, release a new salvo, or update an airborne Harpoon. Terminal truth access is gated behind the missile profile's acquisition range and field of view.
 
 Enemy-platform defense follows the same rule. Each airborne surface-strike missile has a platform-owned incoming track with noisy position/velocity, scan cadence, quality, uncertainty, memory, and a fire-control-ready clock. Point-defense weapons consume these tracks through definition-sized channel-ready arrays. Sensor silence or damage affects track formation; local missile density affects the weapon solution but does not substitute for detection.
+
+Incoming-weapon priority is also observed-state only. `platforms/defense.ts` estimates closing speed, time to impact, range urgency, and local saturation from valid platform tracks, then produces one deterministic ordering. Platform defensive-beam maneuvering and point-defense channel allocation consume the same ordering. Already engaged tracks leave the point-defense queue, while unobserved truth contacts contribute neither priority nor saturation penalty.
 
 Hull precision is data-driven but not shape-generic. Each ship owns a station table describing deck edge, shoulder chine, waterline, keel width, and vertical sheer. `hull-geometry.ts` only triangulates those profiles. This keeps bow flare, parallel midbody, stern form, and proportions specific to the real class while avoiding duplicate index-generation code. Hull-side attachments must be repositioned when station breadth changes; old absolute beam offsets are not valid after a hull revision.
 

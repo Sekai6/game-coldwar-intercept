@@ -6,6 +6,7 @@ import type {
   EnemyPlatformModelSlots,
   PlatformLaunchReservation,
 } from "./types";
+import { assessPlatformIncomingTracks } from "./defense";
 
 function modelSlots(model: THREE.Group) {
   return model.userData.platformSlots as EnemyPlatformModelSlots | undefined;
@@ -255,24 +256,13 @@ export function updateEnemyPlatform(
           Math.cos(heading - platform.model.rotation.y),
         ),
       );
-    const defense = platform.definition.survivability.pointDefense;
-    const incoming = [...platform.incomingTracks.values()]
-      .filter(
-        (track) =>
-          track.detectionLogged &&
-          track.quality >= defense.minimumTrackQuality &&
-          elapsed - track.lastUpdate <= defense.trackMemory,
-      )
-      .sort(
-        (a, b) =>
-          a.position.distanceToSquared(platform.model.position) -
-          b.position.distanceToSquared(platform.model.position),
-      )[0];
+    const incoming = assessPlatformIncomingTracks(platform, elapsed)[0];
+    const qualifiedIncoming = incoming?.threatScore > 0 ? incoming : null;
     if (platform.destroyed) {
       platform.maneuverMode = "disabled";
       platform.commandedSpeedKnots = 0;
-    } else if (incoming) {
-      const threatAxis = incoming.position
+    } else if (qualifiedIncoming) {
+      const threatAxis = qualifiedIncoming.position
         .clone()
         .sub(platform.model.position)
         .setY(0)

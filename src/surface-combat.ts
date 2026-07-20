@@ -5,6 +5,7 @@ import type {
 } from "./platforms/types";
 import type { ChaffCloud } from "./combat-types";
 import type { ModelWeaponHardpoint, ShipDefinition } from "./ship-types";
+import { pointDefensePriorityTracks } from "./platforms/defense";
 import { getThreatDefinition } from "./threats/catalog";
 import {
   updateThreatParticleTrail,
@@ -69,7 +70,14 @@ export type SurfaceStrikeEvent =
       pk: number;
       mode: "ECM" | "DECOY" | "ECM + DECOY";
     }
-  | { kind: "point-defense"; missile: SurfaceStrikeMissile; pk: number }
+  | {
+      kind: "point-defense";
+      missile: SurfaceStrikeMissile;
+      pk: number;
+      threatScore: number;
+      estimatedTimeToImpact: number;
+      localTrackDensity: number;
+    }
   | {
       kind: "hit";
       missile: SurfaceStrikeMissile;
@@ -165,6 +173,10 @@ function updatePlatformIncomingTrack(
       fireControlReadyAt: Infinity,
       detectionLogged: false,
       readyLogged: false,
+      threatScore: 0,
+      estimatedTimeToImpact: Infinity,
+      localTrackDensity: 0,
+      engagements: 0,
     } satisfies PlatformIncomingTrack;
     platform.incomingTracks.set(missile.id, track);
   }
@@ -274,7 +286,6 @@ export function updateSurfaceStrikeMissile(
   missile: SurfaceStrikeMissile,
   dt: number,
   elapsed: number,
-  localTerminalDensity: number,
   softKillEnabled: boolean,
   platformSensorsEnabled: boolean,
   platformDecoys: readonly ChaffCloud[],
@@ -430,6 +441,8 @@ export function updateSurfaceStrikeMissile(
     terminal &&
     platformTrack.valid &&
     elapsed >= platformTrack.track.fireControlReadyAt &&
+    pointDefensePriorityTracks(missile.target, elapsed)[0]?.missileId ===
+      missile.id &&
     defenseTrackRange < pointDefense.range &&
     missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
     availableChannel >= 0
@@ -437,11 +450,12 @@ export function updateSurfaceStrikeMissile(
     missile.target.pointDefenseChannelReady[availableChannel] =
       elapsed + pointDefense.interval;
     missile.pointDefenseEngagements++;
+    platformTrack.track.engagements++;
     const health =
       (missile.target.subsystemHealth.get("point-defense") ?? 100) / 100;
     const pk = THREE.MathUtils.clamp(
       (pointDefense.basePk -
-        Math.max(0, localTerminalDensity - 1) *
+        Math.max(0, platformTrack.track.localTrackDensity - 1) *
           pointDefense.localSaturationPenalty) *
         health *
         THREE.MathUtils.lerp(0.62, 1, platformTrack.track.quality) *
@@ -453,7 +467,14 @@ export function updateSurfaceStrikeMissile(
       missile.phase = "destroyed";
       missile.mesh.visible = false;
       missile.path.visible = false;
-      return { kind: "point-defense", missile, pk } satisfies SurfaceStrikeEvent;
+      return {
+        kind: "point-defense",
+        missile,
+        pk,
+        threatScore: platformTrack.track.threatScore,
+        estimatedTimeToImpact: platformTrack.track.estimatedTimeToImpact,
+        localTrackDensity: platformTrack.track.localTrackDensity,
+      } satisfies SurfaceStrikeEvent;
     }
   }
 

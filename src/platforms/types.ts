@@ -155,6 +155,10 @@ export interface PlatformIncomingTrack {
   fireControlReadyAt: number;
   detectionLogged: boolean;
   readyLogged: boolean;
+  threatScore: number;
+  estimatedTimeToImpact: number;
+  localTrackDensity: number;
+  engagements: number;
 }
 
 export interface PlatformLaunchReservation {
