@@ -389,6 +389,7 @@ let surfaceHardpointState = new Map<
   surfaceRequiredHits = 0,
   surfacePlanningLeakProbability = 0,
   surfaceTrackId = 0,
+  surfaceTrackHorizonLimited: boolean | null = null,
   surfaceTrackStableTime = 0,
   surfaceFireControlReadyAt = Infinity,
   surfaceFireControlReadyLogged = false;
@@ -416,6 +417,7 @@ function resetSurfaceStrikeLoadout() {
   nextSurfaceLaunch = 0;
   nextSurfaceDecision = 0;
   surfaceTrackId = 0;
+  surfaceTrackHorizonLimited = null;
   surfaceTrackStableTime = 0;
   surfaceFireControlReadyAt = Infinity;
   surfaceFireControlReadyLogged = false;
@@ -2231,7 +2233,7 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
     ? enemyPlatform.definition.name
     : "SURFACE CONTACT";
   targetCount.textContent = track
-    ? `${liveAir} AIR / ${(track.position.distanceTo(defender.position) / 10).toFixed(1)} km / TQ ${Math.round(quality * 100)}% / EW ${ecmEnabled ? "ON" : "OFF"}`
+    ? `${liveAir} AIR / ${(track.position.distanceTo(defender.position) / 10).toFixed(1)} km / TQ ${Math.round(quality * 100)}%${track.horizonLimited ? " / HORIZON LIMITED" : " / LOS"} / EW ${ecmEnabled ? "ON" : "OFF"}`
     : `${liveAir} AIR / SEARCHING / EW ${ecmEnabled ? "ON" : "OFF"}`;
   let bda = "BDA PENDING";
   if (
@@ -4650,6 +4652,17 @@ function updateSurfaceCombat(
     .forEach((event) => log(`SURFACE ${event}`));
   const track = surfacePicture.trackForTarget(1);
   const strike = activeShip.surfaceStrike;
+  const horizonLimited = track?.horizonLimited ?? null;
+  if (horizonLimited !== surfaceTrackHorizonLimited) {
+    surfaceTrackHorizonLimited = horizonLimited;
+    log(
+      horizonLimited === true
+        ? "SURFACE RADAR / HORIZON LIMITED / INTERMITTENT CONTACT"
+        : horizonLimited === false
+          ? "SURFACE RADAR / DIRECT VISIBILITY / TRACK MEASUREMENT"
+          : "SURFACE RADAR / TRACK LOST / SEARCHING",
+    );
+  }
   if (!strike) return;
   if (
     track &&
