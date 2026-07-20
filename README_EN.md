@@ -143,7 +143,7 @@ This runs the TypeScript type check and Vite production bundle. Output is writte
 | `SLEW` | Points focused search at the selected track |
 | `CIWS` | Sets close-in defense to AUTO or HOLD |
 | `THREAT CHAFF` | Enables incoming-missile chaff deployment |
-| `THREAT ECM` | Enables threat-side interference against SAM guidance |
+| `OPFOR ECM` | Enables threat-side interference against SAM guidance and enemy-platform ECM/decoy soft kill against Harpoon |
 | `SHIP ECM` | Sets shipboard ECM to AUTO or HOLD |
 | `SRBOC` | Sets Mk 36 chaff deployment to AUTO or HOLD |
 | `WEAPON` | Cycles RIM-67, SM-2MR, and SM-2ER |
@@ -275,6 +275,8 @@ Each platform weapon slot also declares a minimum track quality. A reservation d
 
 Both selectable ships declare a data-driven `surfaceStrike` capability and eight physical Mk 141 hardpoints. A separate surface picture tracks the enemy platform with refresh, uncertainty, RCS, sensor health, and quality effects. Once range and quality gates are met, auto doctrine launches four-round salvos; `SURFACE STRIKE` hold and `LAUNCH HARPOON` provide manual control.
 
+Platform scenarios repurpose the AIR RAID card as an `SFC` surface-contact card. It shows only `SURFACE CONTACT` below the classification threshold and reveals the ship name after identification. Air-threat count, surface range, track quality, OPFOR EW state, remaining Harpoons, and a bounded BDA estimate remain visible without exposing exact target truth.
+
 Each Harpoon departs along its actual launcher axis and transitions through `boost -> midcourse -> terminal`. Midcourse guidance follows an uncertain position/velocity track and datalink command point; the active seeker switches to platform truth only in terminal flight and applies limited velocity lead. Speed response, turn rate, sea-skimming altitude, terminal weave, and closest approach remain physical constraints. Platform ECM/decoys receive one soft-kill resolution, while point defense uses a shared firing interval, finite engagements per target, subsystem health, and local saturation penalties instead of unlimited repeated attempts.
 
 Platform speed, cruise setting, acceleration, and turn rate come from its definition. Runtime executes a beam maneuver limited by propulsion and hull health, and the resulting true velocity feeds the uncertain surface track. Each Harpoon hit applies 34 game-scaled structural damage, damages a deterministic subsystem, and leaves persistent fire and smoke. Sensor damage degrades track quality and antenna rotation; point-defense and EW damage reduce their corresponding kill probabilities. Mission completion waits for all incoming weapons, Harpoons, queues, and ship launch mechanisms before declaring a surface kill or a failed strike with the target surviving.
@@ -402,7 +404,7 @@ CG-57's forward and aft Mk 41 banks are independent launch resources that may wo
 <a id="threat-ew"></a>
 ### Threat ECM and Chaff
 
-`THREAT ECM` adds a range-dependent aim-point error to terminal SM-2 guidance. As the interceptor closes, it enters burn-through range and interference falls, generating an `ECM BURN-THROUGH` event.
+`OPFOR ECM` adds a range-dependent aim-point error to terminal SM-2 guidance. As the interceptor closes, it enters burn-through range and interference falls, generating an `ECM BURN-THROUGH` event. In a surface action the same switch also enables the enemy platform's single ECM/decoy soft-kill resolution against each Harpoon. Turning it off shows `EW OFF` and bypasses that soft-kill step while leaving point defense independent.
 
 Incoming missiles can also deploy chaff. Terminal SM-2 compares target and chaff radar cross sections and may record `DECOY CAPTURE`. Chaff expands, drifts, and decays over time.
 

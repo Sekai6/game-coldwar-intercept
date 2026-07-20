@@ -2098,6 +2098,9 @@ let aarSnapshots: AarSnapshot[] = [],
 const phaseEl = document.querySelector("#phase")!,
   clockEl = document.querySelector("#clock")!,
   targetState = document.querySelector("#targetState")!,
+  targetCount = document.querySelector("#targetCount")!,
+  raidIndex = document.querySelector("#raidIndex")!,
+  raidTitle = document.querySelector("#raidTitle")!,
   feed = document.querySelector("#feed")!,
   ammoEl = document.querySelector("#ammo")!,
   weaponEnvelope = document.querySelector("#weaponEnvelope")!,
@@ -2109,6 +2112,36 @@ const phaseEl = document.querySelector("#phase")!,
   seekerState = document.querySelector("#seekerState")!,
   ewState = document.querySelector("#ewState")!,
   qualityFill = document.querySelector("#qualityFill") as HTMLElement;
+
+function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number) {
+  if (!enemyPlatform) {
+    raidIndex.textContent = "AIR";
+    raidTitle.textContent = "RAID STATUS";
+    targetCount.textContent = `${liveAir} ACTIVE / ${reserveAir} RESERVE / ${(maxAirRange / 10).toFixed(1)} km`;
+    return;
+  }
+  const track = surfacePicture.trackForTarget(1),
+    quality = track?.quality ?? 0,
+    identified = quality >= 0.7,
+    strikeMagazine = activeShip.surfaceStrike?.magazine ?? 0;
+  raidIndex.textContent = "SFC";
+  raidTitle.textContent = enemyPlatform.destroyed
+    ? enemyPlatform.definition.name
+    : identified
+      ? enemyPlatform.definition.name
+      : "SURFACE CONTACT";
+  targetCount.textContent = track
+    ? `${liveAir} AIR / ${(track.position.distanceTo(defender.position) / 10).toFixed(1)} km / TQ ${Math.round(quality * 100)}% / EW ${ecmEnabled ? "ON" : "OFF"}`
+    : `${liveAir} AIR / SEARCHING / EW ${ecmEnabled ? "ON" : "OFF"}`;
+  let bda = "BDA PENDING";
+  if (enemyPlatform.destroyed) bda = "TARGET DISABLED";
+  else if (surfaceHits > 0 && track) {
+    const spread = Math.ceil(((1 - quality) * 25 + 5) / 5) * 5,
+      estimate = Math.round(enemyPlatform.hullIntegrity / 5) * 5;
+    bda = `BDA ${Math.max(0, estimate - spread)}-${Math.min(100, estimate + spread)}%`;
+  }
+  targetState.textContent = `HARP ${surfaceStrikeAmmo}/${strikeMagazine} / ${bda}`;
+}
 const targetMarker = document.querySelector("#targetMarker") as HTMLElement,
   targetMarkerLabel = document.querySelector(
     "#targetMarkerLabel",
@@ -3259,9 +3292,10 @@ const chaffButton = controlButton("THREAT CHAFF: ON", () => {
   chaffEnabled = !chaffEnabled;
   chaffButton.textContent = `THREAT CHAFF: ${chaffEnabled ? "ON" : "OFF"}`;
 });
-const ecmButton = controlButton("THREAT ECM: ON", () => {
+const ecmButton = controlButton("OPFOR ECM: ON", () => {
   ecmEnabled = !ecmEnabled;
-  ecmButton.textContent = `THREAT ECM: ${ecmEnabled ? "ON" : "OFF"}`;
+  ecmButton.textContent = `OPFOR ECM: ${ecmEnabled ? "ON" : "OFF"}`;
+  log(`OPFOR ELECTRONIC WARFARE / ${ecmEnabled ? "ACTIVE" : "SILENT"}`);
 });
 const shipEcmButton = controlButton("SHIP ECM: AUTO", () => {
   shipEcmEnabled = !shipEcmEnabled;
@@ -4040,17 +4074,30 @@ setInterval(
   50,
 );
 setInterval(() => {
-  const live = missiles.filter((m) => m.phase !== "destroyed").length,
+  const liveMissiles = missiles.filter((m) => m.phase !== "destroyed"),
+    live = liveMissiles.length,
+    activeAir = liveMissiles.filter((m) => elapsed >= m.launchAt),
     engagedTargets = new Set(
       interceptors.filter((i) => i.mesh.visible).map((i) => i.target),
     ).size,
     tracks = [...combatPicture.tracks.values()].filter(
       (track) => missiles[track.sourceId - 1]?.phase !== "destroyed",
     ).length;
-  targetState.textContent =
-    live > 0
-      ? `${live} THREATS / ${tracks} TRACKS / ${engagedTargets} ENGAGED`
-      : "AIRSPACE CLEAR";
+  if (enemyPlatform)
+    updateRaidCard(
+      activeAir.length,
+      live - activeAir.length,
+      activeAir.length
+        ? Math.max(
+            ...activeAir.map((m) => m.mesh.position.distanceTo(defender.position)),
+          )
+        : 0,
+    );
+  else
+    targetState.textContent =
+      live > 0
+        ? `${live} THREATS / ${tracks} TRACKS / ${engagedTargets} ENGAGED`
+        : "AIRSPACE CLEAR";
 }, 120);
 setInterval(() => {
   if (missiles[selectedTargetId - 1]?.phase === "destroyed") {
@@ -4397,6 +4444,7 @@ function updateSurfaceCombat(
       dt,
       elapsed,
       density,
+      ecmEnabled,
     );
     if (!event) continue;
     if (event.kind === "seeker")
@@ -5738,8 +5786,11 @@ function tick(now: number) {
       distances = activeMissiles.map((m) =>
         m.mesh.position.distanceTo(defender.position),
       );
-    document.querySelector("#targetCount")!.textContent =
-      `${live} ACTIVE / ${missiles.filter((m) => m.phase !== "destroyed").length - live} RESERVE / ${distances.length ? (Math.max(...distances) / 10).toFixed(1) : "0.0"} km`;
+    updateRaidCard(
+      live,
+      missiles.filter((m) => m.phase !== "destroyed").length - live,
+      distances.length ? Math.max(...distances) : 0,
+    );
   }
   if (enemyPlatform) {
     const states = [...enemyPlatform.hardpointState.values()];

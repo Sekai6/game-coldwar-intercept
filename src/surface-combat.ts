@@ -128,6 +128,7 @@ export function updateSurfaceStrikeMissile(
   dt: number,
   elapsed: number,
   localTerminalDensity: number,
+  softKillEnabled: boolean,
 ) {
   if (missile.phase === "destroyed") return null;
   if (missile.target.destroyed) {
@@ -153,16 +154,20 @@ export function updateSurfaceStrikeMissile(
 
   if (terminal && !missile.softKillResolved) {
     missile.softKillResolved = true;
+    if (!softKillEnabled) {
+      missile.mesh.userData.seekerState = "ACTIVE / NO JAM";
+    } else {
     const ecmHealth =
       (missile.target.subsystemHealth.get("electronic-warfare") ?? 100) / 100;
     const pk = missile.target.definition.survivability.softKillPk * ecmHealth;
-    if (deterministicRoll(missile, 2) < pk) {
+    if (deterministicRoll(missile, 1) < pk) {
       missile.phase = "destroyed";
       missile.mesh.visible = false;
       missile.path.visible = false;
       return { kind: "soft-kill", missile } satisfies SurfaceStrikeEvent;
     }
     missile.mesh.userData.seekerState = "ACTIVE / HOJ";
+    }
   }
 
   const pointDefense = missile.target.definition.survivability.pointDefense;
