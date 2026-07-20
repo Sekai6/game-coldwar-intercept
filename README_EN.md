@@ -513,10 +513,19 @@ game-codewar-intercept/
 │  ├─ ship-types.ts           # Ship capabilities, semantic subsystems, launcher contracts
 │  ├─ ship-catalog.ts         # Ship registry, magazines, platform data, damage zones
 │  ├─ combat-types.ts         # Missile, interceptor, launcher, and AAR domain types
-│  ├─ missile-data.ts         # Game-scaled threat and interceptor flight profiles
+│  ├─ interceptor-data.ts     # Game-scaled ship-launched interceptor profiles
 │  ├─ sim.ts                  # Radar scans, association, uncertainty, fire-control solutions
 │  ├─ sensor-faces.ts         # Fixed-array aspect coverage and localized damage
 │  ├─ vls.ts                  # Pure VLS loading, geometry, and damage logic
+│  ├─ threats/
+│  │  ├─ catalog.ts           # Incoming-threat registry, derived type, and lookup
+│  │  ├─ types.ts             # Envelope, terminal, EW, visual, and preset contracts
+│  │  ├─ model-helpers.ts     # Shared model/effect builders without missile-ID checks
+│  │  ├─ p15.ts               # Complete P-15 definition and procedural model
+│  │  ├─ p500.ts              # Complete P-500 definition
+│  │  ├─ p700.ts              # Complete P-700 definition
+│  │  ├─ kh22.ts              # Complete Kh-22 definition
+│  │  └─ harpoon.ts           # Harpoon model, pop-up, and HOJ capabilities
 │  ├─ models/
 │  │  ├─ long-beach.ts        # CGN-9, radar, and Mk 10 procedural model
 │  │  └─ ticonderoga.ts       # CG-57, SPY-1, and Mk 41 procedural model
@@ -544,7 +553,9 @@ To add a ship:
 3. Add `fixedSensorFaces` only for a fixed-array ship. A mechanically scanned ship does not need synthetic face data.
 4. Switch to the ship in the sandbox and verify that weapon options, default magazines, radar labels, launchers, and damage behavior all follow the definition.
 
-For a new threat or interceptor, extend its type in `src/combat-types.ts` and add its flight profile to `src/missile-data.ts`. VLS loading or damage algorithms belong in `src/vls.ts`; fixed-array algorithms belong in `src/sensor-faces.ts`. Do not duplicate either inside a ship model or the frame loop. See [ARCHITECTURE.md](ARCHITECTURE.md) for the compact architectural contract.
+For a new incoming threat, add one missile file under `src/threats/`. Keep its envelope, RCS, CIWS modifiers, terminal/EW capabilities, sandbox preset, and procedural model together as one `ThreatDefinition`, then register it once in `catalog.ts`. `EnemyType`, both wave selectors, preset buttons, and profile lookup are derived automatically. P-15's independent descent gate and Harpoon's pop-up/HOJ behavior are capabilities; a new behavior should extend the generic contract rather than add a missile-ID branch to `main.ts`.
+
+For a new interceptor, extend `WeaponType`, add its profile to `src/interceptor-data.ts`, and declare launcher compatibility and magazines in the ship definition. VLS algorithms belong in `src/vls.ts`; fixed-array algorithms belong in `src/sensor-faces.ts`. See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete contract.
 
 <a id="development"></a>
 ## 17. Development and Verification

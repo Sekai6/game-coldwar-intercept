@@ -1,11 +1,7 @@
 import type * as THREE from "three";
+import type { EnemyType } from "./threats/catalog";
 
-export type EnemyType =
-  | "P-15 Termit"
-  | "P-500"
-  | "P-700"
-  | "Kh-22"
-  | "RGM-84 Harpoon";
+export type { EnemyType } from "./threats/catalog";
 export type WeaponType = "RIM-67" | "SM-2MR" | "SM-2ER";
 export type MissilePhase =
   | "inbound"

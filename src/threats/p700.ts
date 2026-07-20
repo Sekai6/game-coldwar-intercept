@@ -1,0 +1,56 @@
+import { createSovietThreatModel } from "./model-helpers";
+import type { ThreatDefinition } from "./types";
+
+export const P700 = {
+  id: "P-700",
+  profile: {
+    cruiseAltitude: 2.6,
+    terminalAltitude: 0.4,
+    terminalAt: 220,
+    cruiseSpeed: 9.8,
+    terminalSpeed: 10.8,
+    turnRate: 6.5,
+    damage: 38,
+    defaultRange: 750,
+    burnThroughRange: 36,
+    radarCrossSection: 0.7,
+    modelScale: 1.05,
+    selectionRadius: 4.8,
+    pathColor: 0xe25a43,
+    threatPriority: 18,
+    trajectory: "sea-skimmer",
+    ciwsPenalty: 0.16,
+    weave: {
+      lateral: 7,
+      longitudinal: 5,
+      lateralRate: 2.8,
+      longitudinalRate: 2.35,
+    },
+  },
+  preset: {
+    label: "SATURATION",
+    count: 16,
+    interval: 0,
+    altitude: 2.6,
+    spread: 260,
+    range: 750,
+  },
+  createModel: () =>
+    createSovietThreatModel({
+      length: 9.6,
+      radius: 1.05,
+      skinColor: 0xa9553d,
+      bandColor: 0x373f40,
+      noseLength: 2.1,
+      wingSpan: 5.6,
+      wingChord: 2.8,
+      finThickness: 0.18,
+      finHeight: 1.7,
+      intake: "ventral",
+      exhaustLength: 5,
+      mistRadius: 1.8,
+      mistLength: 11,
+      seekerRadius: 10,
+      seekerLength: 36,
+    }),
+} as const satisfies ThreatDefinition;

@@ -513,10 +513,19 @@ game-codewar-intercept/
 │  ├─ ship-types.ts           # 舰型能力、语义子系统和发射器合同
 │  ├─ ship-catalog.ts         # 舰型注册、库存、平台性能和损伤分区
 │  ├─ combat-types.ts         # 导弹、拦截弹、发射器和 AAR 领域类型
-│  ├─ missile-data.ts         # 来袭弹与舰空导弹游戏化飞行参数
+│  ├─ interceptor-data.ts     # 舰空拦截弹游戏化飞行参数
 │  ├─ sim.ts                  # 雷达扫描、航迹关联、误差和火控解算
 │  ├─ sensor-faces.ts         # 固定相控阵方位覆盖和局部损伤
 │  ├─ vls.ts                  # VLS 装填、单元几何和损伤纯逻辑
+│  ├─ threats/
+│  │  ├─ catalog.ts           # 来袭弹注册表、类型推导和参数查询
+│  │  ├─ types.ts             # 包线、末段、EW、显示与预设能力合同
+│  │  ├─ model-helpers.ts     # 无型号判断的共享模型与特效构造器
+│  │  ├─ p15.ts               # P-15 完整定义与程序化模型
+│  │  ├─ p500.ts              # P-500 完整定义
+│  │  ├─ p700.ts              # P-700 完整定义
+│  │  ├─ kh22.ts              # Kh-22 完整定义
+│  │  └─ harpoon.ts           # Harpoon 完整定义、pop-up 与 HOJ 能力
 │  ├─ models/
 │  │  ├─ long-beach.ts        # CGN-9、雷达和 Mk 10 程序化模型
 │  │  └─ ticonderoga.ts       # CG-57、SPY-1 和 Mk 41 程序化模型
@@ -544,7 +553,9 @@ game-codewar-intercept/
 3. 固定阵面舰只填写 `fixedSensorFaces`；机械扫描舰不需要伪造阵面配置。
 4. 通过沙盒切舰，验证武器菜单、默认库存、雷达名称、发射架和损伤行为自动跟随配置。
 
-新增来袭弹或拦截弹时，在 `src/combat-types.ts` 扩展类型，并在 `src/missile-data.ts` 提供飞行剖面。VLS 装填或损伤算法应进入 `src/vls.ts`，固定阵面算法应进入 `src/sensor-faces.ts`，不应复制到舰型模型或主循环。更完整的约束见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+新增来袭弹时，在 `src/threats/` 新建一个型号文件，把包线、RCS、CIWS 修正、末段/EW 能力、沙盒预设和程序化模型集中为一个 `ThreatDefinition`，然后只在 `catalog.ts` 注册一次。`EnemyType`、主/第二波菜单、预设按钮和参数查询都会自动生成。P-15 的独立降高门限、Harpoon 的 pop-up 与 HOJ 都是能力字段；出现新行为时应扩展通用能力合同，不应在 `main.ts` 增加型号判断。
+
+新增拦截弹时，扩展 `WeaponType` 并在 `src/interceptor-data.ts` 添加飞行剖面，同时在舰型定义中声明发射器兼容性和库存。VLS 算法应进入 `src/vls.ts`，固定阵面算法应进入 `src/sensor-faces.ts`。更完整的约束见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 <a id="开发与验证"></a>
 ## 17. 开发与验证

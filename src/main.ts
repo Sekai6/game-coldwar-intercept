@@ -15,10 +15,13 @@ import {
   vlsCellDistance as calculateVlsCellDistance,
   vlsLoadOrder,
 } from "./vls";
+import { WEAPON_PROFILES as weaponProfiles } from "./interceptor-data";
 import {
+  DEFAULT_THREAT_ID,
+  getThreatDefinition,
+  THREAT_DEFINITIONS,
   THREAT_PROFILES as incomingProfiles,
-  WEAPON_PROFILES as weaponProfiles,
-} from "./missile-data";
+} from "./threats/catalog";
 import type {
   AarCategory,
   AarEvent,
@@ -366,484 +369,9 @@ function missileThreatScore(missile: Missile, quality: number) {
     quality * 12
   );
 }
-function createEnemyMissile(kind: EnemyType) {
-  if (kind === "P-15 Termit") return createP15Missile();
-  if (kind === "RGM-84 Harpoon") return createHarpoonMissile();
-  const g = new THREE.Group(),
-    isGranite = kind === "P-700",
-    isKh22 = kind === "Kh-22",
-    length = isKh22 ? 11 : isGranite ? 9.6 : 8.8,
-    radius = isGranite ? 1.05 : isKh22 ? 0.72 : 0.86;
-  const skin = new THREE.MeshStandardMaterial({
-    color: isKh22 ? 0xb7b9ad : isGranite ? 0xa9553d : 0xb96245,
-    metalness: 0.58,
-    roughness: 0.4,
-  });
-  const dark = new THREE.MeshStandardMaterial({
-    color: 0x242b2c,
-    metalness: 0.55,
-    roughness: 0.5,
-  });
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.9, radius, length, 14),
-    skin,
-  );
-  body.rotation.x = Math.PI / 2;
-  g.add(body);
-  const forwardBand = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.94, radius * 0.94, 0.42, 14),
-    new THREE.MeshStandardMaterial({
-      color: isKh22 ? 0xd8d9cf : 0x373f40,
-      metalness: 0.65,
-      roughness: 0.35,
-    }),
-  );
-  forwardBand.rotation.x = Math.PI / 2;
-  forwardBand.position.z = -length * 0.28;
-  g.add(forwardBand);
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(radius * 0.9, isKh22 ? 2.8 : 2.1, 14),
-    skin,
-  );
-  nose.rotation.x = -Math.PI / 2;
-  nose.position.z = -length * 0.5 - 1;
-  g.add(nose);
-  const tail = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.72, radius, 1.6, 14),
-    dark,
-  );
-  tail.rotation.x = Math.PI / 2;
-  tail.position.z = length * 0.5 + 0.6;
-  g.add(tail);
-  const wingSpan = isKh22 ? 4.8 : isGranite ? 5.6 : 5.1,
-    wingChord = isKh22 ? 3.4 : 2.8;
-  const wingShape = new THREE.Shape();
-  wingShape.moveTo(0, 0);
-  wingShape.lineTo(wingSpan, wingChord * 0.7);
-  wingShape.lineTo(wingSpan * 0.78, -wingChord * 0.45);
-  wingShape.lineTo(0, -wingChord * 0.7);
-  wingShape.closePath();
-  for (const side of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape), skin);
-    wing.rotation.x = Math.PI / 2;
-    wing.rotation.z = side < 0 ? Math.PI : 0;
-    wing.position.set(side * radius * 0.45, 0, isKh22 ? 0.5 : 1);
-    g.add(wing);
-  }
-  for (const side of [-1, 1]) {
-    const fin = new THREE.Mesh(
-      new THREE.BoxGeometry(isKh22 ? 0.13 : 0.18, isKh22 ? 2.2 : 1.7, 2.5),
-      dark,
-    );
-    fin.position.set(side * (radius + 0.35), 0, length * 0.35);
-    fin.rotation.z = side * 0.18;
-    g.add(fin);
-  }
-  if (isGranite) {
-    const intake = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.42, 0.58, 3, 10),
-      dark,
-    );
-    intake.rotation.x = Math.PI / 2;
-    intake.position.set(0, -radius * 0.85, 1);
-    g.add(intake);
-  }
-  if (kind === "P-500") {
-    for (const side of [-1, 1]) {
-      const intakeLip = new THREE.Mesh(
-        new THREE.BoxGeometry(1.2, 0.55, 2.6),
-        dark,
-      );
-      intakeLip.position.set(side * 0.78, -0.68, 0.9);
-      intakeLip.rotation.z = side * 0.16;
-      g.add(intakeLip);
-    }
-  }
-  if (isKh22) {
-    const dorsal = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.8, 4.5), skin);
-    dorsal.position.set(0, 1.15, 1.5);
-    dorsal.rotation.x = 0.08;
-    g.add(dorsal);
-    const belly = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 3.8), dark);
-    belly.position.set(0, -0.78, 1.1);
-    g.add(belly);
-  }
-  const exhaust = new THREE.Mesh(
-    new THREE.ConeGeometry(radius * 0.5, isKh22 ? 6 : 5, 12, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: isKh22 ? 0xffd37a : 0xff7138,
-      transparent: true,
-      opacity: 0.72,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  exhaust.rotation.x = -Math.PI / 2;
-  exhaust.position.z = length * 0.5 + 3.4;
-  g.add(exhaust);
-  const hotCore = new THREE.Mesh(
-    new THREE.ConeGeometry(radius * 0.18, 3.2, 10, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xfff2c0,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  hotCore.rotation.x = -Math.PI / 2;
-  hotCore.position.z = length * 0.5 + 2.4;
-  g.add(hotCore);
-  const glow = new THREE.PointLight(0xff642d, isKh22 ? 7 : 5, isKh22 ? 35 : 28);
-  glow.position.z = length * 0.5 + 2;
-  g.add(glow);
-  const seaMist = new THREE.Mesh(
-    new THREE.ConeGeometry(
-      isGranite ? 1.8 : 1.45,
-      isGranite ? 11 : 9,
-      12,
-      1,
-      true,
-    ),
-    new THREE.MeshBasicMaterial({
-      color: 0xbce8ec,
-      transparent: true,
-      opacity: 0.16,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seaMist.rotation.x = -Math.PI / 2;
-  seaMist.position.z = length * 0.5 + 7;
-  seaMist.visible = false;
-  g.add(seaMist);
-  const shockCone = new THREE.Mesh(
-    new THREE.ConeGeometry(2.1, 7, 18, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xe7f4f2,
-      transparent: true,
-      opacity: 0.12,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  shockCone.rotation.x = -Math.PI / 2;
-  shockCone.position.z = -length * 0.16;
-  shockCone.visible = false;
-  g.add(shockCone);
-  const seekerFov = new THREE.Mesh(
-    new THREE.ConeGeometry(isKh22 ? 8 : 10, isKh22 ? 30 : 36, 24, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xff6554,
-      transparent: true,
-      opacity: 0.07,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seekerFov.rotation.x = -Math.PI / 2;
-  seekerFov.position.z = -length * 0.5 - (isKh22 ? 16 : 19);
-  seekerFov.visible = false;
-  g.add(seekerFov);
-  g.userData.exhaust = exhaust;
-  g.userData.hotCore = hotCore;
-  g.userData.seaMist = seaMist;
-  g.userData.shockCone = shockCone;
-  g.userData.seekerFov = seekerFov;
-  return g;
-}
-function createP15Missile() {
-  const g = new THREE.Group(),
-    skin = new THREE.MeshStandardMaterial({
-      color: 0xd7d8d2,
-      metalness: 0.46,
-      roughness: 0.43,
-    }),
-    radomeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x596b70,
-      metalness: 0.28,
-      roughness: 0.55,
-    }),
-    dark = new THREE.MeshStandardMaterial({
-      color: 0x30383a,
-      metalness: 0.5,
-      roughness: 0.42,
-    }),
-    length = 8.8,
-    radius = 0.82;
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.91, radius, length, 18),
-    skin,
-  );
-  body.rotation.x = Math.PI / 2;
-  g.add(body);
-  const radome = new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 0.96, 18, 12),
-    radomeMaterial,
-  );
-  radome.scale.z = 1.35;
-  radome.position.z = -length * 0.5 - 0.62;
-  g.add(radome);
-  const radomeCollar = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.93, radius * 0.93, 0.28, 18),
-    dark,
-  );
-  radomeCollar.rotation.x = Math.PI / 2;
-  radomeCollar.position.z = -length * 0.43;
-  g.add(radomeCollar);
-  const wingShape = new THREE.Shape();
-  wingShape.moveTo(0, -1.35);
-  wingShape.lineTo(4.35, 0.25);
-  wingShape.lineTo(3.7, 1.75);
-  wingShape.lineTo(0, 1.05);
-  wingShape.closePath();
-  for (const side of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.ShapeGeometry(wingShape), skin);
-    wing.rotation.x = Math.PI / 2;
-    wing.rotation.z = side < 0 ? Math.PI : 0;
-    wing.position.set(side * radius * 0.35, -0.08, 0.65);
-    g.add(wing);
-  }
-  const tailZ = length * 0.39;
-  for (let index = 0; index < 4; index++) {
-    const fin = new THREE.Mesh(
-      new THREE.BoxGeometry(2.55, 0.1, 1.8),
-      skin,
-    );
-    fin.position.z = tailZ;
-    fin.rotation.z = index * Math.PI * 0.5;
-    g.add(fin);
-  }
-  const intakeFairing = new THREE.Mesh(
-    new THREE.BoxGeometry(1.05, 0.62, 2.7),
-    skin,
-  );
-  intakeFairing.position.set(0, -radius * 1.03, 0.85);
-  g.add(intakeFairing);
-  const intakeOpening = new THREE.Mesh(
-    new THREE.BoxGeometry(0.76, 0.42, 0.16),
-    dark,
-  );
-  intakeOpening.position.set(0, -radius * 1.25, -0.55);
-  g.add(intakeOpening);
-  const nozzle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.34, 0.46, 0.8, 14),
-    dark,
-  );
-  nozzle.rotation.x = Math.PI / 2;
-  nozzle.position.z = length * 0.5 + 0.32;
-  g.add(nozzle);
-  const exhaust = new THREE.Mesh(
-    new THREE.ConeGeometry(0.3, 2.2, 10, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xff7540,
-      transparent: true,
-      opacity: 0.58,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  exhaust.rotation.x = -Math.PI / 2;
-  exhaust.position.z = length * 0.5 + 1.7;
-  g.add(exhaust);
-  const hotCore = new THREE.Mesh(
-    new THREE.ConeGeometry(0.11, 1.2, 8, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xffedb5,
-      transparent: true,
-      opacity: 0.78,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  hotCore.rotation.x = -Math.PI / 2;
-  hotCore.position.z = length * 0.5 + 1.15;
-  g.add(hotCore);
-  const seaMist = new THREE.Mesh(
-    new THREE.ConeGeometry(1.15, 7.5, 12, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xbce8ec,
-      transparent: true,
-      opacity: 0.12,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seaMist.rotation.x = -Math.PI / 2;
-  seaMist.position.z = length * 0.5 + 5;
-  seaMist.visible = false;
-  g.add(seaMist);
-  const seekerFov = new THREE.Mesh(
-    new THREE.ConeGeometry(9.5, 34, 24, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xff6554,
-      transparent: true,
-      opacity: 0.07,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seekerFov.rotation.x = -Math.PI / 2;
-  seekerFov.position.z = -length * 0.5 - 18;
-  seekerFov.visible = false;
-  g.add(seekerFov);
-  g.userData.exhaust = exhaust;
-  g.userData.hotCore = hotCore;
-  g.userData.seaMist = seaMist;
-  g.userData.shockCone = undefined;
-  g.userData.seekerFov = seekerFov;
-  g.userData.modelLength = length;
-  return g;
-}
-function createHarpoonMissile() {
-  const g = new THREE.Group(),
-    skin = new THREE.MeshStandardMaterial({
-      color: 0xd5d6d1,
-      metalness: 0.42,
-      roughness: 0.46,
-    }),
-    dark = new THREE.MeshStandardMaterial({
-      color: 0x343a3b,
-      metalness: 0.5,
-      roughness: 0.4,
-    }),
-    band = new THREE.MeshStandardMaterial({
-      color: 0xb49336,
-      metalness: 0.35,
-      roughness: 0.48,
-    }),
-    length = 6.2,
-    radius = 0.45;
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.92, radius, length, 16),
-    skin,
-  );
-  body.rotation.x = Math.PI / 2;
-  g.add(body);
-  const radome = new THREE.Mesh(
-    new THREE.ConeGeometry(radius * 0.92, 1.15, 16),
-    dark,
-  );
-  radome.rotation.x = -Math.PI / 2;
-  radome.position.z = -length * 0.5 - 0.55;
-  g.add(radome);
-  const noseTip = new THREE.Mesh(
-    new THREE.SphereGeometry(0.1, 12, 8),
-    dark,
-  );
-  noseTip.position.z = -length * 0.5 - 1.12;
-  g.add(noseTip);
-  const idBand = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.95, radius * 0.95, 0.18, 16),
-    band,
-  );
-  idBand.rotation.x = Math.PI / 2;
-  idBand.position.z = -length * 0.22;
-  g.add(idBand);
-  const tail = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius * 0.7, radius, 0.8, 16),
-    dark,
-  );
-  tail.rotation.x = Math.PI / 2;
-  tail.position.z = length * 0.5 + 0.3;
-  g.add(tail);
-  const addFinSet = (z: number, span: number, chord: number, material: THREE.Material) => {
-    for (let index = 0; index < 4; index++) {
-      const fin = new THREE.Mesh(
-        new THREE.BoxGeometry(span, 0.08, chord),
-        material,
-      );
-      fin.position.z = z;
-      fin.rotation.z = index * Math.PI * 0.5;
-      g.add(fin);
-    }
-  };
-  addFinSet(0.15, 2.8, 1.35, skin);
-  addFinSet(length * 0.39, 1.65, 0.85, dark);
-  const intakeOuter = new THREE.Mesh(
-    new THREE.BoxGeometry(0.72, 0.48, 1.45),
-    skin,
-  );
-  intakeOuter.position.set(0, -radius * 1.02, 0.72);
-  g.add(intakeOuter);
-  const intake = new THREE.Mesh(
-    new THREE.BoxGeometry(0.48, 0.3, 1.28),
-    dark,
-  );
-  intake.position.set(0, -radius * 1.28, 0.58);
-  g.add(intake);
-  const exhaust = new THREE.Mesh(
-    new THREE.ConeGeometry(0.2, 1.65, 10, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xff8b45,
-      transparent: true,
-      opacity: 0.56,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  exhaust.rotation.x = -Math.PI / 2;
-  exhaust.position.z = length * 0.5 + 1.15;
-  g.add(exhaust);
-  const hotCore = new THREE.Mesh(
-    new THREE.ConeGeometry(0.08, 0.9, 8, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xffe5ac,
-      transparent: true,
-      opacity: 0.75,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  hotCore.rotation.x = -Math.PI / 2;
-  hotCore.position.z = length * 0.5 + 0.75;
-  g.add(hotCore);
-  const seaMist = new THREE.Mesh(
-    new THREE.ConeGeometry(0.8, 6, 12, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xbce8ec,
-      transparent: true,
-      opacity: 0.11,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seaMist.rotation.x = -Math.PI / 2;
-  seaMist.position.z = length * 0.5 + 4;
-  seaMist.visible = false;
-  g.add(seaMist);
-  const seekerFov = new THREE.Mesh(
-    new THREE.ConeGeometry(7, 30, 24, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xff6554,
-      transparent: true,
-      opacity: 0.07,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    }),
-  );
-  seekerFov.rotation.x = -Math.PI / 2;
-  seekerFov.position.z = -length * 0.5 - 16;
-  seekerFov.visible = false;
-  g.add(seekerFov);
-  g.userData.exhaust = exhaust;
-  g.userData.hotCore = hotCore;
-  g.userData.seaMist = seaMist;
-  g.userData.shockCone = undefined;
-  g.userData.seekerFov = seekerFov;
-  g.userData.modelLength = length;
-  return g;
-}
 function addMissile(
   pos: THREE.Vector3,
-  kind: EnemyType = "P-500",
+  kind: EnemyType = DEFAULT_THREAT_ID,
   launchAt = 0,
 ) {
   const profile = incomingProfiles[kind],
@@ -853,7 +381,7 @@ function addMissile(
       0,
       Math.cos((ordinal + 1) * 1.73) * 1.2,
     ),
-    g = createEnemyMissile(kind);
+    g = getThreatDefinition(kind).createModel();
   const attackModes = profile.terminalAttackModes;
   g.userData.terminalAttackMode = attackModes
     ? attackModes[ordinal % attackModes.length]
@@ -2437,10 +1965,28 @@ let placementMode: false | "enemy" | "ship" = false;
 const sandbox = document.createElement("div");
 sandbox.style.cssText =
   "position:fixed;inset:0;margin:auto;width:470px;height:430px;background:#071923f5;border:1px solid #4ac0b8;color:#d5edf0;z-index:30;padding:28px;font:12px Arial;letter-spacing:1px";
-const threatOptions = (Object.keys(incomingProfiles) as EnemyType[])
-  .map((kind) => `<option>${kind}</option>`)
+const threatOptions = THREAT_DEFINITIONS
+  .map((definition) => `<option>${definition.id}</option>`)
   .join("");
 sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType">${threatOptions}</select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.12" max="500" step="0.1" value="1.2"></label><label>CENTER X<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
+(sandbox.querySelector("#sbType") as HTMLSelectElement).value =
+  DEFAULT_THREAT_ID;
+const defaultThreatPreset = getThreatDefinition(DEFAULT_THREAT_ID).preset;
+(sandbox.querySelector("#sbCount") as HTMLInputElement).value = String(
+  defaultThreatPreset.count,
+);
+(sandbox.querySelector("#sbInterval") as HTMLInputElement).value = String(
+  defaultThreatPreset.interval,
+);
+(sandbox.querySelector("#sbAltitude") as HTMLInputElement).value = String(
+  defaultThreatPreset.altitude,
+);
+(sandbox.querySelector("#sbSpread") as HTMLInputElement).value = String(
+  defaultThreatPreset.spread,
+);
+(sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(
+  -defaultThreatPreset.range,
+);
 sandbox
   .querySelectorAll("input,select")
   .forEach(
@@ -2673,11 +2219,18 @@ function presetButton(
   };
   presets.appendChild(b);
 }
-presetButton("SEA SKIMMER", "P-500", 6, 1.5, 1.2, 140, 600);
-presetButton("SATURATION", "P-700", 16, 0, 2.6, 260, 750);
-presetButton("HIGH SPEED", "Kh-22", 8, 2, 360, 190, 1000);
-presetButton("HARPOON RAID", "RGM-84 Harpoon", 8, 1.2, 0.9, 180, 420);
-presetButton("P-15 RAID", "P-15 Termit", 6, 1.8, 1.95, 160, 400);
+for (const definition of THREAT_DEFINITIONS) {
+  const preset = definition.preset;
+  presetButton(
+    preset.label,
+    definition.id,
+    preset.count,
+    preset.interval,
+    preset.altitude,
+    preset.spread,
+    preset.range,
+  );
+}
 const threatSelect = sandbox.querySelector("#sbType") as HTMLSelectElement;
 threatSelect.onchange = () => {
   const profile = incomingProfiles[threatSelect.value as EnemyType];
@@ -4719,7 +4272,7 @@ function updateCombat(dt: number) {
       );
     if (seaSkimmer) {
       // Against sea skimmers, clear the launcher and pitch toward a shallow forward corridor.
-      // This is deliberately not the energy-saving loft used against the high-altitude Kh-22.
+      // Low-altitude threats use a forward corridor instead of an energy-saving loft.
       const launchClearance = THREE.MathUtils.smoothstep(
         i.age,
         0,
@@ -5045,7 +4598,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     log(
       `${m.kind} ACTIVE SEEKER ON / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
     );
-    if (m.kind === "RGM-84 Harpoon")
+    if (m.mesh.userData.terminalAttackMode !== "standard")
       log(
         `${m.kind} TERMINAL PROFILE / ${String(m.mesh.userData.terminalAttackMode).toUpperCase()}`,
       );
@@ -5064,16 +4617,21 @@ function updateIncomingMissile(m: Missile, dt: number) {
     profile.terminalAltitude,
     altitudeFactor,
   );
-  if (
-    m.kind === "RGM-84 Harpoon" &&
-    m.mesh.userData.terminalAttackMode === "pop-up" &&
-    m.phase === "terminal" &&
-    range < 48
-  ) {
-    const popupProgress = THREE.MathUtils.clamp((48 - range) / 42, 0, 1);
+  const popUp = profile.popUp,
+    popUpActive =
+      !!popUp &&
+      m.mesh.userData.terminalAttackMode === "pop-up" &&
+      m.phase === "terminal" &&
+      range < popUp.startRange;
+  if (popUpActive && popUp) {
+    const popupProgress = THREE.MathUtils.clamp(
+      (popUp.startRange - range) / Math.max(1, popUp.startRange - 6),
+      0,
+      1,
+    );
     commandedAltitude = THREE.MathUtils.lerp(
       profile.terminalAltitude,
-      2.4,
+      popUp.peakAltitude,
       Math.sin(popupProgress * Math.PI),
     );
   }
@@ -5165,20 +4723,23 @@ function updateIncomingMissile(m: Missile, dt: number) {
     );
   }
   m.mesh.userData.shipDecoy = deceived;
-  const harpoonHoj =
-      m.kind === "RGM-84 Harpoon" &&
+  const homeOnJam = profile.homeOnJam,
+    homeOnJamActive =
+      !!homeOnJam &&
       m.phase === "terminal" &&
       shipEcmEnabled &&
-      shipEcmStrength > 0.42 &&
+      shipEcmStrength > homeOnJam.minimumJammingStrength &&
       !deceived,
-    effectiveEcmStrength = harpoonHoj ? shipEcmStrength * 0.18 : shipEcmStrength;
-  if (harpoonHoj && !m.mesh.userData.hojLogged) {
+    effectiveEcmStrength = homeOnJamActive
+      ? shipEcmStrength * homeOnJam!.residualErrorFactor
+      : shipEcmStrength;
+  if (homeOnJamActive && !m.mesh.userData.hojLogged) {
     m.mesh.userData.hojLogged = true;
     log(`${m.kind} HOME-ON-JAM / AN/SLQ-32 EMITTER BEARING`);
   }
   m.mesh.userData.ewState = deceived
     ? "CHAFF LOCK"
-    : harpoonHoj
+    : homeOnJamActive
       ? "HOME-ON-JAM"
       : shipEcmStrength > 0
         ? `J/S +${Math.round(-sjDb)} dB`
@@ -5189,9 +4750,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     m.phase === "terminal"
       ? deceived
         ? "FALSE TARGET"
-        : m.kind === "RGM-84 Harpoon" &&
-            m.mesh.userData.terminalAttackMode === "pop-up" &&
-            range < 48
+        : popUpActive
           ? "ACTIVE / POP-UP"
           : "ACTIVE"
       : "STANDBY";
@@ -5258,6 +4817,19 @@ function updateIncomingMissile(m: Missile, dt: number) {
       dt * 1.2,
     );
     m.mesh.position.y += altitudeCorrection;
+  }
+  if (popUpActive && popUp) {
+    const altitudeCorrection = THREE.MathUtils.clamp(
+      commandedAltitude - m.mesh.position.y,
+      -dt * 1.2,
+      dt * 1.2,
+    );
+    m.mesh.position.y = Math.min(
+      popUp.peakAltitude,
+      m.mesh.position.y + altitudeCorrection,
+    );
+    if (m.mesh.position.y >= popUp.peakAltitude)
+      m.velocity.y = Math.min(0, m.velocity.y);
   }
   if (profile.trajectory === "sea-skimmer") {
     const radarAltimeterFloor = Math.max(0.06, profile.terminalAltitude * 0.75);
