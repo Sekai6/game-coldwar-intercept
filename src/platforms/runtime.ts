@@ -686,7 +686,8 @@ export function updateEnemyPlatform(
     const sufficient =
       fireControlHealth > 0.05 &&
       track.valid &&
-      track.quality >= slot.minimumTrackQuality;
+      track.quality * THREE.MathUtils.lerp(0.55, 1, fireControlHealth) >=
+        slot.minimumTrackQuality;
     const holdingDirectTrack =
       !sufficient &&
       track.valid &&
@@ -696,7 +697,8 @@ export function updateEnemyPlatform(
     platform.weaponTrackAge.set(
       slot.id,
       sufficient
-        ? previousAge + dt
+        ? previousAge +
+          dt * THREE.MathUtils.lerp(0.35, 1, fireControlHealth)
         : holdingDirectTrack
           ? Math.max(0, previousAge - dt * 0.35)
           : 0,

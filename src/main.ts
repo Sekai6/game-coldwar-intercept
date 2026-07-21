@@ -6499,9 +6499,11 @@ function updateIncomingMissile(m: Missile, dt: number) {
         ...[...platform.sensorState.values()].map((state) => state.quality),
       ),
       trackAge = platform.weaponTrackAge.get(weaponSlot.id) ?? 0,
+      effectiveTrackQuality =
+        trackQuality * THREE.MathUtils.lerp(0.55, 1, fireControlHealth),
       requiredAge = weaponSlot.minimumTrackAge + weaponSlot.fireControlDelay,
       fireControlReady =
-        trackQuality >= weaponSlot.minimumTrackQuality &&
+        effectiveTrackQuality >= weaponSlot.minimumTrackQuality &&
         trackAge >= requiredAge,
       salvoCommitted = platform.slots.weaponHardpoints.some(
         (hardpoint) =>

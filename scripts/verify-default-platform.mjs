@@ -22,6 +22,7 @@ for (const select of await page.locator("select").all()) {
   if (options.some((option) => option.includes("CG-57")))
     await select.selectOption("ticonderoga");
 }
+const fireControlHealth = process.env.OPFOR_FIRE_CONTROL_HEALTH ?? "100";
 const platform = await page.locator("#sbPlatform").inputValue();
 if (platform === "AIRBORNE") throw new Error("platform sandbox defaulted to AIRBORNE");
 await page.locator("#sbType").selectOption("P-500");
@@ -29,7 +30,7 @@ await page.locator("#sbCount").fill("4");
 await page.locator("#sbInterval").fill("1");
 await page.locator("#sbOpforPointDefenseHealth").fill("0");
 await page.locator("#sbOpforStrikeLauncherHealth").fill("100");
-await page.locator("#sbOpforFireControlHealth").fill("100");
+await page.locator("#sbOpforFireControlHealth").fill(fireControlHealth);
 await page.locator("#sbOpforEcmHealth").fill("0");
 await page.locator("#sbOpforDecoyHealth").fill("0");
 await page.locator("#sbStart").click();
@@ -50,15 +51,26 @@ const result = await canvas.evaluate((element) => ({
   trackQuality: element.dataset.enemyPlatformTargetTrackQuality ?? "",
   trackSource: element.dataset.enemyPlatformTargetTrackSource ?? "",
   trackAge: element.dataset.enemyPlatformTrackAge ?? "",
+  releaseTimes: (element.dataset.enemyPlatformReleaseTimes ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map(Number),
   reserved: Number(element.dataset.enemyPlatformReserved ?? 0),
   committed: Number(element.dataset.enemyPlatformCommitted ?? 0),
   authorized: Number(element.dataset.enemyPlatformAuthorized ?? 0),
   sensorQuality: element.dataset.enemyPlatformSensorQuality ?? "",
   maneuver: element.dataset.enemyPlatformManeuverMode ?? "",
 }));
+result.fireControlHealth = Number(fireControlHealth);
 await page.keyboard.press("5");
 await page.waitForTimeout(500);
-await page.screenshot({ path: "verification-default-platform.png", fullPage: true });
+await page.screenshot({
+  path:
+    Number(fireControlHealth) < 100
+      ? "verification-platform-fire-control-degraded.png"
+      : "verification-default-platform.png",
+  fullPage: true,
+});
 result.errors = errors;
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
@@ -68,6 +80,7 @@ if (
   result.centerZ !== -380 ||
   result.fired < 4 ||
   result.launchEffects < 4 ||
-  result.wave < 1
+  result.wave < 1 ||
+  (Number(fireControlHealth) < 100 && result.releaseTimes[0] <= 5)
 )
   process.exitCode = 1;
