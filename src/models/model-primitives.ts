@@ -92,3 +92,51 @@ export function createMk141Launcher(
   group.userData.weaponHardpoints = hardpoints;
   return group;
 }
+
+export function createShipBoat(
+  radius: number,
+  length: number,
+  material: THREE.Material,
+) {
+  const boat = new THREE.Mesh(
+    new THREE.CapsuleGeometry(radius, length, 4, 10),
+    material,
+  );
+  boat.rotation.z = Math.PI / 2;
+  return boat;
+}
+
+export function createLifeRaftCanister(
+  radius: number,
+  length: number,
+  material: THREE.Material,
+) {
+  const canister = new THREE.Mesh(
+    new THREE.CapsuleGeometry(radius, length, 4, 8),
+    material,
+  );
+  canister.rotation.z = Math.PI / 2;
+  return canister;
+}
+
+export function createHawsePipe(
+  radius: number,
+  tubeRadius: number,
+  material: THREE.Material,
+) {
+  return new THREE.Mesh(
+    new THREE.TorusGeometry(radius, tubeRadius, 8, 18),
+    material,
+  );
+}
+
+export function createGuardRailBeam(
+  length: number,
+  thickness: number,
+  material: THREE.Material,
+) {
+  return new THREE.Mesh(
+    new THREE.BoxGeometry(length, thickness, thickness),
+    material,
+  );
+}

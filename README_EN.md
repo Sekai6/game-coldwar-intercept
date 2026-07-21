@@ -503,7 +503,9 @@ Scenario setup selects between two procedural ships. Each class owns its longitu
 
 The CG-57 model carries four independently tasked AN/SPG-62 directors, one on each side of the forward and aft superstructure. Its two Phalanx CIWS mounts select threats within their respective forward and aft sectors. Both systems solve bearings in ship-local coordinates so target tracking remains correct while the ship maneuvers.
 
-CG-57 longitudinal calibration applies consistently to the hull, first-level equipment, subsystem hit points, damage zones, and both VLS launch origins without destructive nonuniform scaling of circular mounts, radar faces, or mast sections. Mk 41, Mk 45, Phalanx, AN/SPG-62, AN/SPY-1, and AN/SLQ-32 geometry now lives in reusable US Navy equipment factories; the class file owns only layout, count, and orientation. The model also carries bridge wings, twin Mk 141 quad Harpoon launchers, recessed boat bays and davits, life-raft canisters, hawse holes, hull plating seams, and a helicopter-deck RAST guide.
+CG-57 longitudinal calibration applies consistently to the hull, first-level equipment, subsystem hit points, damage zones, and both VLS launch origins without destructive nonuniform scaling of circular mounts, radar faces, or mast sections. Mk 41, Mk 45, Phalanx, AN/SPG-62, AN/SPY-1, and AN/SLQ-32 geometry now lives in reusable US Navy equipment factories. Boats, life-raft canisters, hawse pipes, and rail beams also use accessory factories shared by CGN-9 and CG-57; class files retain only layout, count, and orientation. The model additionally carries bridge wings, twin Mk 141 quad Harpoon launchers, recessed boat bays and davits, a bow breakwater, mooring bitts, hull plating seams, and a helicopter-deck RAST guide.
+
+After changing the CG-57 model, start the development server and run `npm run verify:cg57`. The script selects USS Lake Champlain, starts and pauses the sandbox, captures bow-quarter and broadside views, and fails on browser console or page errors. The current visual check confirms the `10.29:1` hull ratio and that the new breakwater clears the forward Mk 41 hatches and Mk 45 mount.
 
 The ship selector is generated from `SHIP_CATALOG`. Each definition supplies its model builder, sensors, ammunition, launcher family, and subsystem positions. Stack smoke and CIWS effects read model attachment points, so another ship in an existing launcher family does not require ship-name branches in UI or firing code.
 
@@ -645,7 +647,7 @@ The repository contains development verification screenshots for the hull, radar
 - Seekers and ECM are explainable probability/signal models, not RF engineering simulations.
 - The procedural ship emphasizes recognizable silhouette and combat equipment, not survey-grade digital-twin accuracy.
 - Damage control does not yet model repair teams, fire spread, power distribution, or redundant wiring.
-- There is no automated test suite yet; current gates are the TypeScript build and Playwright browser scenarios.
+- There is no complete automated test suite yet; current gates are the TypeScript build, mechanism scenarios, and Playwright browser checks. Run `npm run verify:cg57` for repeatable CG-57 model verification.
 - The sea mesh is still updated on the CPU. The planned WebGPU FFT backend requires spectrum generation, horizontal/vertical inverse FFT passes, displacement/normal textures, a Jacobian foam pass, and a postprocessing path compatible with WebGPU nodes; WebGL remains the fallback.
 - Incoming smoke currently uses one missile-local fixed particle pool, so it bends with the missile during a turn. Persistent world-space trails require a separate scene-level particle history pool.
 

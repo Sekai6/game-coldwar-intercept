@@ -9,7 +9,11 @@ import {
 } from "./hull-geometry";
 import {
   addModelStrut as strut,
+  createGuardRailBeam,
+  createHawsePipe,
+  createLifeRaftCanister,
   createMk141Launcher,
+  createShipBoat,
   createSlopedBoxGeometry as slopedBox,
   type ModelWeaponHardpoint,
 } from "./model-primitives";
@@ -426,11 +430,11 @@ export function buildTiconderoga() {
     }
   for (const side of [-1, 1])
     for (const x of [-2, -6, -10]) {
-      const boat = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.42, 2.5, 4, 9),
+      const boat = createShipBoat(
+        0.42,
+        2.5,
         new THREE.MeshStandardMaterial({ color: 0xe1d9c8, roughness: 0.66 }),
       );
-      boat.rotation.z = Math.PI / 2;
       boat.position.set(longitudinal(x), 9.1, side * 4.05);
       highDetail.add(boat);
     }
@@ -453,11 +457,11 @@ export function buildTiconderoga() {
   }
   for (const side of [-1, 1])
     for (const x of [-15, -4, 7, 15]) {
-      const canister = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.28, 1.75, 4, 8),
+      const canister = createLifeRaftCanister(
+        0.28,
+        1.75,
         new THREE.MeshStandardMaterial({ color: 0xd4d8cf, roughness: 0.7 }),
       );
-      canister.rotation.z = Math.PI / 2;
       canister.position.set(longitudinal(x), 8.2, side * 4);
       highDetail.add(canister);
     }
@@ -486,10 +490,7 @@ export function buildTiconderoga() {
     );
     platingSeam.position.set(longitudinal(-2), 2.35, side * 3.21);
     highDetail.add(platingSeam);
-    const hawse = new THREE.Mesh(
-      new THREE.TorusGeometry(0.38, 0.11, 8, 18),
-      dark,
-    );
+    const hawse = createHawsePipe(0.38, 0.11, dark);
     hawse.position.set(longitudinal(28.4), 3.65, side * 2.36);
     highDetail.add(hawse);
     const anchor = new THREE.Mesh(
@@ -500,6 +501,32 @@ export function buildTiconderoga() {
     anchor.rotation.z = 0.62;
     highDetail.add(anchor);
   }
+  const breakwater = new THREE.Group();
+  const breakwaterFace = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 1.05, 5.15),
+    superMat,
+  );
+  breakwaterFace.rotation.z = -0.16;
+  breakwaterFace.position.set(longitudinal(24.9), 6.55, 0);
+  breakwater.add(breakwaterFace);
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(
+      new THREE.BoxGeometry(longitudinal(2.8), 0.72, 0.13),
+      superMat,
+    );
+    wing.position.set(longitudinal(23.65), 6.42, side * 2.35);
+    wing.rotation.y = side * 0.42;
+    breakwater.add(wing);
+    for (const x of [longitudinal(26.7), longitudinal(-29)]) {
+      const bitt = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.14, 0.55, 8),
+        dark,
+      );
+      bitt.position.set(x, x > 0 ? 6.75 : 6.05, side * 1.45);
+      breakwater.add(bitt);
+    }
+  }
+  highDetail.add(breakwater);
   const rastTrack = new THREE.Mesh(
     new THREE.BoxGeometry(longitudinal(10.5), 0.025, 0.09),
     new THREE.MeshBasicMaterial({ color: 0xe8e4cb }),
@@ -543,8 +570,9 @@ export function buildTiconderoga() {
   highDetail.add(flag);
   ship.add(highDetail);
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(
-      new THREE.BoxGeometry(longitudinal(48), 0.07, 0.07),
+    const rail = createGuardRailBeam(
+      longitudinal(48),
+      0.07,
       new THREE.MeshBasicMaterial({ color: 0x82908d }),
     );
     rail.position.set(longitudinal(-1), 6.65, side * 3.72);
@@ -683,6 +711,7 @@ export function buildTiconderoga() {
       foreCiws,
       aftCiws,
       rastTrack,
+      breakwater,
       ...directors,
       ...arrays,
     ],

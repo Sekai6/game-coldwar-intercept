@@ -8,7 +8,10 @@ import {
 } from "./hull-geometry";
 import {
   addModelStrut as addStrut,
+  createGuardRailBeam,
+  createHawsePipe,
   createMk141Launcher,
+  createShipBoat,
   createSlopedBoxGeometry,
   type ModelWeaponHardpoint,
 } from "./model-primitives";
@@ -657,10 +660,7 @@ export function buildLongBeach(color = 0x687574, scale = 1) {
     g.add(light, bulb);
   }
   for (const side of [-1, 1]) {
-    const anchor = new THREE.Mesh(
-      new THREE.TorusGeometry(0.45, 0.12, 8, 16),
-      darkMat,
-    );
+    const anchor = createHawsePipe(0.45, 0.12, darkMat);
     anchor.position.set(21, 3.2, side * 2.86);
     anchor.rotation.x = Math.PI / 2;
     g.add(anchor);
@@ -873,11 +873,11 @@ export function buildLongBeach(color = 0x687574, scale = 1) {
     [-10, -4.1],
     [-10, 4.1],
   ] as const) {
-    const boat = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.62, 3.4, 4, 10),
+    const boat = createShipBoat(
+      0.62,
+      3.4,
       new THREE.MeshStandardMaterial({ color: 0xc4c1ac, roughness: 0.68 }),
     );
-    boat.rotation.z = Math.PI / 2;
     boat.position.set(x, 9, z);
     highDetail.add(boat);
   }
@@ -1060,8 +1060,9 @@ export function buildLongBeach(color = 0x687574, scale = 1) {
   }
   const mediumDetail = new THREE.Group();
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(
-      new THREE.BoxGeometry(42, 0.08, 0.08),
+    const rail = createGuardRailBeam(
+      42,
+      0.08,
       new THREE.MeshBasicMaterial({ color: 0x81908d }),
     );
     rail.position.set(-1, 6.9, side * 3.82);
