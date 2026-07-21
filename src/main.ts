@@ -6104,6 +6104,33 @@ function updateCombat(dt: number) {
       );
   }
 }
+function cancelPendingPlatformLaunch(missile: Missile, reason: string) {
+  const launch = missile.platformLaunch;
+  if (!launch || launch.released || missile.phase === "destroyed") return false;
+  missile.phase = "destroyed";
+  missile.mesh.visible = false;
+  missile.path.visible = false;
+  missile.mesh.userData.seekerLine.visible = false;
+  missile.mesh.userData.seekerFov.visible = false;
+  launch.reservation.platform.hardpointState.set(
+    launch.reservation.hardpoint.id,
+    "canceled",
+  );
+  log(
+    `${launch.reservation.platform.definition.name} LAUNCH ABORT / ${launch.reservation.hardpoint.id.toUpperCase()} / ${reason}`,
+  );
+  return true;
+}
+
+function cancelPlatformLaunchesAgainstDisabledShip() {
+  return missiles.reduce(
+    (count, missile) =>
+      count +
+      Number(cancelPendingPlatformLaunch(missile, "TARGET DISABLED")),
+    0,
+  );
+}
+
 function updateIncomingMissile(m: Missile, dt: number) {
   if (m.phase === "destroyed") {
     m.mesh.userData.seekerLine.visible = false;
@@ -6122,16 +6149,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
   if (pendingPlatformLaunch && !pendingPlatformLaunch.released) {
     const platform = pendingPlatformLaunch.reservation.platform;
     if (platform.destroyed) {
-      m.phase = "destroyed";
-      m.mesh.visible = false;
-      m.path.visible = false;
-      platform.hardpointState.set(
-        pendingPlatformLaunch.reservation.hardpoint.id,
-        "canceled",
-      );
-      log(
-        `${platform.definition.name} LAUNCH ABORT / ${pendingPlatformLaunch.reservation.hardpoint.id.toUpperCase()} / PLATFORM DISABLED`,
-      );
+      cancelPendingPlatformLaunch(m, "PLATFORM DISABLED");
       return;
     }
     if (elapsed >= m.launchAt) {
@@ -6721,6 +6739,9 @@ function updateIncomingMissile(m: Missile, dt: number) {
     );
     updateShipStatus();
     if (hullIntegrity <= 0) {
+      const canceled = cancelPlatformLaunchesAgainstDisabledShip();
+      if (canceled > 0)
+        log(`OPFOR FIRE PLAN TERMINATED / ${canceled} UNRELEASED WEAPONS`);
       phaseEl.textContent = `${activeShip.name} DISABLED`;
       finishMission(false);
     }
@@ -6890,6 +6911,12 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformCanceled = String(
       states.filter((state) => state === "canceled").length,
     );
+    canvas.dataset.enemyPlatformReleasedInFlight = String(
+      missiles.filter(
+        (missile) =>
+          missile.platformLaunch?.released && missile.phase !== "destroyed",
+      ).length,
+    );
     canvas.dataset.enemyPlatformSensorQuality = Math.max(
       0,
       ...[...enemyPlatform.sensorState.values()].map((state) => state.quality),
@@ -6921,6 +6948,7 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformDesiredHeadingDeg = THREE.MathUtils.radToDeg(
       enemyPlatform.desiredHeading,
     ).toFixed(2);
+    canvas.dataset.shipHull = hullIntegrity.toFixed(2);
   } else {
     canvas.dataset.enemyPlatform = "AIRBORNE";
     canvas.dataset.enemyPlatformReady = "0";
@@ -6929,6 +6957,8 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformFiredOrder = "";
     canvas.dataset.enemyPlatformReleaseTimes = "";
     canvas.dataset.enemyPlatformCanceled = "0";
+    canvas.dataset.enemyPlatformReleasedInFlight = "0";
+    canvas.dataset.shipHull = hullIntegrity.toFixed(2);
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformTrackAge = "0.00";
     canvas.dataset.enemyPlatformTargetTrackQuality = "0.000";
