@@ -66,6 +66,7 @@ import {
   estimateSurfaceBattleDamage,
   planSurfaceSalvo,
 } from "./surface-doctrine";
+import { pointDefenseCapability } from "./platforms/defense";
 import type {
   AarCategory,
   AarEvent,
@@ -2487,6 +2488,8 @@ shipSelect.onchange = () => {
     "100";
   (sandbox.querySelector("#sbLauncherAftHealth") as HTMLInputElement).value =
     "100";
+  (sandbox.querySelector("#sbOpforPointDefenseHealth") as HTMLInputElement).value =
+    "100";
 };
 for (const [label, id, value, max] of [
   ["RIM-67 MAGAZINE", "sbRim", String(activeShip.ammo.rim67), "48"],
@@ -2537,6 +2540,7 @@ sandboxGrid.appendChild(illuminatorField);
 for (const [label, id] of [
   ["FWD LAUNCHER HEALTH", "sbLauncherFwdHealth"],
   ["AFT LAUNCHER HEALTH", "sbLauncherAftHealth"],
+  ["OPFOR POINT DEFENSE HEALTH", "sbOpforPointDefenseHealth"],
 ]) {
   const field = document.createElement("label");
   field.textContent = label;
@@ -2912,6 +2916,17 @@ radarCanvas.addEventListener("pointerdown", (e) => {
       if (forwardHealth < 100)
         damageSubsystem("forwardLauncher", 100 - forwardHealth);
       if (aftHealth < 100) damageSubsystem("aftLauncher", 100 - aftHealth);
+      if (enemyPlatform) {
+        const pointDefenseHealth = THREE.MathUtils.clamp(
+          numberInput("#sbOpforPointDefenseHealth"),
+          0,
+          100,
+        );
+        enemyPlatform.subsystemHealth.set(
+          "point-defense",
+          pointDefenseHealth,
+        );
+      }
       ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
       surfaceStrikeAmmo = Math.max(
         0,
@@ -4813,6 +4828,10 @@ function updateSurfaceCombat(
       log(
         `${missile.target.definition.name} POINT DEFENSE / MAGAZINE DEPLETED / HARPOON ${missile.id} LEAKER`,
       );
+    else if (event.kind === "point-defense-offline")
+      log(
+        `${missile.target.definition.name} POINT DEFENSE / SYSTEM OFFLINE / HARPOON ${missile.id} LEAKER`,
+      );
     else if (event.kind === "soft-kill")
       {
         surfaceSoftKills++;
@@ -5030,6 +5049,24 @@ function updateSurfaceCombat(
   );
   canvas.dataset.platformDefenseDepleted = String(
     enemyPlatform?.pointDefenseDepletedLogged ?? false,
+  );
+  const platformPointDefenseCapability = enemyPlatform
+    ? pointDefenseCapability(enemyPlatform)
+    : null;
+  canvas.dataset.platformDefenseHealth = (
+    (platformPointDefenseCapability?.health ?? 0) * 100
+  ).toFixed(0);
+  canvas.dataset.platformDefenseEffectiveChannels = String(
+    platformPointDefenseCapability?.effectiveChannels ?? 0,
+  );
+  canvas.dataset.platformDefenseReactionMultiplier = (
+    platformPointDefenseCapability?.reactionMultiplier ?? 0
+  ).toFixed(2);
+  canvas.dataset.platformDefenseCycleMultiplier = (
+    platformPointDefenseCapability?.cycleMultiplier ?? 0
+  ).toFixed(2);
+  canvas.dataset.platformDefenseOffline = String(
+    enemyPlatform?.pointDefenseOfflineLogged ?? false,
   );
   canvas.dataset.platformIncomingTrackCount = String(
     enemyPlatform

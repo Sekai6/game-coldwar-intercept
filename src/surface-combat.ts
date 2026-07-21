@@ -5,7 +5,10 @@ import type {
 } from "./platforms/types";
 import type { ChaffCloud } from "./combat-types";
 import type { ModelWeaponHardpoint, ShipDefinition } from "./ship-types";
-import { pointDefensePriorityTracks } from "./platforms/defense";
+import {
+  pointDefenseCapability,
+  pointDefensePriorityTracks,
+} from "./platforms/defense";
 import { getThreatDefinition } from "./threats/catalog";
 import {
   updateThreatParticleTrail,
@@ -84,6 +87,7 @@ export type SurfaceStrikeEvent =
       engagementsRemaining: number;
     }
   | { kind: "point-defense-depleted"; missile: SurfaceStrikeMissile }
+  | { kind: "point-defense-offline"; missile: SurfaceStrikeMissile }
   | {
       kind: "soft-kill";
       missile: SurfaceStrikeMissile;
@@ -286,7 +290,9 @@ function updatePlatformIncomingTrack(
     track.fireControlReadyAt = Infinity;
     track.readyLogged = false;
   } else if (!Number.isFinite(track.fireControlReadyAt)) {
-    track.fireControlReadyAt = elapsed + defense.reactionTime;
+    track.fireControlReadyAt =
+      elapsed +
+      defense.reactionTime * pointDefenseCapability(platform).reactionMultiplier;
   } else if (elapsed >= track.fireControlReadyAt && !track.readyLogged) {
     track.readyLogged = true;
     event = {
@@ -464,6 +470,7 @@ export function updateSurfaceStrikeMissile(
   }
 
   const pointDefense = missile.target.definition.survivability.pointDefense;
+  const capability = pointDefenseCapability(missile.target);
   const defenseTrackRange = platformTrack.track.position.distanceTo(
     missile.target.model.position,
   );
@@ -490,7 +497,8 @@ export function updateSurfaceStrikeMissile(
     } satisfies SurfaceStrikeEvent;
   }
   const availableChannel = missile.target.pointDefenseChannelReady.findIndex(
-    (readyAt) => elapsed >= readyAt,
+    (readyAt, index) =>
+      index < capability.effectiveChannels && elapsed >= readyAt,
   );
   const pointDefenseEligible =
     !missile.target.destroyed &&
@@ -502,6 +510,17 @@ export function updateSurfaceStrikeMissile(
     defenseTrackRange < pointDefense.range &&
     missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
     !missile.pendingPointDefense;
+  if (
+    pointDefenseEligible &&
+    capability.effectiveChannels <= 0 &&
+    !missile.target.pointDefenseOfflineLogged
+  ) {
+    missile.target.pointDefenseOfflineLogged = true;
+    return {
+      kind: "point-defense-offline",
+      missile,
+    } satisfies SurfaceStrikeEvent;
+  }
   if (
     pointDefenseEligible &&
     missile.target.pointDefenseEngagementsRemaining <= 0 &&
@@ -522,7 +541,7 @@ export function updateSurfaceStrikeMissile(
     missile.pointDefenseEngagements++;
     platformTrack.track.engagements++;
     const health =
-      (missile.target.subsystemHealth.get("point-defense") ?? 100) / 100;
+      capability.health;
     const pk = THREE.MathUtils.clamp(
       (pointDefense.basePk -
         Math.max(0, platformTrack.track.localTrackDensity - 1) *
@@ -548,7 +567,8 @@ export function updateSurfaceStrikeMissile(
     );
     const resolveAt = elapsed + timeOfFlight;
     missile.target.pointDefenseChannelReady[availableChannel] = Math.max(
-      elapsed + pointDefense.interval,
+      elapsed +
+        pointDefense.interval * capability.cycleMultiplier,
       resolveAt,
     );
     platformTrack.track.nextEngagementReadyAt =

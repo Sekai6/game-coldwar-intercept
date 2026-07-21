@@ -1,6 +1,24 @@
 import * as THREE from "three";
 import type { EnemyPlatformInstance, PlatformIncomingTrack } from "./types";
 
+export function pointDefenseCapability(platform: EnemyPlatformInstance) {
+  const definition = platform.definition.survivability.pointDefense;
+  const health = THREE.MathUtils.clamp(
+    (platform.subsystemHealth.get("point-defense") ?? 100) / 100,
+    0,
+    1,
+  );
+  return {
+    health,
+    effectiveChannels:
+      health <= 0.05
+        ? 0
+        : Math.max(1, Math.ceil(definition.channels * health)),
+    reactionMultiplier: THREE.MathUtils.lerp(1.8, 1, health),
+    cycleMultiplier: THREE.MathUtils.lerp(2, 1, health),
+  };
+}
+
 function trackIsValid(
   platform: EnemyPlatformInstance,
   track: PlatformIncomingTrack,

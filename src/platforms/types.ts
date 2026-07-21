@@ -132,6 +132,7 @@ export interface EnemyPlatformInstance {
   pointDefenseChannelReady: number[];
   pointDefenseEngagementsRemaining: number;
   pointDefenseDepletedLogged: boolean;
+  pointDefenseOfflineLogged: boolean;
   decoyRounds: number;
   nextDecoy: number;
   velocity: THREE.Vector3;
