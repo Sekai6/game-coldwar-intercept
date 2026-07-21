@@ -164,6 +164,7 @@ export interface EnemyPlatformInstance {
     uncertainty: number;
     lastUpdate: number;
     valid: boolean;
+    source: "none" | "radar" | "esm";
   };
   destroyed: boolean;
 }

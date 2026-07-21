@@ -98,6 +98,10 @@ export interface ShipDefinition {
     datalinkUpdateInterval: number;
     datalinkLatency: number;
     datalinkMinimumQuality: number;
+    routeLateralOffset: number;
+    routeJoinRange: number;
+    arrivalWindow: number;
+    maximumSpeedCompensation: number;
     damage: number;
     fuseDelay: number;
     salvoSize: number;

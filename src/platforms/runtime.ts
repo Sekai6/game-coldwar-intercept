@@ -141,6 +141,7 @@ export function instantiateEnemyPlatform(
       uncertainty: Infinity,
       lastUpdate: -Infinity,
       valid: false,
+      source: "none",
     },
     destroyed: false,
   };
@@ -328,6 +329,7 @@ export function updateEnemyPlatform(
   targetSignificantHeightMeters: number,
   targetRadarCrossSection: number,
   sensorsEnabled: boolean,
+  targetEmitting: boolean,
 ) {
   const damageEvents = updatePlatformCasualties(platform, elapsed);
   const previousManeuverMode = platform.maneuverMode;
@@ -383,12 +385,30 @@ export function updateEnemyPlatform(
       const trackRange = toTrack.length();
       if (trackRange > 1) {
         const axis = toTrack.normalize();
-        if (trackRange > mobility.standoffRange + mobility.standoffTolerance) {
+        const minimumWeaponQuality = Math.min(
+            ...platform.definition.weaponSlots.map(
+              (slot) => slot.minimumTrackQuality,
+            ),
+          ),
+          organicHorizon = Math.max(
+            ...platform.definition.sensorSlots.map((sensor) =>
+              radarHorizonWorldUnits(
+                sensor.radarHeight,
+                targetSignificantHeightMeters,
+              ),
+            ),
+          ),
+          desiredRange =
+            platform.targetTrack.source === "radar" &&
+            platform.targetTrack.quality >= minimumWeaponQuality
+              ? mobility.standoffRange
+              : Math.min(mobility.standoffRange, organicHorizon * 0.84);
+        if (trackRange > desiredRange + mobility.standoffTolerance) {
           platform.desiredHeading = headingFor(axis);
           platform.maneuverMode = "close";
         } else if (
           trackRange <
-          mobility.standoffRange - mobility.standoffTolerance
+          desiredRange - mobility.standoffTolerance
         ) {
           platform.desiredHeading = headingFor(axis.multiplyScalar(-1));
           platform.maneuverMode = "withdraw";
@@ -491,12 +511,16 @@ export function updateEnemyPlatform(
       detectedQuality = Math.max(detectedQuality, candidateQuality);
     } else state.quality *= 0.78;
   }
-  const bestTrackQuality = Math.max(
-    0,
-    ...[...platform.sensorState.values()].map((state) => state.quality),
-  );
   const track = platform.targetTrack;
-  if (sensorDetected && detectedQuality > 0.04) {
+  const ewHealth =
+      (platform.subsystemHealth.get("electronic-warfare") ?? 100) / 100,
+    radarTrack = sensorDetected && detectedQuality > 0.08,
+    esmTrack =
+      targetEmitting &&
+      ewHealth > 0.04 &&
+      (!radarTrack || detectedQuality < 0.22) &&
+      elapsed - track.lastUpdate >= 1.1;
+  if (radarTrack) {
     const uncertainty = 2 + (1 - detectedQuality) * 24,
       phase = elapsed * 0.41 + platform.definition.radarCrossSection * 0.17,
       error = new THREE.Vector3(
@@ -519,12 +543,57 @@ export function updateEnemyPlatform(
     track.uncertainty = uncertainty;
     track.lastUpdate = elapsed;
     track.valid = true;
+    track.source = "radar";
+  } else if (esmTrack) {
+    const trueBearing = Math.atan2(
+        targetPosition.z - platform.model.position.z,
+        targetPosition.x - platform.model.position.x,
+      ),
+      bearingError =
+        THREE.MathUtils.degToRad(2.5 + (1 - ewHealth) * 5) *
+        Math.sin(elapsed * 0.37 + platform.definition.id.length),
+      measuredBearing = trueBearing + bearingError,
+      trueRange = platform.model.position.distanceTo(targetPosition),
+      measuredRange =
+        trueRange *
+        (1 +
+          (0.16 + (1 - ewHealth) * 0.2) *
+            Math.sin(elapsed * 0.23 + 1.7));
+    track.position
+      .copy(platform.model.position)
+      .add(
+        new THREE.Vector3(
+          Math.cos(measuredBearing),
+          0,
+          Math.sin(measuredBearing),
+        ).multiplyScalar(Math.max(1, measuredRange)),
+      );
+    track.velocity.copy(targetVelocity);
+    track.quality = THREE.MathUtils.clamp(
+      0.12 + ewHealth * 0.08,
+      0.12,
+      0.2,
+    );
+    track.uncertainty = Math.max(
+      70,
+      trueRange * (0.24 + (1 - ewHealth) * 0.16),
+    );
+    track.lastUpdate = elapsed;
+    track.valid = true;
+    track.source = "esm";
+  } else if (sensorDetected && detectedQuality > 0.04) {
+    track.quality = Math.max(track.quality, detectedQuality);
+    track.lastUpdate = elapsed;
+    track.valid = true;
+    track.source = "radar";
   } else {
     track.position.addScaledVector(track.velocity, dt);
     track.quality = Math.max(0, track.quality - dt * 0.012);
     track.uncertainty = Math.min(80, track.uncertainty + dt * 0.7);
-    if (track.quality <= 0.04 || elapsed - track.lastUpdate > 4)
+    if (track.quality <= 0.04 || elapsed - track.lastUpdate > 4) {
       track.valid = false;
+      track.source = "none";
+    }
   }
   for (const slot of platform.definition.weaponSlots) {
     const sufficient =

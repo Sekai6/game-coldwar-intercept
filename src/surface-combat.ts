@@ -38,6 +38,11 @@ export type SurfaceStrikeMissile = {
   launchSlot: string;
   commandPoint: THREE.Vector3;
   commandVelocity: THREE.Vector3;
+  routeOffset: THREE.Vector3;
+  routeJoinRange: number;
+  plannedArrivalAt: number;
+  maximumSpeedCompensation: number;
+  terminalEnteredAt: number | null;
   nextDatalink: number;
   datalinkValid: boolean;
   history: THREE.Vector3[];
@@ -156,6 +161,10 @@ export function createSurfaceStrikeMissile(
   strike: NonNullable<ShipDefinition["surfaceStrike"]>,
   commandPoint: THREE.Vector3,
   commandVelocity: THREE.Vector3,
+  routeOffset: THREE.Vector3,
+  routeJoinRange: number,
+  plannedArrivalAt: number,
+  maximumSpeedCompensation: number,
 ) {
   hardpoint.mount.updateWorldMatrix(true, false);
   const origin = hardpoint.mount.getWorldPosition(new THREE.Vector3());
@@ -193,6 +202,11 @@ export function createSurfaceStrikeMissile(
     launchSlot: hardpoint.id,
     commandPoint: commandPoint.clone(),
     commandVelocity: commandVelocity.clone(),
+    routeOffset: routeOffset.clone(),
+    routeJoinRange,
+    plannedArrivalAt,
+    maximumSpeedCompensation,
+    terminalEnteredAt: null,
     nextDatalink: 0,
     datalinkValid: true,
     history,
@@ -469,6 +483,8 @@ export function updateSurfaceStrikeMissile(
   const profile = getThreatDefinition("RGM-84 Harpoon").profile;
   const terminal = commandRange < profile.terminalAt;
   missile.phase = missile.age < 1.35 ? "boost" : terminal ? "terminal" : "midcourse";
+  if (terminal && missile.terminalEnteredAt === null)
+    missile.terminalEnteredAt = elapsed;
   const platformTrack = updatePlatformIncomingTrack(
     missile,
     dt,
@@ -730,6 +746,13 @@ export function updateSurfaceStrikeMissile(
         Math.cos(missile.age * 2.25) * 0.22,
       )
     : new THREE.Vector3();
+  const routeWeight = terminal
+    ? 0
+    : THREE.MathUtils.smoothstep(
+        commandRange,
+        profile.terminalAt,
+        Math.max(profile.terminalAt + 1, missile.routeJoinRange),
+      );
   const aimPosition = missile.seekerAcquired
     ? trueTargetPosition
         .clone()
@@ -737,7 +760,9 @@ export function updateSurfaceStrikeMissile(
           missile.target.velocity,
           Math.min(6, trueRange / Math.max(1, missile.velocity.length())),
         )
-    : missile.commandPoint;
+    : missile.commandPoint
+        .clone()
+        .addScaledVector(missile.routeOffset, routeWeight);
   const aim = aimPosition
     .clone()
     .add(weave)
@@ -748,7 +773,19 @@ export function updateSurfaceStrikeMissile(
   const angle = current.angleTo(aim);
   const maxTurn = THREE.MathUtils.degToRad(terminal ? 32 : 11.5) * dt;
   const direction = current.lerp(aim, angle > 0 ? Math.min(1, maxTurn / angle) : 1).normalize();
-  const targetSpeed = missile.phase === "boost" ? 6.1 : terminal ? 6.4 : 5.8;
+  const baseCruiseSpeed = 5.8;
+  const remainingArrivalTime = missile.plannedArrivalAt - elapsed;
+  const coordinatedCruiseSpeed = THREE.MathUtils.clamp(
+    commandRange / Math.max(1, remainingArrivalTime),
+    baseCruiseSpeed * (1 - missile.maximumSpeedCompensation * 0.35),
+    baseCruiseSpeed * (1 + missile.maximumSpeedCompensation),
+  );
+  const targetSpeed =
+    missile.phase === "boost"
+      ? 6.1
+      : terminal
+        ? 6.4
+        : coordinatedCruiseSpeed;
   const speed = THREE.MathUtils.lerp(missile.velocity.length(), targetSpeed, Math.min(1, dt * 1.1));
   missile.velocity.copy(direction.multiplyScalar(speed));
   missile.mesh.position.addScaledVector(missile.velocity, dt);

@@ -5,7 +5,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import "./style.css";
-import { CombatPicture } from "./sim";
+import { CombatPicture, radarHorizonWorldUnits } from "./sim";
 import {
   shipSurfaceHardpoints,
   type ModelWeaponHardpoint,
@@ -370,6 +370,8 @@ const surfaceLaunchQueue: {
   launchAt: number;
   commandPoint: THREE.Vector3;
   commandVelocity: THREE.Vector3;
+  routeOffset: THREE.Vector3;
+  plannedArrivalAt: number;
 }[] = [];
 let surfaceHardpointState = new Map<
     string,
@@ -393,6 +395,15 @@ let surfaceHardpointState = new Map<
   surfaceTrackId = 0,
   surfaceTrackHorizonLimited: boolean | null = null,
   surfaceTrackStableTime = 0,
+  surfaceEsmNextScan = 0,
+  surfaceEsmCue = {
+    position: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    quality: 0,
+    uncertainty: Infinity,
+    age: Infinity,
+    valid: false,
+  },
   surfaceFireControlReadyAt = Infinity,
   surfaceFireControlReadyLogged = false;
 const interceptors: Interceptor[] = [];
@@ -421,6 +432,9 @@ function resetSurfaceStrikeLoadout() {
   surfaceTrackId = 0;
   surfaceTrackHorizonLimited = null;
   surfaceTrackStableTime = 0;
+  surfaceEsmNextScan = 0;
+  surfaceEsmCue.valid = false;
+  surfaceEsmCue.age = Infinity;
   surfaceFireControlReadyAt = Infinity;
   surfaceFireControlReadyLogged = false;
   nextSurfaceAssessment = 0;
@@ -2414,6 +2428,8 @@ sandboxGrid.insertBefore(shipField, sandboxGrid.firstChild);
 sandboxGrid.insertBefore(platformField, shipField.nextSibling);
 function syncPlatformThreatOptions() {
   const selection = platformSelect.value as EnemyPlatformType | "AIRBORNE";
+  if (selection !== "AIRBORNE")
+    (sandbox.querySelector("#sbZ") as HTMLInputElement).value = "-380";
   const compatible =
     selection === "AIRBORNE"
       ? THREAT_DEFINITIONS.map((definition) => definition.id)
@@ -3684,9 +3700,15 @@ function updateShipManeuver(dt: number) {
       }
     } else {
       shipManeuverThreatId = 0;
-      const surfaceTrack = enemyPlatform
+      const directSurfaceTrack = enemyPlatform
         ? surfacePicture.trackForTarget(1)
         : undefined;
+      const surfaceTrack =
+        directSurfaceTrack && directSurfaceTrack.quality > 0.08
+          ? directSurfaceTrack
+          : surfaceEsmCue.valid && surfaceEsmCue.age < 8
+            ? surfaceEsmCue
+            : undefined;
       if (surfaceTrack && surfaceTrack.age < 8 && surfaceTrack.quality > 0.08) {
         const toTrack = surfaceTrack.position
             .clone()
@@ -3694,13 +3716,25 @@ function updateShipManeuver(dt: number) {
             .setY(0),
           range = toTrack.length(),
           axis = toTrack.normalize(),
-          platform = activeShip.platform;
-        if (range > platform.standoffRange + platform.standoffTolerance) {
+          platform = activeShip.platform,
+          organicHorizon = radarHorizonWorldUnits(
+            activeShip.sensors[0]?.radarHeight ??
+              activeShip.platform.significantHeightMeters,
+            enemyPlatform?.definition.significantHeightMeters ??
+              activeShip.platform.significantHeightMeters,
+          ),
+          desiredRange =
+            directSurfaceTrack &&
+            directSurfaceTrack.quality >=
+              (activeShip.surfaceStrike?.requiredTrackQuality ?? 0.5)
+              ? platform.standoffRange
+              : Math.min(platform.standoffRange, organicHorizon * 0.84);
+        if (range > desiredRange + platform.standoffTolerance) {
           shipDesiredHeading = headingFor(axis);
           shipManeuverMode = "close";
         } else if (
           range <
-          platform.standoffRange - platform.standoffTolerance
+          desiredRange - platform.standoffTolerance
         ) {
           shipDesiredHeading = headingFor(axis.multiplyScalar(-1));
           shipManeuverMode = "withdraw";
@@ -4469,6 +4503,32 @@ setInterval(() => {
     radarCtx.globalAlpha = 0.9;
     radarCtx.strokeRect(platformX - 7, platformY - 4, 14, 8);
     radarCtx.fillRect(platformX - 1, platformY - 1, 2, 2);
+  } else if (enemyPlatform && surfaceEsmCue.valid) {
+    const cueX =
+        cx +
+        (surfaceEsmCue.position.x - defender.position.x) *
+          RADAR_PIXELS_PER_WORLD_UNIT,
+      cueY =
+        cy +
+        (surfaceEsmCue.position.z - defender.position.z) *
+          RADAR_PIXELS_PER_WORLD_UNIT;
+    radarCtx.save();
+    radarCtx.strokeStyle = "#bd78ff";
+    radarCtx.fillStyle = "#bd78ff";
+    radarCtx.globalAlpha = 0.78;
+    radarCtx.setLineDash([3, 5]);
+    radarCtx.beginPath();
+    radarCtx.moveTo(cx, cy);
+    radarCtx.lineTo(cueX, cueY);
+    radarCtx.stroke();
+    radarCtx.setLineDash([]);
+    radarCtx.translate(cueX, cueY);
+    radarCtx.rotate(Math.PI / 4);
+    radarCtx.strokeRect(-5, -5, 10, 10);
+    radarCtx.restore();
+    radarCtx.globalAlpha = 0.9;
+    radarCtx.font = "8px monospace";
+    radarCtx.fillText("ESM", cueX + 9, cueY - 7);
   }
   for (const track of combatPicture.tracks.values()) {
     const missile = missiles[track.sourceId - 1];
@@ -4652,6 +4712,17 @@ function planSurfaceStrike(manual = false) {
     return false;
   }
   let launchAt = Math.max(elapsed, nextSurfaceLaunch);
+  const firstLaunchAt = launchAt;
+  const directFlightTime = range / 5.8;
+  const routeTimeAllowance = strike.routeLateralOffset / 18;
+  const commonArrivalAt =
+    firstLaunchAt + directFlightTime + routeTimeAllowance;
+  const lineOfSight = track.position
+    .clone()
+    .sub(defender.position)
+    .setY(0)
+    .normalize();
+  const routeAxis = new THREE.Vector3(-lineOfSight.z, 0, lineOfSight.x);
   for (let index = 0; index < count; index++) {
     const hardpoint = hardpoints[index];
     surfaceHardpointState.set(hardpoint.id, "reserved");
@@ -4662,6 +4733,16 @@ function planSurfaceStrike(manual = false) {
         .clone()
         .addScaledVector(track.velocity, strike.datalinkLatency),
       commandVelocity: track.velocity.clone(),
+      routeOffset: routeAxis
+        .clone()
+        .multiplyScalar(
+          strike.routeLateralOffset *
+            (index % 2 === 0 ? 1 : -1) *
+            (0.72 + Math.floor(index / 2) * 0.28),
+        ),
+      plannedArrivalAt:
+        commonArrivalAt +
+        (count > 1 ? (index / (count - 1)) * strike.arrivalWindow : 0),
     });
     launchAt += strike.minimumInterval;
   }
@@ -4671,7 +4752,7 @@ function planSurfaceStrike(manual = false) {
   surfaceRequiredHits = salvoPlan.requiredHits;
   surfacePlanningLeakProbability = salvoPlan.planningLeakProbability;
   log(
-    `SURFACE OODA / WAVE ${surfaceStrikeWave} / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / ${salvoPlan.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvoPlan.planningLeakProbability * 100)}% / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
+    `SURFACE OODA / WAVE ${surfaceStrikeWave} / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / ${salvoPlan.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvoPlan.planningLeakProbability * 100)}% / ROUTE +/-${(strike.routeLateralOffset / 10).toFixed(1)} km / TOT WINDOW ${strike.arrivalWindow.toFixed(1)}s / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
   );
   return true;
 }
@@ -4709,6 +4790,54 @@ function updateSurfaceCombat(
     .forEach((event) => log(`SURFACE ${event}`));
   const track = surfacePicture.trackForTarget(1);
   const strike = activeShip.surfaceStrike;
+  surfaceEsmCue.age += dt;
+  const esmHealth = subsystemHealth("ecm");
+  if (
+    enemyPlatform &&
+    opforRadarEnabled &&
+    esmHealth > 0.04 &&
+    elapsed >= surfaceEsmNextScan
+  ) {
+    const firstCue = !surfaceEsmCue.valid;
+    surfaceEsmNextScan = elapsed + THREE.MathUtils.lerp(1.8, 0.9, esmHealth);
+    const delta = enemyPlatform.model.position.clone().sub(defender.position),
+      trueRange = delta.length(),
+      trueBearing = Math.atan2(delta.z, delta.x),
+      bearingError = THREE.MathUtils.degToRad(2.5 + (1 - esmHealth) * 5),
+      measuredBearing =
+        trueBearing + bearingError * Math.sin(elapsed * 0.31 + 1.1),
+      measuredRange =
+        trueRange *
+        (1 +
+          (0.18 + (1 - esmHealth) * 0.2) * Math.sin(elapsed * 0.19));
+    surfaceEsmCue.position
+      .copy(defender.position)
+      .add(
+        new THREE.Vector3(
+          Math.cos(measuredBearing),
+          0,
+          Math.sin(measuredBearing),
+        ).multiplyScalar(measuredRange),
+      );
+    surfaceEsmCue.velocity.copy(enemyPlatform.velocity);
+    surfaceEsmCue.quality = THREE.MathUtils.clamp(
+      0.12 + esmHealth * 0.08,
+      0.12,
+      0.2,
+    );
+    surfaceEsmCue.uncertainty = Math.max(
+      70,
+      trueRange * (0.26 + (1 - esmHealth) * 0.16),
+    );
+    surfaceEsmCue.age = 0;
+    surfaceEsmCue.valid = true;
+    if (firstCue)
+      log(
+        `SURFACE ESM / BEARING CUE / UNC ${(surfaceEsmCue.uncertainty / 10).toFixed(1)} km / RADAR EMITTER DETECTED`,
+      );
+  } else if (!opforRadarEnabled || esmHealth <= 0.04) {
+    surfaceEsmCue.valid = false;
+  }
   const horizonLimited = track?.horizonLimited ?? null;
   if (horizonLimited !== surfaceTrackHorizonLimited) {
     surfaceTrackHorizonLimited = horizonLimited;
@@ -4781,6 +4910,10 @@ function updateSurfaceCombat(
       strike,
       request.commandPoint,
       request.commandVelocity,
+      request.routeOffset,
+      strike.routeJoinRange,
+      request.plannedArrivalAt,
+      strike.maximumSpeedCompensation,
     );
     surfaceHardpointState.set(request.hardpoint.id, "fired");
     surfaceStrikeAmmo = Math.max(0, surfaceStrikeAmmo - 1);
@@ -5023,6 +5156,25 @@ function updateSurfaceCombat(
       missile.commandPoint
         .distanceTo(missile.target.model.position)
         .toFixed(1),
+    )
+    .join(",");
+  canvas.dataset.surfaceStrikeRouteOffsets = liveSurfaceStrikes
+    .map((missile) => missile.routeOffset.length().toFixed(1))
+    .join(",");
+  canvas.dataset.surfaceStrikeRouteVectors = liveSurfaceStrikes
+    .map(
+      (missile) =>
+        `${missile.routeOffset.x.toFixed(1)}:${missile.routeOffset.z.toFixed(1)}`,
+    )
+    .join(",");
+  canvas.dataset.surfaceStrikeArrivalPlans = liveSurfaceStrikes
+    .map((missile) => missile.plannedArrivalAt.toFixed(2))
+    .join(",");
+  canvas.dataset.surfaceStrikeTerminalTimes = surfaceStrikeMissiles
+    .map((missile) =>
+      missile.terminalEnteredAt === null
+        ? "pending"
+        : missile.terminalEnteredAt.toFixed(2),
     )
     .join(",");
   canvas.dataset.surfaceStrikePointDefensePending = liveSurfaceStrikes
@@ -6615,6 +6767,7 @@ function tick(now: number) {
           activeShip.platform.significantHeightMeters,
           activeShip.platform.radarRcs,
           opforRadarEnabled,
+          radarEnabled,
         );
         if (platformUpdate.maneuverChanged)
           log(
@@ -6690,6 +6843,8 @@ function tick(now: number) {
     ).toFixed(2);
     canvas.dataset.enemyPlatformTargetTrackQuality =
       enemyPlatform.targetTrack.quality.toFixed(3);
+    canvas.dataset.enemyPlatformTargetTrackSource =
+      enemyPlatform.targetTrack.source;
     canvas.dataset.enemyPlatformTargetTrackUncertainty =
       enemyPlatform.targetTrack.uncertainty.toFixed(2);
     canvas.dataset.opforRadar = opforRadarEnabled ? "active" : "silent";
@@ -6718,6 +6873,7 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformTrackAge = "0.00";
     canvas.dataset.enemyPlatformTargetTrackQuality = "0.000";
+    canvas.dataset.enemyPlatformTargetTrackSource = "none";
     canvas.dataset.enemyPlatformTargetTrackUncertainty = "0.00";
     canvas.dataset.opforRadar = "not-applicable";
     canvas.dataset.enemyPlatformHardpoints = "0";
@@ -6728,6 +6884,11 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformCommandedSpeedKnots = "0.00";
     canvas.dataset.enemyPlatformDesiredHeadingDeg = "0.00";
   }
+  canvas.dataset.surfaceEsmCue = surfaceEsmCue.valid ? "valid" : "none";
+  canvas.dataset.surfaceEsmCueQuality = surfaceEsmCue.quality.toFixed(3);
+  canvas.dataset.surfaceEsmCueAge = Number.isFinite(surfaceEsmCue.age)
+    ? surfaceEsmCue.age.toFixed(2)
+    : "infinity";
   ocean.update(elapsed);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
     ewThreat = missiles.some((m) => m.mesh.visible && m.phase === "terminal"),
