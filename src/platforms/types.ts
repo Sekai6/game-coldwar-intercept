@@ -56,6 +56,7 @@ export interface PlatformWeaponSlot {
     expectedLeakProbability: number;
     targetHullEstimate: number;
     assessmentDelay: number;
+    hitReportReliability: number;
   };
 }
 

@@ -301,7 +301,7 @@ Harpoon 齐射按舰型参数分配左右交替的中段航路偏置、汇聚距
 
 敌方平台在首发离筒后进入已承诺齐射状态。短暂漏扫由 `fireControlTrackHoldover` 保持，直接火控长期丢失则按武器槽的 `postCommitTrackLossAbort` 终止尚未离筒的预约；Moskva 当前使用游戏化 45 秒中止窗。ESM 仍可驱动机动，但不会重置该计时或授权继续发射。取消槽保留端盖且不计入已发射数；尚未首次建立火控的远距接近不会启动中止计时。
 
-平台场景的攻击数量是授权上限，不是开局一次性预约量。声明 `salvoDoctrine` 的武器槽首波最多承诺配置上限，所有离筒武器解析后进入 `DOCTRINE LOOK` 和 BDA 等待；补射使用已确认命中数、解析弹数和当前火控质量重新计算。水面接触卡会显示 `OPFOR BDA` 和波次编号。`npm run verify:platform-doctrine` 实测 16 发授权的 8 发首波、BDA 后 8 发补射，以及首波结果对规划的约束。
+平台场景的攻击数量是授权上限，不是开局一次性预约量。声明 `salvoDoctrine` 的武器槽首波最多承诺配置上限，所有离筒武器解析后进入 `DOCTRINE LOOK` 和 BDA 等待；补射使用解析弹数和“真实命中 × 武器回报可靠度 × 航迹质量因子”形成的命中信用重新计算，不读取完整命中真值。ESM 或失轨会进一步降低信用。水面接触卡会显示 `OPFOR BDA` 和波次编号。`npm run verify:platform-doctrine` 实测 16 发授权的 8 发首波、BDA 后补射，以及实际命中与指挥评估分离。
 
 水面接触卡会同步显示敌方交战链状态：`OPFOR ESM CUE -> TRACK BUILD -> FC BUILD -> FC READY -> LAUNCHED`，因此等待雷达地平线、连续航迹龄或火控延迟时不再表现为无反馈。`npm run verify:bilateral-launch` 分别让 CGN-9 和 CG-57 对 Moskva 作战，要求两艘美舰各自发射 Harpoon、Moskva 对两种目标均完成 P-500 实体离筒，并在桌面与移动视口检查状态卡布局。
 

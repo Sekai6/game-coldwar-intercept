@@ -373,6 +373,13 @@ type PlatformFirePlan = {
   wave: number;
   assessmentReadyAt: number;
   assessmentPending: boolean;
+  lastAssessment: {
+    resolvedWeapons: number;
+    actualHits: number;
+    assessedHitCredit: number;
+    observationTrackQuality: number;
+    hitCreditFactor: number;
+  } | null;
   completed: boolean;
   reinforcements: { availableAt: number; count: number }[];
 };
@@ -637,6 +644,38 @@ function platformFirePlanWeapons(plan: PlatformFirePlan) {
   );
 }
 
+function assessPlatformFirePlan(plan: PlatformFirePlan) {
+  const doctrine = plan.platform.definition.weaponSlots.find((slot) =>
+      slot.compatibleThreats.includes(plan.threat),
+    )?.salvoDoctrine,
+    weapons = platformFirePlanWeapons(plan),
+    resolvedWeapons = weapons.filter(
+      (missile) => missile.platformLaunch?.released && missile.phase === "destroyed",
+    ).length,
+    actualHits = weapons.filter(
+      (missile) => missile.mesh.userData.platformImpact === true,
+    ).length,
+    track = plan.platform.targetTrack,
+    observationTrackQuality = track.valid
+      ? track.source === "radar"
+        ? track.quality
+        : track.quality * 0.35
+      : 0,
+    hitCreditFactor = THREE.MathUtils.clamp(
+      (doctrine?.hitReportReliability ?? 0.5) *
+        THREE.MathUtils.lerp(0.55, 1, observationTrackQuality),
+      0.15,
+      0.98,
+    );
+  return {
+    resolvedWeapons,
+    actualHits,
+    assessedHitCredit: actualHits * hitCreditFactor,
+    observationTrackQuality,
+    hitCreditFactor,
+  };
+}
+
 function commitPlatformFirePlanWave(
   plan: PlatformFirePlan,
   allowUnresolvedFireControl = false,
@@ -663,12 +702,7 @@ function commitPlatformFirePlanWave(
       trackAge >= slot.minimumTrackAge + slot.fireControlDelay;
   if (!allowUnresolvedFireControl && !directFireControl) return false;
   const plannedWeapons = platformFirePlanWeapons(plan),
-    resolvedWeapons = plannedWeapons.filter(
-      (missile) => missile.platformLaunch?.released && missile.phase === "destroyed",
-    ).length,
-    assessedHits = plannedWeapons.filter(
-      (missile) => missile.mesh.userData.platformImpact === true,
-    ).length,
+    assessment = plan.lastAssessment ?? assessPlatformFirePlan(plan),
     inFlight = plannedWeapons.filter(
       (missile) => missile.phase !== "destroyed",
     ).length,
@@ -687,14 +721,14 @@ function commitPlatformFirePlanWave(
       expectedLeakProbability: doctrine.expectedLeakProbability,
       targetHullEstimate: doctrine.targetHullEstimate,
       weaponDamage: getThreatDefinition(plan.threat).profile.damage,
-      assessedHits,
-      resolvedWeapons,
-      trackQuality: plan.platform.targetTrack.quality,
+      assessedHits: assessment.assessedHitCredit,
+      resolvedWeapons: assessment.resolvedWeapons,
+      trackQuality: assessment.observationTrackQuality,
     });
   if (salvo.count <= 0) {
     plan.completed = true;
     log(
-      `${plan.platform.definition.name} BDA / FIRE PLAN COMPLETE / ${assessedHits}/${resolvedWeapons} OBSERVED HITS / ${plan.authorizedWeapons - plan.committedWeapons} WEAPONS UNCOMMITTED`,
+      `${plan.platform.definition.name} BDA / FIRE PLAN COMPLETE / HIT CREDIT ${assessment.assessedHitCredit.toFixed(2)} / ${assessment.resolvedWeapons} WEAPONS RESOLVED / TQ ${Math.round(assessment.observationTrackQuality * 100)}% / ${plan.authorizedWeapons - plan.committedWeapons} WEAPONS UNCOMMITTED`,
     );
     return false;
   }
@@ -718,6 +752,7 @@ function commitPlatformFirePlanWave(
   plan.wave = wave;
   plan.committedWeapons += reservations.length;
   plan.assessmentPending = false;
+  plan.lastAssessment = null;
   plan.completed = reservations.length === 0;
   log(
     `${plan.platform.definition.name} SURFACE OODA / WAVE ${wave} / ${reservations.length} x ${plan.threat} / ${salvo.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvo.planningLeakProbability * 100)}% / AUTH ${plan.committedWeapons}/${plan.authorizedWeapons}`,
@@ -758,7 +793,15 @@ function updatePlatformFirePlan() {
     );
     return;
   }
-  if (elapsed >= plan.assessmentReadyAt) commitPlatformFirePlanWave(plan);
+  if (elapsed >= plan.assessmentReadyAt) {
+    if (!plan.lastAssessment) {
+      plan.lastAssessment = assessPlatformFirePlan(plan);
+      log(
+        `${plan.platform.definition.name} BDA REPORT / HIT CREDIT ${plan.lastAssessment.assessedHitCredit.toFixed(2)} / ${plan.lastAssessment.resolvedWeapons} WEAPONS RESOLVED / TQ ${Math.round(plan.lastAssessment.observationTrackQuality * 100)}%`,
+      );
+    }
+    commitPlatformFirePlanWave(plan);
+  }
 }
 
 function launchInterceptor(
@@ -2994,6 +3037,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         wave: 0,
         assessmentReadyAt: 0,
         assessmentPending: false,
+        lastAssessment: null,
         completed: false,
         reinforcements: [],
       };
@@ -7130,9 +7174,9 @@ function tick(now: number) {
           : 0;
       }),
     ).toFixed(2);
-    const plannedWeapons = platformFirePlan
-      ? platformFirePlanWeapons(platformFirePlan)
-      : [];
+    const platformAssessment = platformFirePlan
+      ? platformFirePlan.lastAssessment ?? assessPlatformFirePlan(platformFirePlan)
+      : null;
     canvas.dataset.enemyPlatformFirePlanWave = String(
       platformFirePlan?.wave ?? 0,
     );
@@ -7143,15 +7187,19 @@ function tick(now: number) {
       platformFirePlan?.committedWeapons ?? 0,
     );
     canvas.dataset.enemyPlatformAssessedHits = String(
-      plannedWeapons.filter(
-        (missile) => missile.mesh.userData.platformImpact === true,
-      ).length,
+      platformAssessment?.assessedHitCredit.toFixed(3) ?? "0.000",
+    );
+    canvas.dataset.enemyPlatformActualHits = String(
+      platformAssessment?.actualHits ?? 0,
+    );
+    canvas.dataset.enemyPlatformBdaTrackQuality = String(
+      platformAssessment?.observationTrackQuality.toFixed(3) ?? "0.000",
+    );
+    canvas.dataset.enemyPlatformHitCreditFactor = String(
+      platformAssessment?.hitCreditFactor.toFixed(3) ?? "0.000",
     );
     canvas.dataset.enemyPlatformResolvedWeapons = String(
-      plannedWeapons.filter(
-        (missile) =>
-          missile.platformLaunch?.released && missile.phase === "destroyed",
-      ).length,
+      platformAssessment?.resolvedWeapons ?? 0,
     );
     canvas.dataset.enemyPlatformAssessmentPending = platformFirePlan
       ?.assessmentPending
@@ -7206,6 +7254,9 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformAuthorized = "0";
     canvas.dataset.enemyPlatformCommitted = "0";
     canvas.dataset.enemyPlatformAssessedHits = "0";
+    canvas.dataset.enemyPlatformActualHits = "0";
+    canvas.dataset.enemyPlatformBdaTrackQuality = "0.000";
+    canvas.dataset.enemyPlatformHitCreditFactor = "0.000";
     canvas.dataset.enemyPlatformResolvedWeapons = "0";
     canvas.dataset.enemyPlatformAssessmentPending = "0.00";
     canvas.dataset.enemyPlatformFirePlanComplete = "false";

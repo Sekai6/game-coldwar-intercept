@@ -74,6 +74,9 @@ const reattack = await canvas.evaluate((element) => ({
   committed: Number(element.dataset.enemyPlatformCommitted ?? 0),
   resolved: Number(element.dataset.enemyPlatformResolvedWeapons ?? 0),
   assessedHits: Number(element.dataset.enemyPlatformAssessedHits ?? 0),
+  actualHits: Number(element.dataset.enemyPlatformActualHits ?? 0),
+  bdaTrackQuality: Number(element.dataset.enemyPlatformBdaTrackQuality ?? 0),
+  hitCreditFactor: Number(element.dataset.enemyPlatformHitCreditFactor ?? 0),
   fired: Number(element.dataset.enemyPlatformFired ?? 0),
   reserved: Number(element.dataset.enemyPlatformReserved ?? 0),
   assessmentPending: Number(element.dataset.enemyPlatformAssessmentPending ?? 0),
@@ -91,6 +94,8 @@ const result = {
   displayedFireState,
   errors,
 };
+const expectedHitCreditFactor =
+  0.82 * (0.55 + 0.45 * reattack.bdaTrackQuality);
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 
@@ -102,7 +107,13 @@ if (
   initialPlan.ready + initialPlan.reserved + initialPlan.fired !== 16 ||
   reattack.wave < 2 ||
   reattack.resolved < initialPlan.committed ||
-  reattack.assessedHits >= 4 ||
+  reattack.actualHits < 1 ||
+  reattack.assessedHits <= 0 ||
+  reattack.assessedHits >= reattack.actualHits ||
+  reattack.hitCreditFactor <= 0 ||
+  reattack.hitCreditFactor >= 1 ||
+  reattack.bdaTrackQuality <= 0 ||
+  Math.abs(reattack.hitCreditFactor - expectedHitCreditFactor) > 0.003 ||
   reattack.hull <= 0 ||
   reattack.committed <= initialPlan.committed ||
   reattack.committed > reattack.authorized ||
