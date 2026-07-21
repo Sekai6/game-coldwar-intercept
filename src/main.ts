@@ -6147,10 +6147,38 @@ function updateIncomingMissile(m: Missile, dt: number) {
   }
   const pendingPlatformLaunch = m.platformLaunch;
   if (pendingPlatformLaunch && !pendingPlatformLaunch.released) {
-    const platform = pendingPlatformLaunch.reservation.platform;
+    const platform = pendingPlatformLaunch.reservation.platform,
+      weaponSlot = pendingPlatformLaunch.reservation.weaponSlot,
+      trackQuality = Math.max(
+        0,
+        ...[...platform.sensorState.values()].map((state) => state.quality),
+      ),
+      trackAge = platform.weaponTrackAge.get(weaponSlot.id) ?? 0,
+      requiredAge = weaponSlot.minimumTrackAge + weaponSlot.fireControlDelay,
+      fireControlReady =
+        trackQuality >= weaponSlot.minimumTrackQuality &&
+        trackAge >= requiredAge,
+      salvoCommitted = platform.slots.weaponHardpoints.some(
+        (hardpoint) =>
+          hardpoint.slotId === weaponSlot.id &&
+          platform.hardpointState.get(hardpoint.id) === "fired",
+      );
     if (platform.destroyed) {
       cancelPendingPlatformLaunch(m, "PLATFORM DISABLED");
       return;
+    }
+    if (fireControlReady) {
+      m.mesh.userData.platformTrackLostAt = undefined;
+    } else if (salvoCommitted) {
+      if (m.mesh.userData.platformTrackLostAt === undefined)
+        m.mesh.userData.platformTrackLostAt = elapsed;
+      if (
+        elapsed - m.mesh.userData.platformTrackLostAt >=
+        weaponSlot.postCommitTrackLossAbort
+      ) {
+        cancelPendingPlatformLaunch(m, "FIRE CONTROL TRACK LOST");
+        return;
+      }
     }
     if (elapsed >= m.launchAt) {
       const earlierReservationPending = missiles.some((candidate) => {
@@ -6174,13 +6202,6 @@ function updateIncomingMissile(m: Missile, dt: number) {
         m.mesh.userData.seekerLine.visible = false;
         return;
       }
-      const trackQuality = Math.max(
-        0,
-        ...[...platform.sensorState.values()].map((state) => state.quality),
-      ),
-        weaponSlot = pendingPlatformLaunch.reservation.weaponSlot,
-        trackAge = platform.weaponTrackAge.get(weaponSlot.id) ?? 0,
-        requiredAge = weaponSlot.minimumTrackAge + weaponSlot.fireControlDelay;
       if (
         trackQuality < weaponSlot.minimumTrackQuality ||
         trackAge < requiredAge
@@ -6917,6 +6938,15 @@ function tick(now: number) {
           missile.platformLaunch?.released && missile.phase !== "destroyed",
       ).length,
     );
+    canvas.dataset.enemyPlatformTrackLossHold = Math.max(
+      0,
+      ...missiles.map((missile) => {
+        const lostAt = missile.mesh.userData.platformTrackLostAt;
+        return typeof lostAt === "number" && !missile.platformLaunch?.released
+          ? elapsed - lostAt
+          : 0;
+      }),
+    ).toFixed(2);
     canvas.dataset.enemyPlatformSensorQuality = Math.max(
       0,
       ...[...enemyPlatform.sensorState.values()].map((state) => state.quality),
@@ -6958,6 +6988,7 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformReleaseTimes = "";
     canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformReleasedInFlight = "0";
+    canvas.dataset.enemyPlatformTrackLossHold = "0.00";
     canvas.dataset.shipHull = hullIntegrity.toFixed(2);
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformTrackAge = "0.00";

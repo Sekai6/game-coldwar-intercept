@@ -44,6 +44,7 @@ export interface PlatformWeaponSlot {
   minimumTrackAge: number;
   fireControlDelay: number;
   fireControlTrackHoldover: number;
+  postCommitTrackLossAbort: number;
   datalinkUpdateInterval: number;
   datalinkLatency: number;
   datalinkMinimumQuality: number;

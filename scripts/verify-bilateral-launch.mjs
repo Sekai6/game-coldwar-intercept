@@ -121,10 +121,27 @@ const radarLoss = await page.locator("canvas").first().evaluate((element) => ({
   trackQuality: Number(element.dataset.enemyPlatformTargetTrackQuality ?? 0),
 }));
 radarLoss.firedAtSilence = firedAtSilence;
+try {
+  await page.waitForFunction(
+    () => Number(document.querySelector("canvas")?.dataset.enemyPlatformCanceled ?? 0) === 2,
+    null,
+    { timeout: 40_000 },
+  );
+} catch {
+  // Preserve the terminal state below so a failed timing invariant is diagnosable.
+}
+const trackLossAbort = await page.locator("canvas").first().evaluate((element) => ({
+  fired: Number(element.dataset.enemyPlatformFired ?? 0),
+  reserved: Number(element.dataset.enemyPlatformReserved ?? 0),
+  canceled: Number(element.dataset.enemyPlatformCanceled ?? 0),
+  coversVisible: Number(element.dataset.enemyPlatformCoversVisible ?? 0),
+  trackSource: element.dataset.enemyPlatformTargetTrackSource ?? "none",
+  trackLossHold: Number(element.dataset.enemyPlatformTrackLossHold ?? 0),
+}));
 await page.setViewportSize({ width: 390, height: 844 });
 await page.screenshot({ path: "verification-bilateral-mobile.png", fullPage: true });
 
-console.log(JSON.stringify({ results, radarLoss, errors }, null, 2));
+console.log(JSON.stringify({ results, radarLoss, trackLossAbort, errors }, null, 2));
 await browser.close();
 if (
   errors.length > 0 ||
@@ -151,6 +168,11 @@ if (
   radarLoss.fired !== radarLoss.firedAtSilence ||
   radarLoss.fired >= 4 ||
   radarLoss.reserved < 1 ||
-  radarLoss.trackSource === "radar"
+  radarLoss.trackSource === "radar" ||
+  trackLossAbort.fired !== radarLoss.firedAtSilence ||
+  trackLossAbort.reserved !== 0 ||
+  trackLossAbort.canceled !== 2 ||
+  trackLossAbort.coversVisible !== 14 ||
+  trackLossAbort.trackSource === "radar"
 )
   process.exitCode = 1;
