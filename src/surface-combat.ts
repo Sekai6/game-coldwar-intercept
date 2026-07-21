@@ -81,7 +81,9 @@ export type SurfaceStrikeEvent =
       timeOfFlight: number;
       engagement: number;
       maximumEngagements: number;
+      engagementsRemaining: number;
     }
+  | { kind: "point-defense-depleted"; missile: SurfaceStrikeMissile }
   | {
       kind: "soft-kill";
       missile: SurfaceStrikeMissile;
@@ -490,7 +492,7 @@ export function updateSurfaceStrikeMissile(
   const availableChannel = missile.target.pointDefenseChannelReady.findIndex(
     (readyAt) => elapsed >= readyAt,
   );
-  if (
+  const pointDefenseEligible =
     !missile.target.destroyed &&
     terminal &&
     platformTrack.valid &&
@@ -499,9 +501,24 @@ export function updateSurfaceStrikeMissile(
       missile.id &&
     defenseTrackRange < pointDefense.range &&
     missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
-    !missile.pendingPointDefense &&
+    !missile.pendingPointDefense;
+  if (
+    pointDefenseEligible &&
+    missile.target.pointDefenseEngagementsRemaining <= 0 &&
+    !missile.target.pointDefenseDepletedLogged
+  ) {
+    missile.target.pointDefenseDepletedLogged = true;
+    return {
+      kind: "point-defense-depleted",
+      missile,
+    } satisfies SurfaceStrikeEvent;
+  }
+  if (
+    pointDefenseEligible &&
+    missile.target.pointDefenseEngagementsRemaining > 0 &&
     availableChannel >= 0
   ) {
+    missile.target.pointDefenseEngagementsRemaining--;
     missile.pointDefenseEngagements++;
     platformTrack.track.engagements++;
     const health =
@@ -552,6 +569,7 @@ export function updateSurfaceStrikeMissile(
       timeOfFlight,
       engagement,
       maximumEngagements: pointDefense.engagementsPerTarget,
+      engagementsRemaining: missile.target.pointDefenseEngagementsRemaining,
     } satisfies SurfaceStrikeEvent;
   }
 

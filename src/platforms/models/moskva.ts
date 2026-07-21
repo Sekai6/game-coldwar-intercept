@@ -189,6 +189,7 @@ export const MOSKVA = {
       reengagementDelay: 0.9,
       effectorSpeed: 40,
       minimumTimeOfFlight: 0.18,
+      engagementCapacity: 6,
       basePk: 0.38,
       localSaturationPenalty: 0.08,
       engagementsPerTarget: 2,

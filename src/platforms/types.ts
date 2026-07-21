@@ -99,6 +99,7 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
       reengagementDelay: number;
       effectorSpeed: number;
       minimumTimeOfFlight: number;
+      engagementCapacity: number;
       basePk: number;
       localSaturationPenalty: number;
       engagementsPerTarget: number;
@@ -129,6 +130,8 @@ export interface EnemyPlatformInstance {
   subsystemHealth: Map<string, number>;
   incomingTracks: Map<number, PlatformIncomingTrack>;
   pointDefenseChannelReady: number[];
+  pointDefenseEngagementsRemaining: number;
+  pointDefenseDepletedLogged: boolean;
   decoyRounds: number;
   nextDecoy: number;
   velocity: THREE.Vector3;

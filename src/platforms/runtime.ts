@@ -91,6 +91,9 @@ export function instantiateEnemyPlatform(
       { length: definition.survivability.pointDefense.channels },
       () => 0,
     ),
+    pointDefenseEngagementsRemaining:
+      definition.survivability.pointDefense.engagementCapacity,
+    pointDefenseDepletedLogged: false,
     decoyRounds: definition.survivability.softKill.decoyRounds,
     nextDecoy: 0,
     velocity: new THREE.Vector3(),

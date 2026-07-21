@@ -4807,9 +4807,12 @@ function updateSurfaceCombat(
         .add(new THREE.Vector3(0, 8, 0));
       ciwsTracer(missile.mesh.position, origin);
       log(
-        `${missile.target.definition.name} POINT DEFENSE FIRE / HARPOON ${missile.id} / SHOT ${event.engagement}/${event.maximumEngagements} / TOF ${event.timeOfFlight.toFixed(2)}s / PK ${Math.round(event.pk * 100)}%`,
+        `${missile.target.definition.name} POINT DEFENSE FIRE / HARPOON ${missile.id} / SHOT ${event.engagement}/${event.maximumEngagements} / TOF ${event.timeOfFlight.toFixed(2)}s / PK ${Math.round(event.pk * 100)}% / READY BURSTS ${event.engagementsRemaining}`,
       );
-    }
+    } else if (event.kind === "point-defense-depleted")
+      log(
+        `${missile.target.definition.name} POINT DEFENSE / MAGAZINE DEPLETED / HARPOON ${missile.id} LEAKER`,
+      );
     else if (event.kind === "soft-kill")
       {
         surfaceSoftKills++;
@@ -5022,6 +5025,12 @@ function updateSurfaceCombat(
   )
     .map((readyAt) => Math.max(0, readyAt - elapsed).toFixed(2))
     .join(",");
+  canvas.dataset.platformDefenseEngagementsRemaining = String(
+    enemyPlatform?.pointDefenseEngagementsRemaining ?? 0,
+  );
+  canvas.dataset.platformDefenseDepleted = String(
+    enemyPlatform?.pointDefenseDepletedLogged ?? false,
+  );
   canvas.dataset.platformIncomingTrackCount = String(
     enemyPlatform
       ? [...enemyPlatform.incomingTracks.values()].filter(
