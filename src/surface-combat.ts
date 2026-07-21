@@ -77,6 +77,18 @@ export type SurfaceStrikeEvent =
       threatScore: number;
       estimatedTimeToImpact: number;
       localTrackDensity: number;
+      engagement: number;
+      maximumEngagements: number;
+    }
+  | {
+      kind: "point-defense-miss";
+      missile: SurfaceStrikeMissile;
+      pk: number;
+      threatScore: number;
+      estimatedTimeToImpact: number;
+      localTrackDensity: number;
+      engagement: number;
+      maximumEngagements: number;
     }
   | {
       kind: "hit";
@@ -463,19 +475,34 @@ export function updateSurfaceStrikeMissile(
       0.05,
       0.72,
     );
-    if (deterministicRoll(missile, 3 + Math.floor(missile.age * 2)) < pk) {
+    const engagement = missile.pointDefenseEngagements;
+    const engagementEvent = {
+      missile,
+      pk,
+      threatScore: platformTrack.track.threatScore,
+      estimatedTimeToImpact: platformTrack.track.estimatedTimeToImpact,
+      localTrackDensity: platformTrack.track.localTrackDensity,
+      engagement,
+      maximumEngagements: pointDefense.engagementsPerTarget,
+    };
+    if (
+      deterministicRoll(
+        missile,
+        3 + engagement * 5.17 + Math.floor(missile.age),
+      ) < pk
+    ) {
       missile.phase = "destroyed";
       missile.mesh.visible = false;
       missile.path.visible = false;
       return {
         kind: "point-defense",
-        missile,
-        pk,
-        threatScore: platformTrack.track.threatScore,
-        estimatedTimeToImpact: platformTrack.track.estimatedTimeToImpact,
-        localTrackDensity: platformTrack.track.localTrackDensity,
+        ...engagementEvent,
       } satisfies SurfaceStrikeEvent;
     }
+    return {
+      kind: "point-defense-miss",
+      ...engagementEvent,
+    } satisfies SurfaceStrikeEvent;
   }
 
   const desiredAltitude =

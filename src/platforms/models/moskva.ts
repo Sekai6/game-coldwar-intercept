@@ -188,7 +188,7 @@ export const MOSKVA = {
       interval: 0.42,
       basePk: 0.38,
       localSaturationPenalty: 0.08,
-      engagementsPerTarget: 1,
+      engagementsPerTarget: 2,
     },
     softKill: {
       ecmStrength: 0.62,

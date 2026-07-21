@@ -4819,7 +4819,11 @@ function updateSurfaceCombat(
       );
       createExplosion(missile.mesh.position.clone());
       log(
-        `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / PK ${Math.round(event.pk * 100)}% / PRIORITY ${event.threatScore.toFixed(0)} / TTI ${Number.isFinite(event.estimatedTimeToImpact) ? `${event.estimatedTimeToImpact.toFixed(1)}s` : "OPENING"} / TRACKS ${event.localTrackDensity}`,
+        `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} KILL / SHOT ${event.engagement}/${event.maximumEngagements} / PK ${Math.round(event.pk * 100)}% / PRIORITY ${event.threatScore.toFixed(0)} / TTI ${Number.isFinite(event.estimatedTimeToImpact) ? `${event.estimatedTimeToImpact.toFixed(1)}s` : "OPENING"} / TRACKS ${event.localTrackDensity}`,
+      );
+    } else if (event.kind === "point-defense-miss") {
+      log(
+        `${missile.target.definition.name} POINT DEFENSE / HARPOON ${missile.id} MISS / SHOT ${event.engagement}/${event.maximumEngagements} / PK ${Math.round(event.pk * 100)}% / PRIORITY ${event.threatScore.toFixed(0)} / TTI ${Number.isFinite(event.estimatedTimeToImpact) ? `${event.estimatedTimeToImpact.toFixed(1)}s` : "OPENING"} / TRACKS ${event.localTrackDensity}`,
       );
     } else {
       surfaceHits++;
