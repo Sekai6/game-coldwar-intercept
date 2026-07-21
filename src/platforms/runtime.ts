@@ -6,6 +6,7 @@ import type {
   EnemyPlatformInstance,
   EnemyPlatformModelSlots,
   PlatformLaunchReservation,
+  PlatformDamageControlEvent,
 } from "./types";
 import { assessPlatformIncomingTracks } from "./defense";
 
@@ -48,6 +49,7 @@ function validateModelSlots(
     "point-defense",
     "electronic-warfare",
     "countermeasures",
+    "damage-control",
   ]);
   const zones = definition.survivability.damageZones;
   if (!zones.length || zones.at(-1)?.minimumLongitudinalFraction !== -Infinity)
@@ -111,6 +113,7 @@ export function instantiateEnemyPlatform(
       ["point-defense", 100] as const,
       ["electronic-warfare", 100] as const,
       ["countermeasures", 100] as const,
+      ["damage-control", 100] as const,
     ]),
     incomingTracks: new Map(),
     pointDefenseChannelReady: Array.from(
@@ -121,6 +124,8 @@ export function instantiateEnemyPlatform(
       definition.survivability.pointDefense.engagementCapacity,
     pointDefenseDepletedLogged: false,
     pointDefenseOfflineLogged: false,
+    casualties: [],
+    nextCasualtyId: 1,
     decoyRounds: definition.survivability.softKill.decoyRounds,
     nextDecoy: 0,
     velocity: new THREE.Vector3(),
@@ -256,6 +261,64 @@ export function releasePlatformHardpoint(
   return true;
 }
 
+function updatePlatformCasualties(
+  platform: EnemyPlatformInstance,
+  elapsed: number,
+) {
+  const events: PlatformDamageControlEvent[] = [];
+  if (platform.destroyed) return events;
+  const definition = platform.definition.survivability.damageControl;
+  const health = THREE.MathUtils.clamp(
+    (platform.subsystemHealth.get("damage-control") ?? 100) / 100,
+    0,
+    1,
+  );
+  for (const casualty of [...platform.casualties]) {
+    while (elapsed + 1e-6 >= casualty.nextTick && !platform.destroyed) {
+      casualty.nextTick += definition.tickInterval;
+      const hullDamage =
+        (casualty.fire + casualty.flooding) * definition.hullDamageFactor;
+      platform.hullIntegrity = Math.max(
+        0,
+        platform.hullIntegrity - hullDamage,
+      );
+      if (platform.hullIntegrity <= 0) platform.destroyed = true;
+      casualty.fire *= THREE.MathUtils.lerp(
+        definition.uncontrolledFireFactor,
+        definition.controlledFireFactor,
+        health,
+      );
+      casualty.flooding *= THREE.MathUtils.lerp(
+        definition.uncontrolledFloodingFactor,
+        definition.controlledFloodingFactor,
+        health,
+      );
+      events.push({
+        kind: "progressive-damage",
+        casualtyId: casualty.id,
+        zone: casualty.zone,
+        hullDamage,
+        fire: casualty.fire,
+        flooding: casualty.flooding,
+        platformDestroyed: platform.destroyed,
+      });
+      if (
+        casualty.fire + casualty.flooding <=
+        definition.containmentThreshold
+      ) {
+        platform.casualties.splice(platform.casualties.indexOf(casualty), 1);
+        events.push({
+          kind: "casualty-contained",
+          casualtyId: casualty.id,
+          zone: casualty.zone,
+        });
+        break;
+      }
+    }
+  }
+  return events;
+}
+
 export function updateEnemyPlatform(
   platform: EnemyPlatformInstance,
   elapsed: number,
@@ -266,6 +329,7 @@ export function updateEnemyPlatform(
   targetRadarCrossSection: number,
   sensorsEnabled: boolean,
 ) {
+  const damageEvents = updatePlatformCasualties(platform, elapsed);
   const previousManeuverMode = platform.maneuverMode;
   const sensorHealth = platform.destroyed || !sensorsEnabled
     ? 0
@@ -474,6 +538,7 @@ export function updateEnemyPlatform(
   return {
     maneuverChanged: previousManeuverMode !== platform.maneuverMode,
     maneuverMode: platform.maneuverMode,
+    damageEvents,
   };
 }
 
@@ -493,6 +558,7 @@ export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
   platform.weaponTrackAge.clear();
   platform.weaponTrackReadyLogged.clear();
   platform.incomingTracks.clear();
+  platform.casualties.length = 0;
   platform.pointDefenseChannelReady.length = 0;
   platform.subsystemHealth.clear();
 }

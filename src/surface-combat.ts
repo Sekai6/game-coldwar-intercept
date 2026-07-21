@@ -138,6 +138,9 @@ export type SurfaceStrikeEvent =
       zone: string;
       impactPoint: THREE.Vector3;
       localImpact: THREE.Vector3;
+      casualtyId: number;
+      fire: number;
+      flooding: number;
       platformDestroyed: boolean;
     };
 
@@ -343,6 +346,7 @@ function damagePlatform(
   missile: SurfaceStrikeMissile,
   damage: number,
   localImpact: THREE.Vector3,
+  elapsed: number,
 ) {
   const platform = missile.target;
   platform.hullIntegrity = Math.max(0, platform.hullIntegrity - damage);
@@ -357,8 +361,39 @@ function damagePlatform(
     subsystem,
     Math.max(0, current - damage * 1.35),
   );
+  const halfBeam = Math.max(
+    1,
+    Number(platform.model.userData.hullBeam ?? 8) / 2,
+  );
+  const sideFactor = THREE.MathUtils.clamp(
+    Math.abs(localImpact.z) / halfBeam,
+    0,
+    1,
+  );
+  const waterlineFactor = THREE.MathUtils.clamp(
+    (2.5 - localImpact.y) / 2.5,
+    0,
+    1,
+  );
+  const casualtyId = platform.nextCasualtyId++;
+  const fire = damage * 0.35;
+  const flooding = damage * (0.08 + 0.5 * sideFactor * waterlineFactor);
+  platform.casualties.push({
+    id: casualtyId,
+    zone: zone?.label ?? "UNZONED",
+    fire,
+    flooding,
+    nextTick:
+      elapsed + platform.definition.survivability.damageControl.tickInterval,
+  });
   if (platform.hullIntegrity <= 0) platform.destroyed = true;
-  return { subsystem, zone: zone?.label ?? "UNZONED" };
+  return {
+    subsystem,
+    zone: zone?.label ?? "UNZONED",
+    casualtyId,
+    fire,
+    flooding,
+  };
 }
 
 function platformHullContact(
@@ -401,6 +436,7 @@ export function updateSurfaceStrikeMissile(
       missile,
       missile.damage,
       detonation.localImpact,
+      elapsed,
     );
     return {
       kind: "hit",
@@ -410,6 +446,9 @@ export function updateSurfaceStrikeMissile(
       zone: damage.zone,
       impactPoint: detonation.impactPoint,
       localImpact: detonation.localImpact,
+      casualtyId: damage.casualtyId,
+      fire: damage.fire,
+      flooding: damage.flooding,
       platformDestroyed: missile.target.destroyed,
     } satisfies SurfaceStrikeEvent;
   }

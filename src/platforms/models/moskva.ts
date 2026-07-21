@@ -183,6 +183,15 @@ export const MOSKVA = {
       { label: "AMIDSHIPS", minimumLongitudinalFraction: -0.38, systems: ["surface-search", "propulsion", "electronic-warfare", "countermeasures"] },
       { label: "AFT", minimumLongitudinalFraction: -Infinity, systems: ["propulsion", "point-defense", "surface-search"] },
     ],
+    damageControl: {
+      tickInterval: 2,
+      hullDamageFactor: 0.025,
+      controlledFireFactor: 0.78,
+      controlledFloodingFactor: 0.84,
+      uncontrolledFireFactor: 1.04,
+      uncontrolledFloodingFactor: 1.025,
+      containmentThreshold: 3,
+    },
     pointDefense: {
       sensorRange: 115,
       sensorUpdateInterval: 0.72,

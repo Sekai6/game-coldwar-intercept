@@ -385,6 +385,7 @@ let surfaceHardpointState = new Map<
   surfaceSoftKills = 0,
   surfacePointDefenseKills = 0,
   surfaceMisses = 0,
+  surfaceProgressiveDamage = 0,
   nextSurfaceAssessment = 0,
   surfaceStrikeWave = 0,
   surfaceRequiredHits = 0,
@@ -2501,6 +2502,8 @@ shipSelect.onchange = () => {
     "100";
   (sandbox.querySelector("#sbOpforDecoyHealth") as HTMLInputElement).value =
     "100";
+  (sandbox.querySelector("#sbOpforDamageControlHealth") as HTMLInputElement).value =
+    "100";
 };
 for (const [label, id, value, max] of [
   ["RIM-67 MAGAZINE", "sbRim", String(activeShip.ammo.rim67), "48"],
@@ -2554,6 +2557,7 @@ for (const [label, id] of [
   ["OPFOR POINT DEFENSE HEALTH", "sbOpforPointDefenseHealth"],
   ["OPFOR ECM HEALTH", "sbOpforEcmHealth"],
   ["OPFOR DECOY LAUNCHER HEALTH", "sbOpforDecoyHealth"],
+  ["OPFOR DAMAGE CONTROL HEALTH", "sbOpforDamageControlHealth"],
 ]) {
   const field = document.createElement("label");
   field.textContent = label;
@@ -2712,6 +2716,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   surfaceSoftKills = 0;
   surfacePointDefenseKills = 0;
   surfaceMisses = 0;
+  surfaceProgressiveDamage = 0;
   if (enemyPlatform) {
     scene.remove(enemyPlatform.model);
     disposeEnemyPlatform(enemyPlatform);
@@ -2946,6 +2951,14 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         enemyPlatform.subsystemHealth.set(
           "countermeasures",
           THREE.MathUtils.clamp(numberInput("#sbOpforDecoyHealth"), 0, 100),
+        );
+        enemyPlatform.subsystemHealth.set(
+          "damage-control",
+          THREE.MathUtils.clamp(
+            numberInput("#sbOpforDamageControlHealth"),
+            0,
+            100,
+          ),
         );
       }
       ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
@@ -3284,7 +3297,7 @@ function showAar(outcome: string, score: number) {
     harpoons = aarEvents.filter((e) =>
       /RGM-84 HARPOON SURFACE LAUNCH/i.test(e.text),
     ).length;
-  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>SFC MISSES<b>${surfaceMisses}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
+  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>PROG DAMAGE<b>${surfaceProgressiveDamage.toFixed(1)}</b></span><span>SFC MISSES<b>${surfaceMisses}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
   const eventList = resultPanel.querySelector("#aarEvents")!;
   aarEvents.forEach((event, eventIndex) => {
     const button = document.createElement("button");
@@ -4908,7 +4921,7 @@ function updateSurfaceCombat(
         .hullMaterial as THREE.MeshStandardMaterial;
       hullMaterial?.color.lerp(new THREE.Color(0x302a28), event.damage / 80);
       log(
-        `HARPOON ${missile.id} INTERNAL DETONATION / ${event.zone} / ${event.subsystem.toUpperCase()} DAMAGED / ${missile.target.definition.name} / EFFECT ASSESSMENT PENDING`,
+        `HARPOON ${missile.id} INTERNAL DETONATION / ${event.zone} / ${event.subsystem.toUpperCase()} DAMAGED / CASUALTY ${event.casualtyId} / FIRE ${event.fire.toFixed(1)} / FLOOD ${event.flooding.toFixed(1)} / ${missile.target.definition.name} / EFFECT ASSESSMENT PENDING`,
       );
       if (event.platformDestroyed) {
         surfaceHardKills++;
@@ -4951,6 +4964,7 @@ function updateSurfaceCombat(
     surfacePointDefenseKills,
   );
   canvas.dataset.surfaceMisses = String(surfaceMisses);
+  canvas.dataset.surfaceProgressiveDamage = surfaceProgressiveDamage.toFixed(2);
   canvas.dataset.surfaceAssessmentRemaining = Math.max(
     0,
     nextSurfaceAssessment - elapsed,
@@ -5153,6 +5167,20 @@ function updateSurfaceCombat(
         .map(([system, health]) => `${system}:${health.toFixed(1)}`)
         .join(",")
     : "";
+  canvas.dataset.platformCasualtyCount = String(
+    enemyPlatform?.casualties.length ?? 0,
+  );
+  canvas.dataset.platformCasualties = enemyPlatform
+    ? enemyPlatform.casualties
+        .map(
+          (casualty) =>
+            `${casualty.id}:${casualty.zone}:${casualty.fire.toFixed(1)}:${casualty.flooding.toFixed(1)}`,
+        )
+        .join(",")
+    : "";
+  canvas.dataset.platformDamageControlHealth = String(
+    Math.round(enemyPlatform?.subsystemHealth.get("damage-control") ?? 0),
+  );
   canvas.dataset.enemyPlatformHull = String(
     Math.round(enemyPlatform?.hullIntegrity ?? 0),
   );
@@ -5887,6 +5915,9 @@ function updateCombat(dt: number) {
         true,
         `SURFACE ACTION WON / ${enemyPlatform.definition.name} DISABLED`,
       );
+    else if (enemyPlatform.casualties.length > 0) {
+      phaseEl.textContent = "DAMAGE ASSESSMENT";
+    }
     else if (
       surfaceStrikeAmmo === 0 ||
       !shipSurfaceHardpoints(defender).some(
@@ -6589,6 +6620,29 @@ function tick(now: number) {
           log(
             `OODA MANEUVER / ${platformUpdate.maneuverMode.toUpperCase()} / ${enemyPlatform.definition.name} / CMD ${enemyPlatform.commandedSpeedKnots.toFixed(0)} KT`,
           );
+        for (const event of platformUpdate.damageEvents) {
+          if (event.kind === "casualty-contained") {
+            log(
+              `${enemyPlatform.definition.name} DAMAGE CONTROL / CASUALTY ${event.casualtyId} / ${event.zone} / CONTAINED`,
+            );
+            continue;
+          }
+          surfaceProgressiveDamage += event.hullDamage;
+          if (activeShip.surfaceStrike)
+            nextSurfaceAssessment = Math.max(
+              nextSurfaceAssessment,
+              elapsed + activeShip.surfaceStrike.assessmentDelay,
+            );
+          log(
+            `${enemyPlatform.definition.name} PROGRESSIVE DAMAGE / CASUALTY ${event.casualtyId} / ${event.zone} / FIRE ${event.fire.toFixed(1)} / FLOOD ${event.flooding.toFixed(1)} / DELTA ${event.hullDamage.toFixed(2)}`,
+          );
+          if (event.platformDestroyed) {
+            surfaceHardKills++;
+            log(
+              `SURFACE KILL / ${enemyPlatform.definition.name} DISABLED BY PROGRESSIVE DAMAGE`,
+            );
+          }
+        }
       }
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));

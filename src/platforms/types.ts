@@ -92,6 +92,15 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
       minimumLongitudinalFraction: number;
       systems: readonly string[];
     }[];
+    damageControl: {
+      tickInterval: number;
+      hullDamageFactor: number;
+      controlledFireFactor: number;
+      controlledFloodingFactor: number;
+      uncontrolledFireFactor: number;
+      uncontrolledFloodingFactor: number;
+      containmentThreshold: number;
+    };
     pointDefense: {
       sensorRange: number;
       sensorUpdateInterval: number;
@@ -138,6 +147,8 @@ export interface EnemyPlatformInstance {
   pointDefenseEngagementsRemaining: number;
   pointDefenseDepletedLogged: boolean;
   pointDefenseOfflineLogged: boolean;
+  casualties: PlatformCasualty[];
+  nextCasualtyId: number;
   decoyRounds: number;
   nextDecoy: number;
   velocity: THREE.Vector3;
@@ -156,6 +167,30 @@ export interface EnemyPlatformInstance {
   };
   destroyed: boolean;
 }
+
+export interface PlatformCasualty {
+  id: number;
+  zone: string;
+  fire: number;
+  flooding: number;
+  nextTick: number;
+}
+
+export type PlatformDamageControlEvent =
+  | {
+      kind: "progressive-damage";
+      casualtyId: number;
+      zone: string;
+      hullDamage: number;
+      fire: number;
+      flooding: number;
+      platformDestroyed: boolean;
+    }
+  | {
+      kind: "casualty-contained";
+      casualtyId: number;
+      zone: string;
+    };
 
 export interface PlatformIncomingTrack {
   missileId: number;
