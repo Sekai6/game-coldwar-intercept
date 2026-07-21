@@ -41,6 +41,31 @@ function validateModelSlots(
       throw new Error(
         `${definition.id}: sensor ${sensor.id} is missing anchor ${sensor.anchorId}`,
       );
+  const systemIds = new Set([
+    ...definition.sensorSlots.map((sensor) => sensor.id),
+    ...definition.weaponSlots.map((slot) => slot.id),
+    "propulsion",
+    "point-defense",
+    "electronic-warfare",
+    "countermeasures",
+  ]);
+  const zones = definition.survivability.damageZones;
+  if (!zones.length || zones.at(-1)?.minimumLongitudinalFraction !== -Infinity)
+    throw new Error(`${definition.id}: damage zones must cover the aft limit`);
+  for (let index = 0; index < zones.length; index++) {
+    const zone = zones[index];
+    if (
+      index > 0 &&
+      zone.minimumLongitudinalFraction >=
+        zones[index - 1].minimumLongitudinalFraction
+    )
+      throw new Error(`${definition.id}: damage zones must run bow to stern`);
+    for (const system of zone.systems)
+      if (!systemIds.has(system))
+        throw new Error(
+          `${definition.id}: damage zone ${zone.label} references ${system}`,
+        );
+  }
 }
 
 export function instantiateEnemyPlatform(

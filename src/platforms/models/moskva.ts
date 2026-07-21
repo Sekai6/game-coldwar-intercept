@@ -177,6 +177,12 @@ export const MOSKVA = {
   ],
   survivability: {
     hull: 100,
+    damageZones: [
+      { label: "BOW", minimumLongitudinalFraction: 0.42, systems: ["strike-control", "bazalt-canisters", "countermeasures"] },
+      { label: "FORWARD", minimumLongitudinalFraction: 0.08, systems: ["air-search", "strike-control", "bazalt-canisters", "electronic-warfare"] },
+      { label: "AMIDSHIPS", minimumLongitudinalFraction: -0.38, systems: ["surface-search", "propulsion", "electronic-warfare", "countermeasures"] },
+      { label: "AFT", minimumLongitudinalFraction: -Infinity, systems: ["propulsion", "point-defense", "surface-search"] },
+    ],
     pointDefense: {
       sensorRange: 115,
       sensorUpdateInterval: 0.72,

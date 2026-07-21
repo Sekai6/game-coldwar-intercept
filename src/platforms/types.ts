@@ -87,6 +87,11 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   weaponSlots: readonly PlatformWeaponSlot[];
   survivability: {
     hull: number;
+    damageZones: readonly {
+      label: string;
+      minimumLongitudinalFraction: number;
+      systems: readonly string[];
+    }[];
     pointDefense: {
       sensorRange: number;
       sensorUpdateInterval: number;

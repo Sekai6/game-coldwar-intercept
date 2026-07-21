@@ -725,6 +725,7 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
     datalinkLatency: 0.4,
     datalinkMinimumQuality: 0.18,
     damage: 34,
+    fuseDelay: 0.32,
     salvoSize: 4,
     minimumSalvoSize: 2,
     maximumWeaponsInFlight: 4,

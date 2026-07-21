@@ -99,6 +99,7 @@ export interface ShipDefinition {
     datalinkLatency: number;
     datalinkMinimumQuality: number;
     damage: number;
+    fuseDelay: number;
     salvoSize: number;
     minimumSalvoSize: number;
     maximumWeaponsInFlight: number;

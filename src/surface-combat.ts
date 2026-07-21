@@ -19,6 +19,7 @@ export type SurfaceStrikePhase =
   | "boost"
   | "midcourse"
   | "terminal"
+  | "penetrating"
   | "destroyed";
 
 export type SurfaceStrikeMissile = {
@@ -31,6 +32,7 @@ export type SurfaceStrikeMissile = {
   distanceTraveled: number;
   target: EnemyPlatformInstance;
   damage: number;
+  fuseDelay: number;
   seekerLogged: boolean;
   softKillResolved: boolean;
   launchSlot: string;
@@ -54,6 +56,12 @@ export type SurfaceStrikeMissile = {
     engagement: number;
     maximumEngagements: number;
     willHit: boolean;
+  } | null;
+  pendingDetonation: {
+    detonateAt: number;
+    impactPoint: THREE.Vector3;
+    localImpact: THREE.Vector3;
+    zone: string;
   } | null;
 };
 
@@ -89,6 +97,14 @@ export type SurfaceStrikeEvent =
   | { kind: "point-defense-depleted"; missile: SurfaceStrikeMissile }
   | { kind: "point-defense-offline"; missile: SurfaceStrikeMissile }
   | {
+      kind: "penetration";
+      missile: SurfaceStrikeMissile;
+      impactPoint: THREE.Vector3;
+      localImpact: THREE.Vector3;
+      zone: string;
+      fuseDelay: number;
+    }
+  | {
       kind: "soft-kill";
       missile: SurfaceStrikeMissile;
       pk: number;
@@ -119,6 +135,9 @@ export type SurfaceStrikeEvent =
       missile: SurfaceStrikeMissile;
       damage: number;
       subsystem: string;
+      zone: string;
+      impactPoint: THREE.Vector3;
+      localImpact: THREE.Vector3;
       platformDestroyed: boolean;
     };
 
@@ -165,6 +184,7 @@ export function createSurfaceStrikeMissile(
     distanceTraveled: 0,
     target,
     damage: strike.damage,
+    fuseDelay: strike.fuseDelay,
     seekerLogged: false,
     softKillResolved: false,
     launchSlot: hardpoint.id,
@@ -180,6 +200,7 @@ export function createSurfaceStrikeMissile(
     seekerAcquired: false,
     targetLostAt: null,
     pendingPointDefense: null,
+    pendingDetonation: null,
   };
 }
 
@@ -304,13 +325,31 @@ function updatePlatformIncomingTrack(
   return { track, valid, event };
 }
 
+function platformDamageZone(
+  missile: SurfaceStrikeMissile,
+  localImpact: THREE.Vector3,
+) {
+  const halfLength = Math.max(
+    1,
+    Number(missile.target.model.userData.hullLength ?? 2) / 2,
+  );
+  const fraction = THREE.MathUtils.clamp(localImpact.x / halfLength, -1, 1);
+  return missile.target.definition.survivability.damageZones.find(
+    (zone) => fraction >= zone.minimumLongitudinalFraction,
+  );
+}
+
 function damagePlatform(
   missile: SurfaceStrikeMissile,
   damage: number,
+  localImpact: THREE.Vector3,
 ) {
   const platform = missile.target;
   platform.hullIntegrity = Math.max(0, platform.hullIntegrity - damage);
-  const systems = [...platform.subsystemHealth.keys()];
+  const zone = platformDamageZone(missile, localImpact);
+  const systems = (zone?.systems ?? [...platform.subsystemHealth.keys()]).filter(
+    (system) => platform.subsystemHealth.has(system),
+  );
   const index = Math.floor(deterministicRoll(missile, 8) * systems.length);
   const subsystem = systems[index] ?? "propulsion";
   const current = platform.subsystemHealth.get(subsystem) ?? 100;
@@ -319,7 +358,29 @@ function damagePlatform(
     Math.max(0, current - damage * 1.35),
   );
   if (platform.hullIntegrity <= 0) platform.destroyed = true;
-  return subsystem;
+  return { subsystem, zone: zone?.label ?? "UNZONED" };
+}
+
+function platformHullContact(
+  platform: EnemyPlatformInstance,
+  worldPosition: THREE.Vector3,
+) {
+  const local = platform.model.worldToLocal(worldPosition.clone());
+  const halfLength = Math.max(
+    1,
+    Number(platform.model.userData.hullLength ?? 15) / 2,
+  );
+  const halfBeam = Math.max(
+    1,
+    Number(platform.model.userData.hullBeam ?? 8) / 2,
+  );
+  const longitudinal = Math.abs(local.x) / halfLength;
+  if (longitudinal > 1 || local.y > 8 || local.y < -2) return null;
+  const breadthFactor = Math.max(
+    0.18,
+    Math.sqrt(Math.max(0, 1 - longitudinal * longitudinal)),
+  );
+  return Math.abs(local.z) <= halfBeam * breadthFactor ? local : null;
 }
 
 export function updateSurfaceStrikeMissile(
@@ -331,6 +392,27 @@ export function updateSurfaceStrikeMissile(
   platformDecoys: readonly ChaffCloud[],
 ) {
   if (missile.phase === "destroyed") return null;
+  if (missile.phase === "penetrating") {
+    const detonation = missile.pendingDetonation;
+    if (!detonation || elapsed < detonation.detonateAt) return null;
+    missile.pendingDetonation = null;
+    missile.phase = "destroyed";
+    const damage = damagePlatform(
+      missile,
+      missile.damage,
+      detonation.localImpact,
+    );
+    return {
+      kind: "hit",
+      missile,
+      damage: missile.damage,
+      subsystem: damage.subsystem,
+      zone: damage.zone,
+      impactPoint: detonation.impactPoint,
+      localImpact: detonation.localImpact,
+      platformDestroyed: missile.target.destroyed,
+    } satisfies SurfaceStrikeEvent;
+  }
   if (missile.target.destroyed && missile.targetLostAt === null) {
     missile.targetLostAt = elapsed;
     missile.commandPoint.copy(missile.target.model.position);
@@ -679,21 +761,43 @@ export function updateSurfaceStrikeMissile(
     previousCommandClosest,
     postCommandRange,
   );
+  const localImpact = missile.seekerAcquired
+    ? platformHullContact(missile.target, missile.mesh.position)
+    : null;
+  if (missile.seekerAcquired && localImpact) {
+    missile.phase = "penetrating";
+    missile.mesh.visible = false;
+    missile.path.visible = false;
+    missile.velocity.set(0, 0, 0);
+    const zone = platformDamageZone(missile, localImpact)?.label ?? "UNZONED";
+    const impactPoint = missile.mesh.position.clone();
+    missile.pendingDetonation = {
+      detonateAt: elapsed + missile.fuseDelay,
+      impactPoint,
+      localImpact: localImpact.clone(),
+      zone,
+    };
+    return {
+      kind: "penetration",
+      missile,
+      impactPoint,
+      localImpact,
+      zone,
+      fuseDelay: missile.fuseDelay,
+    } satisfies SurfaceStrikeEvent;
+  }
   if (
     missile.seekerAcquired &&
-    (postRange < 7.5 ||
-      (previousClosest < 13 && postRange > previousClosest + 0.8))
+    previousClosest < 13 &&
+    postRange > previousClosest + 0.8
   ) {
     missile.phase = "destroyed";
     missile.mesh.visible = false;
     missile.path.visible = false;
-    const subsystem = damagePlatform(missile, missile.damage);
     return {
-      kind: "hit",
+      kind: "miss",
       missile,
-      damage: missile.damage,
-      subsystem,
-      platformDestroyed: missile.target.destroyed,
+      reason: "SEEKER PASS / HULL MISS",
     } satisfies SurfaceStrikeEvent;
   }
   if (

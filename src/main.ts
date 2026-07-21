@@ -1861,12 +1861,17 @@ function createPlatformDamage(
   platform: EnemyPlatformInstance,
   severity: number,
   serial: number,
+  localImpact?: THREE.Vector3,
 ) {
   const group = new THREE.Group();
-  group.position.set(
-    THREE.MathUtils.clamp((serial % 3 - 1) * 12, -20, 20),
-    5.2 + (serial % 2) * 1.8,
-    serial % 2 ? 3.6 : -3.6,
+  group.position.copy(
+    localImpact
+      ? localImpact.clone().setY(Math.max(2.2, localImpact.y))
+      : new THREE.Vector3(
+          THREE.MathUtils.clamp((serial % 3 - 1) * 12, -20, 20),
+          5.2 + (serial % 2) * 1.8,
+          serial % 2 ? 3.6 : -3.6,
+        ),
   );
   const fire = new THREE.Mesh(
     new THREE.IcosahedronGeometry(1.2, 1),
@@ -3012,7 +3017,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
 function classifyAarEvent(text: string): AarCategory {
   if (/POINT DEFENSE FIRE/.test(text)) return "fire";
   if (
-    /INTERCEPT|SOFT KILL|SURFACE KILL|POINT DEFENSE|HARPOON HIT|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(
+    /INTERCEPT|SOFT KILL|SURFACE KILL|POINT DEFENSE|PENETRATION|INTERNAL DETONATION|HARPOON HIT|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(
       text,
     )
   )
@@ -4857,6 +4862,10 @@ function updateSurfaceCombat(
       log(
         `${missile.target.definition.name} POINT DEFENSE / SYSTEM OFFLINE / HARPOON ${missile.id} LEAKER`,
       );
+    else if (event.kind === "penetration")
+      log(
+        `HARPOON ${missile.id} PENETRATION / ${event.zone} / LOCAL X ${event.localImpact.x.toFixed(1)} Z ${event.localImpact.z.toFixed(1)} / FUSE ${event.fuseDelay.toFixed(2)}s`,
+      );
     else if (event.kind === "soft-kill")
       {
         surfaceSoftKills++;
@@ -4888,13 +4897,18 @@ function updateSurfaceCombat(
         nextSurfaceAssessment,
         elapsed + strike.assessmentDelay,
       );
-      createExplosion(missile.target.model.position.clone().add(new THREE.Vector3(0, 7, 0)));
-      createPlatformDamage(missile.target, event.damage, surfaceHits);
+      createExplosion(event.impactPoint.clone().add(new THREE.Vector3(0, 2, 0)));
+      createPlatformDamage(
+        missile.target,
+        event.damage,
+        surfaceHits,
+        event.localImpact,
+      );
       const hullMaterial = missile.target.model.userData
         .hullMaterial as THREE.MeshStandardMaterial;
       hullMaterial?.color.lerp(new THREE.Color(0x302a28), event.damage / 80);
       log(
-        `HARPOON HIT CONFIRMED / ${missile.target.definition.name} / EFFECT ASSESSMENT PENDING`,
+        `HARPOON ${missile.id} INTERNAL DETONATION / ${event.zone} / ${event.subsystem.toUpperCase()} DAMAGED / ${missile.target.definition.name} / EFFECT ASSESSMENT PENDING`,
       );
       if (event.platformDestroyed) {
         surfaceHardKills++;
@@ -4905,6 +4919,7 @@ function updateSurfaceCombat(
       event.kind === "miss" ||
       event.kind === "soft-kill" ||
       event.kind === "point-defense" ||
+      event.kind === "penetration" ||
       event.kind === "hit"
     )
       missile.target.incomingTracks.delete(missile.id);
@@ -5000,6 +5015,13 @@ function updateSurfaceCombat(
     .map((missile) =>
       missile.pendingPointDefense
         ? Math.max(0, missile.pendingPointDefense.resolveAt - elapsed).toFixed(2)
+        : "none",
+    )
+    .join(",");
+  canvas.dataset.surfaceStrikeDetonationsPending = liveSurfaceStrikes
+    .map((missile) =>
+      missile.pendingDetonation
+        ? Math.max(0, missile.pendingDetonation.detonateAt - elapsed).toFixed(2)
         : "none",
     )
     .join(",");
@@ -5126,6 +5148,11 @@ function updateSurfaceCombat(
   canvas.dataset.platformCountermeasureHealth = String(
     Math.round(enemyPlatform?.subsystemHealth.get("countermeasures") ?? 0),
   );
+  canvas.dataset.platformSubsystemHealth = enemyPlatform
+    ? [...enemyPlatform.subsystemHealth.entries()]
+        .map(([system, health]) => `${system}:${health.toFixed(1)}`)
+        .join(",")
+    : "";
   canvas.dataset.enemyPlatformHull = String(
     Math.round(enemyPlatform?.hullIntegrity ?? 0),
   );

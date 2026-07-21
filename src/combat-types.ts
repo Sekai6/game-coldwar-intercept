@@ -191,6 +191,6 @@ export type AarSnapshot = {
     id: number;
     x: number;
     z: number;
-    phase: "boost" | "midcourse" | "terminal" | "destroyed";
+    phase: "boost" | "midcourse" | "terminal" | "penetrating" | "destroyed";
   }[];
 };

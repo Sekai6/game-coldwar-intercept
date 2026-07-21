@@ -39,6 +39,7 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
     datalinkLatency: 0.55,
     datalinkMinimumQuality: 0.22,
     damage: 34,
+    fuseDelay: 0.32,
     salvoSize: 4,
     minimumSalvoSize: 2,
     maximumWeaponsInFlight: 4,
