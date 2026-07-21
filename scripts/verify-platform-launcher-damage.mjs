@@ -29,6 +29,15 @@ await page.locator("#sbOpforPointDefenseHealth").fill("0");
 await page.locator("#sbOpforEcmHealth").fill("0");
 await page.locator("#sbOpforDecoyHealth").fill("0");
 await page.locator("#sbStart").click();
+await page.waitForTimeout(250);
+const sandboxDisplay = await page.locator(".sandbox-panel").evaluate(
+  (element) => getComputedStyle(element).display,
+);
+if (sandboxDisplay !== "none") {
+  console.log(JSON.stringify({ disabledSystem, sandboxDisplay, errors }, null, 2));
+  await browser.close();
+  process.exit(1);
+}
 await page.getByRole("button", { name: "TIME: 1X" }).click();
 await page.getByRole("button", { name: "TIME: 2X" }).click();
 await page.waitForTimeout(12_000);
@@ -40,5 +49,12 @@ const state = await page.locator("canvas").first().evaluate((element) => ({
 }));
 console.log(JSON.stringify({ disabledSystem, state, errors }, null, 2));
 await browser.close();
-if (errors.length || state.fired !== 0 || state.effects !== 0 || state.canceled < 4)
+const expectedCanceled = disabledSystem === "fire-control" ? 4 : 0;
+if (
+  errors.length ||
+  state.fired !== 0 ||
+  state.effects !== 0 ||
+  state.canceled !== expectedCanceled ||
+  state.reserved !== 0
+)
   process.exitCode = 1;

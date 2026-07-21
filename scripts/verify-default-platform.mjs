@@ -23,13 +23,15 @@ for (const select of await page.locator("select").all()) {
     await select.selectOption("ticonderoga");
 }
 const fireControlHealth = process.env.OPFOR_FIRE_CONTROL_HEALTH ?? "100";
+const strikeLauncherHealth = process.env.OPFOR_STRIKE_LAUNCHER_HEALTH ?? "100";
+const requestedCount = process.env.OPFOR_REQUESTED_COUNT ?? "4";
 const platform = await page.locator("#sbPlatform").inputValue();
 if (platform === "AIRBORNE") throw new Error("platform sandbox defaulted to AIRBORNE");
 await page.locator("#sbType").selectOption("P-500");
-await page.locator("#sbCount").fill("4");
+await page.locator("#sbCount").fill(requestedCount);
 await page.locator("#sbInterval").fill("1");
 await page.locator("#sbOpforPointDefenseHealth").fill("0");
-await page.locator("#sbOpforStrikeLauncherHealth").fill("100");
+await page.locator("#sbOpforStrikeLauncherHealth").fill(strikeLauncherHealth);
 await page.locator("#sbOpforFireControlHealth").fill(fireControlHealth);
 await page.locator("#sbOpforEcmHealth").fill("0");
 await page.locator("#sbOpforDecoyHealth").fill("0");
@@ -62,12 +64,15 @@ const result = await canvas.evaluate((element) => ({
   maneuver: element.dataset.enemyPlatformManeuverMode ?? "",
 }));
 result.fireControlHealth = Number(fireControlHealth);
+result.strikeLauncherHealth = Number(strikeLauncherHealth);
 await page.keyboard.press("5");
 await page.waitForTimeout(500);
 await page.screenshot({
   path:
     Number(fireControlHealth) < 100
       ? "verification-platform-fire-control-degraded.png"
+      : Number(strikeLauncherHealth) < 100
+        ? "verification-platform-launcher-degraded.png"
       : "verification-default-platform.png",
   fullPage: true,
 });
@@ -81,6 +86,8 @@ if (
   result.fired < 4 ||
   result.launchEffects < 4 ||
   result.wave < 1 ||
-  (Number(fireControlHealth) < 100 && result.releaseTimes[0] <= 5)
+  (Number(fireControlHealth) < 100 && result.releaseTimes[0] <= 5) ||
+  (Number(strikeLauncherHealth) < 100 &&
+    (result.committed !== 4 || result.authorized !== 16))
 )
   process.exitCode = 1;

@@ -2569,6 +2569,40 @@ sandbox.className = "sandbox-panel";
 function numberInput(id: string) {
   return Number((sandbox.querySelector(id) as HTMLInputElement).value);
 }
+function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
+  platform.subsystemHealth.set(
+    "point-defense",
+    THREE.MathUtils.clamp(numberInput("#sbOpforPointDefenseHealth"), 0, 100),
+  );
+  platform.subsystemHealth.set(
+    "bazalt-canisters",
+    THREE.MathUtils.clamp(
+      numberInput("#sbOpforStrikeLauncherHealth"),
+      0,
+      100,
+    ),
+  );
+  platform.subsystemHealth.set(
+    "strike-control",
+    THREE.MathUtils.clamp(numberInput("#sbOpforFireControlHealth"), 0, 100),
+  );
+  platform.subsystemHealth.set(
+    "electronic-warfare",
+    THREE.MathUtils.clamp(numberInput("#sbOpforEcmHealth"), 0, 100),
+  );
+  platform.subsystemHealth.set(
+    "countermeasures",
+    THREE.MathUtils.clamp(numberInput("#sbOpforDecoyHealth"), 0, 100),
+  );
+  platform.subsystemHealth.set(
+    "damage-control",
+    THREE.MathUtils.clamp(
+      numberInput("#sbOpforDamageControlHealth"),
+      0,
+      100,
+    ),
+  );
+}
 const pickPlacement = document.createElement("button");
 pickPlacement.textContent = "PICK FORMATION CENTER ON RADAR";
 pickPlacement.style.cssText =
@@ -3044,6 +3078,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
       }
     });
     scene.add(enemyPlatform.model);
+    applyPlatformScenarioHealth(enemyPlatform);
     const weaponSlot = definition.weaponSlots.find((slot) =>
       slot.compatibleThreats.includes(kind),
     );
@@ -3093,7 +3128,8 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   );
   searchButton.textContent = "SEARCH: 360 DEG";
   slewButton.textContent = "SLEW: SELECTED";
-  missiles[0].mesh.userData.selection.visible = true;
+  const initialMissile = missiles[0];
+  if (initialMissile) initialMissile.mesh.userData.selection.visible = true;
   weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
   ammoEl.textContent = `RIM ${ammo} / MR ${sm2Ammo} / ER ${sm2erAmmo}`;
   sandbox.style.display = "none";
@@ -3205,49 +3241,6 @@ radarCanvas.addEventListener("pointerdown", (e) => {
       if (forwardHealth < 100)
         damageSubsystem("forwardLauncher", 100 - forwardHealth);
       if (aftHealth < 100) damageSubsystem("aftLauncher", 100 - aftHealth);
-      if (enemyPlatform) {
-        const pointDefenseHealth = THREE.MathUtils.clamp(
-          numberInput("#sbOpforPointDefenseHealth"),
-          0,
-          100,
-        );
-        enemyPlatform.subsystemHealth.set(
-          "point-defense",
-          pointDefenseHealth,
-        );
-        enemyPlatform.subsystemHealth.set(
-          "bazalt-canisters",
-          THREE.MathUtils.clamp(
-            numberInput("#sbOpforStrikeLauncherHealth"),
-            0,
-            100,
-          ),
-        );
-        enemyPlatform.subsystemHealth.set(
-          "strike-control",
-          THREE.MathUtils.clamp(
-            numberInput("#sbOpforFireControlHealth"),
-            0,
-            100,
-          ),
-        );
-        enemyPlatform.subsystemHealth.set(
-          "electronic-warfare",
-          THREE.MathUtils.clamp(numberInput("#sbOpforEcmHealth"), 0, 100),
-        );
-        enemyPlatform.subsystemHealth.set(
-          "countermeasures",
-          THREE.MathUtils.clamp(numberInput("#sbOpforDecoyHealth"), 0, 100),
-        );
-        enemyPlatform.subsystemHealth.set(
-          "damage-control",
-          THREE.MathUtils.clamp(
-            numberInput("#sbOpforDamageControlHealth"),
-            0,
-            100,
-          ),
-        );
-      }
       ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
       surfaceStrikeAmmo = Math.max(
         0,
