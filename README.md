@@ -303,6 +303,8 @@ Harpoon 齐射按舰型参数分配左右交替的中段航路偏置、汇聚距
 
 平台场景的攻击数量是授权上限，不是开局一次性预约量。声明 `salvoDoctrine` 的武器槽首波最多承诺配置上限，所有离筒武器解析后进入 `DOCTRINE LOOK` 和 BDA 等待；补射使用解析弹数和“真实命中 × 武器回报可靠度 × 航迹质量因子”形成的命中信用重新计算，不读取完整命中真值。ESM 或失轨会进一步降低信用。水面接触卡会显示 `OPFOR BDA` 和波次编号。`npm run verify:platform-doctrine` 实测 16 发授权的 8 发首波、BDA 后补射，以及实际命中与指挥评估分离。
 
+同一敌方齐射波次在首枚武器实际离筒时，使用当时的平台雷达航迹距离建立共同计划到达窗。每枚弹在中段按剩余航程与剩余时间渐进修正速度，修正量受 `maximumSpeedCompensation` 限制，末段恢复弹型自己的正常速度。Moskva 当前使用游戏化 `1.5s` 到达窗与 `16%` 速度修正上限。`npm run verify:platform-arrival` 的三发场景把 `3.10s` 离筒时间差压缩为 `2.00s` 主动末段进入差，最大实测速差为 `9.3%`。
+
 水面接触卡会同步显示敌方交战链状态：`OPFOR ESM CUE -> TRACK BUILD -> FC BUILD -> FC READY -> LAUNCHED`，因此等待雷达地平线、连续航迹龄或火控延迟时不再表现为无反馈。`npm run verify:bilateral-launch` 分别让 CGN-9 和 CG-57 对 Moskva 作战，要求两艘美舰各自发射 Harpoon、Moskva 对两种目标均完成 P-500 实体离筒，并在桌面与移动视口检查状态卡布局。
 
 <a id="舰空导弹与制导"></a>

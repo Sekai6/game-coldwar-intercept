@@ -34,6 +34,7 @@ export type Missile = {
     datalinkValid: boolean;
     lastDatalinkQuality: number;
     terminalSeekerAcquired: boolean;
+    plannedArrivalAt: number | null;
   };
 };
 export type Interceptor = {

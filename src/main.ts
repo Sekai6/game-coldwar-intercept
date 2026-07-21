@@ -632,6 +632,7 @@ function addMissile(
           datalinkValid: platformReservation.platform.targetTrack.valid,
           lastDatalinkQuality: -1,
           terminalSeekerAcquired: false,
+          plannedArrivalAt: null,
         }
       : undefined,
   });
@@ -740,8 +741,9 @@ function commitPlatformFirePlanWave(
       elapsed,
       plan.requestedInterval,
     );
-  for (const reservation of reservations) {
+  for (const [ordinal, reservation] of reservations.entries()) {
     reservation.firePlanWave = wave;
+    reservation.firePlanOrdinal = ordinal;
     addMissile(
       reservationOrigin(reservation),
       plan.threat,
@@ -6356,6 +6358,46 @@ function cancelPlatformLaunchesAgainstDisabledShip() {
   );
 }
 
+function initializePlatformWaveArrivalPlan(missile: Missile) {
+  const launch = missile.platformLaunch,
+    wave = launch?.reservation.firePlanWave;
+  if (!launch || wave === undefined || launch.plannedArrivalAt !== null) return;
+  const platform = launch.reservation.platform,
+    doctrine = launch.reservation.weaponSlot.salvoDoctrine,
+    track = platform.targetTrack;
+  if (!doctrine || !track.valid || track.source !== "radar") return;
+  const waveMissiles = missiles
+    .filter(
+      (candidate) =>
+        candidate.platformLaunch?.reservation.platform === platform &&
+        candidate.platformLaunch.reservation.firePlanWave === wave,
+    )
+    .sort(
+      (a, b) =>
+        (a.platformLaunch?.reservation.firePlanOrdinal ?? 0) -
+        (b.platformLaunch?.reservation.firePlanOrdinal ?? 0),
+    ),
+    observedRange = platform.model.position.distanceTo(track.position),
+    finalReleaseAt =
+      elapsed +
+      Math.max(0, waveMissiles.length - 1) * launch.reservation.releaseInterval,
+    commonArrivalAt =
+      finalReleaseAt +
+      observedRange / Math.max(0.1, incomingProfiles[missile.kind].cruiseSpeed);
+  for (const [ordinal, waveMissile] of waveMissiles.entries()) {
+    const waveLaunch = waveMissile.platformLaunch;
+    if (!waveLaunch) continue;
+    waveLaunch.plannedArrivalAt =
+      commonArrivalAt +
+      (waveMissiles.length > 1
+        ? (ordinal / (waveMissiles.length - 1)) * doctrine.arrivalWindow
+        : 0);
+  }
+  log(
+    `${platform.definition.name} SALVO TIMING / WAVE ${wave} / ${waveMissiles.length} WEAPONS / ARRIVAL WINDOW ${doctrine.arrivalWindow.toFixed(1)}s / TRACK RANGE ${(observedRange / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+  );
+}
+
 function updateIncomingMissile(m: Missile, dt: number) {
   if (m.phase === "destroyed") {
     m.mesh.userData.seekerLine.visible = false;
@@ -6470,6 +6512,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
   m.age += dt;
   const platformLaunch = m.platformLaunch;
   if (platformLaunch && !platformLaunch.released) {
+    initializePlatformWaveArrivalPlan(m);
     platformLaunch.released = true;
     platformLaunch.releasedAt = elapsed;
     const platformTrack = platformLaunch.reservation.platform.targetTrack;
@@ -6609,6 +6652,12 @@ function updateIncomingMissile(m: Missile, dt: number) {
       : guidanceRange < profile.terminalAt * 1.9
         ? "midcourse"
         : "inbound";
+  if (
+    platformLaunch &&
+    m.phase === "terminal" &&
+    m.mesh.userData.platformTerminalEnteredAt === undefined
+  )
+    m.mesh.userData.platformTerminalEnteredAt = elapsed;
   if (
     chaffEnabled &&
     m.phase === "terminal" &&
@@ -6855,8 +6904,31 @@ function updateIncomingMissile(m: Missile, dt: number) {
       dt;
   const blend = angle > 0 ? Math.min(1, maxTurn / angle) : 1;
   const direction = current.lerp(desired, blend).normalize();
+  const arrivalDoctrine = platformLaunch?.reservation.weaponSlot.salvoDoctrine,
+    remainingArrivalTime = Math.max(
+      0.1,
+      (platformLaunch?.plannedArrivalAt ?? elapsed) - elapsed,
+    ),
+    arrivalSpeedFactor =
+      platformLaunch?.plannedArrivalAt !== null &&
+      platformLaunch?.plannedArrivalAt !== undefined &&
+      terminalFactor < 0.2 &&
+      arrivalDoctrine
+        ? THREE.MathUtils.clamp(
+            guidanceRange /
+              remainingArrivalTime /
+              Math.max(0.1, profile.cruiseSpeed),
+            1 - arrivalDoctrine.maximumSpeedCompensation,
+            1 + arrivalDoctrine.maximumSpeedCompensation,
+          )
+        : 1;
+  m.mesh.userData.platformArrivalSpeedFactor = arrivalSpeedFactor;
+  m.mesh.userData.platformMaximumSpeedDeviation = Math.max(
+    m.mesh.userData.platformMaximumSpeedDeviation ?? 0,
+    Math.abs(arrivalSpeedFactor - 1),
+  );
   const targetSpeed = THREE.MathUtils.lerp(
-    profile.cruiseSpeed,
+    profile.cruiseSpeed * arrivalSpeedFactor,
     profile.terminalSpeed,
     terminalFactor,
   );
@@ -7156,6 +7228,37 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformReleaseTimes = releasedPlatformWeapons
       .map((missile) => missile.platformLaunch!.releasedAt?.toFixed(2) ?? "")
       .join(",");
+    const timedPlatformWeapons = missiles
+      .filter(
+        (missile) =>
+          missile.platformLaunch?.reservation.firePlanWave !== undefined,
+      )
+      .sort(
+        (a, b) =>
+          (a.platformLaunch!.reservation.firePlanWave ?? 0) -
+            (b.platformLaunch!.reservation.firePlanWave ?? 0) ||
+          (a.platformLaunch!.reservation.firePlanOrdinal ?? 0) -
+            (b.platformLaunch!.reservation.firePlanOrdinal ?? 0),
+      );
+    canvas.dataset.enemyPlatformArrivalPlans = timedPlatformWeapons
+      .map((missile) =>
+        missile.platformLaunch!.plannedArrivalAt?.toFixed(2) ?? "pending",
+      )
+      .join(",");
+    canvas.dataset.enemyPlatformTerminalTimes = timedPlatformWeapons
+      .map((missile) =>
+        typeof missile.mesh.userData.platformTerminalEnteredAt === "number"
+          ? missile.mesh.userData.platformTerminalEnteredAt.toFixed(2)
+          : "pending",
+      )
+      .join(",");
+    canvas.dataset.enemyPlatformSpeedDeviations = timedPlatformWeapons
+      .map((missile) =>
+        Number(missile.mesh.userData.platformMaximumSpeedDeviation ?? 0).toFixed(
+          3,
+        ),
+      )
+      .join(",");
     canvas.dataset.enemyPlatformCanceled = String(
       states.filter((state) => state === "canceled").length,
     );
@@ -7247,6 +7350,9 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformFired = "0";
     canvas.dataset.enemyPlatformFiredOrder = "";
     canvas.dataset.enemyPlatformReleaseTimes = "";
+    canvas.dataset.enemyPlatformArrivalPlans = "";
+    canvas.dataset.enemyPlatformTerminalTimes = "";
+    canvas.dataset.enemyPlatformSpeedDeviations = "";
     canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformReleasedInFlight = "0";
     canvas.dataset.enemyPlatformTrackLossHold = "0.00";

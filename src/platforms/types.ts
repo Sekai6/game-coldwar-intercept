@@ -57,6 +57,8 @@ export interface PlatformWeaponSlot {
     targetHullEstimate: number;
     assessmentDelay: number;
     hitReportReliability: number;
+    arrivalWindow: number;
+    maximumSpeedCompensation: number;
   };
 }
 
@@ -233,4 +235,5 @@ export interface PlatformLaunchReservation {
   launchAt: number;
   releaseInterval: number;
   firePlanWave?: number;
+  firePlanOrdinal?: number;
 }
