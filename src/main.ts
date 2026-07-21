@@ -27,6 +27,7 @@ import {
   vlsLoadOrder,
 } from "./vls";
 import { WEAPON_PROFILES as weaponProfiles } from "./interceptor-data";
+import { deterministicProbabilityRoll } from "./probability";
 import {
   DEFAULT_THREAT_ID,
   getThreatDefinition,
@@ -981,6 +982,7 @@ function launchInterceptor(
     illuminated: false,
     illuminationBeam,
   } as Interceptor;
+  g.userData.launchSerial = interceptors.length + 1;
   interceptors.push(interceptor);
   recordEngagementLaunch(target);
   const launchRange =
@@ -4607,7 +4609,11 @@ function updateCiws() {
         : Math.max(0.04, basePk),
     windowFactor = Math.min(1.35, 0.75 + bursts * 0.12),
     pk = Math.min(0.72, singlePk * windowFactor),
-    roll = Math.abs(Math.sin(elapsed * 31.7 + ciwsRounds * 0.013));
+    roll = deterministicProbabilityRoll(
+      missiles.indexOf(target.m) + 1,
+      elapsed,
+      ciwsRounds,
+    );
   log(
     `CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / PK ${Math.round(pk * 100)}% / ${target.mount.name}`,
   );
@@ -5937,8 +5943,11 @@ function updateCombat(dt: number) {
           0.2,
           0.96,
         ),
-        acquisitionRoll = Math.abs(
-          Math.sin(trackId * 41.17 + Math.floor(i.age * 4) * 13.9),
+        acquisitionRoll = deterministicProbabilityRoll(
+          i.mesh.userData.launchSerial,
+          trackId,
+          Math.floor(i.age * 4),
+          67,
         );
       if (lookAngle < fov && acquisitionRoll < acquisitionPk) {
         i.mesh.userData.seekerAcquired = true;
@@ -6022,7 +6031,12 @@ function updateCombat(dt: number) {
         i.weapon.startsWith("SM-2") &&
         terminal &&
         !!nearestChaff &&
-        Math.abs(Math.sin(trackId * 27.1 + Math.floor(elapsed * 2))) <
+        deterministicProbabilityRoll(
+          i.mesh.userData.launchSerial,
+          trackId,
+          Math.floor(elapsed * 2),
+          2,
+        ) <
           decoyProbability,
       ecmStrength =
         ecmEnabled && i.weapon.startsWith("SM-2")
@@ -6297,8 +6311,11 @@ function updateCombat(dt: number) {
             energyFactor,
         ),
       );
-      const roll = Math.abs(
-        Math.sin(id * 97.13 + (ammo + sm2Ammo) * 17.7 + i.age * 3.17),
+      const roll = deterministicProbabilityRoll(
+        i.mesh.userData.launchSerial,
+        id,
+        i.age,
+        i.weapon === "RIM-67" ? 67 : i.weapon === "SM-2MR" ? 2 : 3,
       );
       i.mesh.visible = false;
       i.illuminationBeam.visible = false;
