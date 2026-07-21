@@ -20,8 +20,8 @@ await page.goto(process.env.APP_URL ?? "http://127.0.0.1:5173/", {
 await page.locator("#sbPlatform").selectOption("slava-moskva");
 await page.locator("#sbType").selectOption("P-500");
 await page.locator("#sbCount").fill("16");
-await page.locator("#sbInterval").fill("4");
-await page.locator("#sbZ").fill("-380");
+await page.locator("#sbInterval").fill("10");
+await page.locator("#sbZ").fill("-250");
 await page.locator("#sbSpread").fill("0");
 await page.locator("#sbRim").fill("0");
 await page.locator("#sbSm2").fill("0");
@@ -43,7 +43,7 @@ await page.waitForFunction(
 await page.waitForFunction(
   () => Number(document.querySelector("canvas")?.dataset.enemyPlatformCanceled ?? 0) > 0,
   null,
-  { timeout: 60_000 },
+  { timeout: 100_000 },
 );
 const state = await canvas.evaluate((element) => ({
   ready: Number(element.dataset.enemyPlatformReady ?? 0),
@@ -80,10 +80,9 @@ if (
   state.fired < 4 ||
   state.canceled < 1 ||
   state.reserved !== 0 ||
-  state.ready !== 0 ||
   state.releasedInFlight < 1 ||
   state.ready + state.reserved + state.fired + state.canceled !== state.hardpoints ||
-  state.coversVisible !== state.canceled ||
+  state.coversVisible !== state.ready + state.canceled ||
   targetAbortEvents.length !== state.canceled
 )
   process.exitCode = 1;

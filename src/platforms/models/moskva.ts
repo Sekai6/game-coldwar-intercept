@@ -173,7 +173,7 @@ export const MOSKVA = {
     { id: "strike-control", displayName: "ARGUMENT / FRONT DOOR", role: "fire-control", anchorId: "argument", maxRange: 680, updateInterval: 0.55, precision: 0.9, radarHeight: 24 },
   ],
   weaponSlots: [
-    { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8, minimumTrackQuality: 0.3, minimumTrackAge: 2.4, fireControlDelay: 1.6, fireControlTrackHoldover: 2.2, postCommitTrackLossAbort: 45, datalinkUpdateInterval: 1.4, datalinkLatency: 0.35, datalinkMinimumQuality: 0.18, salvoPattern: "alternate-groups" },
+    { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8, minimumTrackQuality: 0.3, minimumTrackAge: 2.4, fireControlDelay: 1.6, fireControlTrackHoldover: 2.2, postCommitTrackLossAbort: 45, datalinkUpdateInterval: 1.4, datalinkLatency: 0.35, datalinkMinimumQuality: 0.18, salvoPattern: "alternate-groups", salvoDoctrine: { minimumSalvoSize: 2, maximumSalvoSize: 8, maximumWeaponsInFlight: 8, expectedLeakProbability: 0.48, targetHullEstimate: 100, assessmentDelay: 9 } },
   ],
   survivability: {
     hull: 100,

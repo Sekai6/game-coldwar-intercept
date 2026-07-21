@@ -364,6 +364,19 @@ wake.position.set(-28, 0.22, 40);
 scene.add(wake);
 const missiles: Missile[] = [];
 let enemyPlatform: EnemyPlatformInstance | null = null;
+type PlatformFirePlan = {
+  platform: EnemyPlatformInstance;
+  threat: EnemyType;
+  authorizedWeapons: number;
+  committedWeapons: number;
+  requestedInterval: number;
+  wave: number;
+  assessmentReadyAt: number;
+  assessmentPending: boolean;
+  completed: boolean;
+  reinforcements: { availableAt: number; count: number }[];
+};
+let platformFirePlan: PlatformFirePlan | null = null;
 const surfaceStrikeMissiles: SurfaceStrikeMissile[] = [];
 const surfaceLaunchQueue: {
   hardpoint: ModelWeaponHardpoint;
@@ -616,6 +629,138 @@ function addMissile(
       : undefined,
   });
 }
+function platformFirePlanWeapons(plan: PlatformFirePlan) {
+  return missiles.filter(
+    (missile) =>
+      missile.platformLaunch?.reservation.platform === plan.platform &&
+      missile.platformLaunch.reservation.firePlanWave !== undefined,
+  );
+}
+
+function commitPlatformFirePlanWave(
+  plan: PlatformFirePlan,
+  allowUnresolvedFireControl = false,
+) {
+  const slot = plan.platform.definition.weaponSlots.find((candidate) =>
+      candidate.compatibleThreats.includes(plan.threat),
+    ),
+    doctrine = slot?.salvoDoctrine;
+  if (!slot || !doctrine || plan.platform.destroyed || hullIntegrity <= 0)
+    return false;
+  const remainingAuthorization = Math.max(
+    0,
+    plan.authorizedWeapons - plan.committedWeapons,
+  );
+  if (remainingAuthorization <= 0) {
+    plan.completed = plan.reinforcements.length === 0;
+    return false;
+  }
+  const trackAge = plan.platform.weaponTrackAge.get(slot.id) ?? 0,
+    directFireControl =
+      plan.platform.targetTrack.valid &&
+      plan.platform.targetTrack.source === "radar" &&
+      plan.platform.targetTrack.quality >= slot.minimumTrackQuality &&
+      trackAge >= slot.minimumTrackAge + slot.fireControlDelay;
+  if (!allowUnresolvedFireControl && !directFireControl) return false;
+  const plannedWeapons = platformFirePlanWeapons(plan),
+    resolvedWeapons = plannedWeapons.filter(
+      (missile) => missile.platformLaunch?.released && missile.phase === "destroyed",
+    ).length,
+    assessedHits = plannedWeapons.filter(
+      (missile) => missile.mesh.userData.platformImpact === true,
+    ).length,
+    inFlight = plannedWeapons.filter(
+      (missile) => missile.phase !== "destroyed",
+    ).length,
+    readyHardpoints = plan.platform.slots.weaponHardpoints.filter(
+      (hardpoint) =>
+        hardpoint.slotId === slot.id &&
+        plan.platform.hardpointState.get(hardpoint.id) === "ready",
+    ).length,
+    salvo = planSurfaceSalvo({
+      availableWeapons: remainingAuthorization,
+      availableHardpoints: readyHardpoints,
+      weaponsInFlight: inFlight,
+      maximumWeaponsInFlight: doctrine.maximumWeaponsInFlight,
+      maximumSalvoSize: doctrine.maximumSalvoSize,
+      minimumSalvoSize: doctrine.minimumSalvoSize,
+      expectedLeakProbability: doctrine.expectedLeakProbability,
+      targetHullEstimate: doctrine.targetHullEstimate,
+      weaponDamage: getThreatDefinition(plan.threat).profile.damage,
+      assessedHits,
+      resolvedWeapons,
+      trackQuality: plan.platform.targetTrack.quality,
+    });
+  if (salvo.count <= 0) {
+    plan.completed = true;
+    log(
+      `${plan.platform.definition.name} BDA / FIRE PLAN COMPLETE / ${assessedHits}/${resolvedWeapons} OBSERVED HITS / ${plan.authorizedWeapons - plan.committedWeapons} WEAPONS UNCOMMITTED`,
+    );
+    return false;
+  }
+  const wave = plan.wave + 1,
+    reservations = reservePlatformLaunches(
+      plan.platform,
+      plan.threat,
+      salvo.count,
+      elapsed,
+      plan.requestedInterval,
+    );
+  for (const reservation of reservations) {
+    reservation.firePlanWave = wave;
+    addMissile(
+      reservationOrigin(reservation),
+      plan.threat,
+      reservation.launchAt,
+      reservation,
+    );
+  }
+  plan.wave = wave;
+  plan.committedWeapons += reservations.length;
+  plan.assessmentPending = false;
+  plan.completed = reservations.length === 0;
+  log(
+    `${plan.platform.definition.name} SURFACE OODA / WAVE ${wave} / ${reservations.length} x ${plan.threat} / ${salvo.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvo.planningLeakProbability * 100)}% / AUTH ${plan.committedWeapons}/${plan.authorizedWeapons}`,
+  );
+  return reservations.length > 0;
+}
+
+function updatePlatformFirePlan() {
+  const plan = platformFirePlan;
+  if (!plan || plan.platform.destroyed || hullIntegrity <= 0) return;
+  for (let index = plan.reinforcements.length - 1; index >= 0; index--) {
+    const reinforcement = plan.reinforcements[index];
+    if (elapsed < reinforcement.availableAt) continue;
+    plan.reinforcements.splice(index, 1);
+    plan.authorizedWeapons = Math.min(
+      plan.platform.slots.weaponHardpoints.length,
+      plan.authorizedWeapons + reinforcement.count,
+    );
+    plan.completed = false;
+    log(
+      `${plan.platform.definition.name} FIRE PLAN / ${reinforcement.count} ADDITIONAL WEAPONS AUTHORIZED / TOTAL ${plan.authorizedWeapons}`,
+    );
+  }
+  const currentWave = platformFirePlanWeapons(plan).filter(
+    (missile) => missile.platformLaunch?.reservation.firePlanWave === plan.wave,
+  );
+  if (currentWave.some((missile) => missile.phase !== "destroyed")) return;
+  const slot = plan.platform.definition.weaponSlots.find((candidate) =>
+      candidate.compatibleThreats.includes(plan.threat),
+    ),
+    doctrine = slot?.salvoDoctrine;
+  if (!doctrine || plan.completed) return;
+  if (!plan.assessmentPending) {
+    plan.assessmentPending = true;
+    plan.assessmentReadyAt = elapsed + doctrine.assessmentDelay;
+    log(
+      `${plan.platform.definition.name} DOCTRINE LOOK / WAVE ${plan.wave} / BDA ${doctrine.assessmentDelay.toFixed(1)}s`,
+    );
+    return;
+  }
+  if (elapsed >= plan.assessmentReadyAt) commitPlatformFirePlanWave(plan);
+}
+
 function launchInterceptor(
   target: Missile,
   weapon: WeaponType,
@@ -2289,7 +2434,10 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
     enemyTrackAge = enemyPlatform.weaponTrackAge.get(enemySlot.id) ?? 0,
     enemyRequiredAge = enemySlot.minimumTrackAge + enemySlot.fireControlDelay;
   let enemyFireState = "OPFOR SEARCH";
-  if (enemyFired > 0) enemyFireState = `OPFOR LAUNCHED ${enemyFired}`;
+  if (platformFirePlan?.assessmentPending)
+    enemyFireState = `OPFOR BDA ${Math.max(0, platformFirePlan.assessmentReadyAt - elapsed).toFixed(1)}s`;
+  else if (enemyFired > 0)
+    enemyFireState = `OPFOR LAUNCHED ${enemyFired}${platformFirePlan ? ` / WAVE ${platformFirePlan.wave}` : ""}`;
   else if (enemyPlatform.targetTrack.source === "esm")
     enemyFireState = "OPFOR ESM CUE";
   else if (
@@ -2760,6 +2908,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     disposeEnemyPlatform(enemyPlatform);
     enemyPlatform = null;
   }
+  platformFirePlan = null;
   interceptors.forEach((i) => scene.remove(i.mesh));
   interceptors.length = 0;
   combatPicture.reset();
@@ -2832,23 +2981,43 @@ radarCanvas.addEventListener("pointerdown", (e) => {
       }
     });
     scene.add(enemyPlatform.model);
-    const reservations = reservePlatformLaunches(
-      enemyPlatform,
-      kind,
-      requestedCount,
-      0,
-      interval,
+    const weaponSlot = definition.weaponSlots.find((slot) =>
+      slot.compatibleThreats.includes(kind),
     );
-    count = reservations.length;
-    for (const reservation of reservations)
-      addMissile(
-        reservationOrigin(reservation),
+    if (weaponSlot?.salvoDoctrine) {
+      platformFirePlan = {
+        platform: enemyPlatform,
+        threat: kind,
+        authorizedWeapons: Math.min(requestedCount, weaponSlot.capacity),
+        committedWeapons: 0,
+        requestedInterval: interval,
+        wave: 0,
+        assessmentReadyAt: 0,
+        assessmentPending: false,
+        completed: false,
+        reinforcements: [],
+      };
+      commitPlatformFirePlanWave(platformFirePlan, true);
+      count = platformFirePlan.committedWeapons;
+    } else {
+      const reservations = reservePlatformLaunches(
+        enemyPlatform,
         kind,
-        reservation.launchAt,
-        reservation,
+        requestedCount,
+        0,
+        interval,
       );
+      count = reservations.length;
+      for (const reservation of reservations)
+        addMissile(
+          reservationOrigin(reservation),
+          kind,
+          reservation.launchAt,
+          reservation,
+        );
+    }
     log(
-      `ENEMY PLATFORM / ${definition.name} / ${definition.className} / ${count} LAUNCH SLOTS RESERVED`,
+      `ENEMY PLATFORM / ${definition.name} / ${definition.className} / ${count} FIRST-WAVE SLOTS RESERVED${platformFirePlan ? ` / ${platformFirePlan.authorizedWeapons} WEAPONS AUTHORIZED` : ""}`,
     );
   }
   updateMaterialDiagnostics();
@@ -2866,7 +3035,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   sandbox.style.display = "none";
   running = true;
   log(
-    `SANDBOX START / ${activeShip.hullNumber} / ${count} x ${kind} / ${interval}s INTERVAL / ${platformSelection}`,
+    `SANDBOX START / ${activeShip.hullNumber} / ${count} x ${kind} INITIAL${platformFirePlan ? ` / AUTH ${platformFirePlan.authorizedWeapons}` : ""} / ${interval}s INTERVAL / ${platformSelection}`,
   );
 };
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
@@ -3028,6 +3197,13 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         altitude = numberInput("#sbAltitude"),
         spread = numberInput("#sbSpread");
       if (enemyPlatform) {
+        if (platformFirePlan && platformFirePlan.threat === kind2) {
+          platformFirePlan.reinforcements.push({ availableAt: delay, count });
+          log(
+            `SECOND WAVE AUTHORIZATION / ${count} x ${kind2} / ${enemyPlatform.definition.name} / T+${delay}s`,
+          );
+          return;
+        }
         const reservations = reservePlatformLaunches(
           enemyPlatform,
           kind2,
@@ -6092,6 +6268,11 @@ function updateCombat(dt: number) {
     else if (enemyPlatform.casualties.length > 0) {
       phaseEl.textContent = "DAMAGE ASSESSMENT";
     }
+    else if (platformFirePlan && !platformFirePlan.completed) {
+      phaseEl.textContent = platformFirePlan.assessmentPending
+        ? "OPFOR BATTLE DAMAGE ASSESSMENT"
+        : "OPFOR FIRE PLAN ACTIVE";
+    }
     else if (
       surfaceStrikeAmmo === 0 ||
       !shipSurfaceHardpoints(defender).some(
@@ -6750,6 +6931,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
       );
     m.phase = "destroyed";
     m.mesh.visible = false;
+    if (m.platformLaunch) m.mesh.userData.platformImpact = true;
     leakers++;
     hullIntegrity = Math.max(0, hullIntegrity - profile.damage);
     createShipDamage(m.mesh.position, profile.damage);
@@ -6885,6 +7067,7 @@ function tick(now: number) {
       }
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
+      updatePlatformFirePlan();
       captureAarSnapshot();
       simAccumulator -= 0.05;
     }
@@ -6947,6 +7130,36 @@ function tick(now: number) {
           : 0;
       }),
     ).toFixed(2);
+    const plannedWeapons = platformFirePlan
+      ? platformFirePlanWeapons(platformFirePlan)
+      : [];
+    canvas.dataset.enemyPlatformFirePlanWave = String(
+      platformFirePlan?.wave ?? 0,
+    );
+    canvas.dataset.enemyPlatformAuthorized = String(
+      platformFirePlan?.authorizedWeapons ?? 0,
+    );
+    canvas.dataset.enemyPlatformCommitted = String(
+      platformFirePlan?.committedWeapons ?? 0,
+    );
+    canvas.dataset.enemyPlatformAssessedHits = String(
+      plannedWeapons.filter(
+        (missile) => missile.mesh.userData.platformImpact === true,
+      ).length,
+    );
+    canvas.dataset.enemyPlatformResolvedWeapons = String(
+      plannedWeapons.filter(
+        (missile) =>
+          missile.platformLaunch?.released && missile.phase === "destroyed",
+      ).length,
+    );
+    canvas.dataset.enemyPlatformAssessmentPending = platformFirePlan
+      ?.assessmentPending
+      ? Math.max(0, platformFirePlan.assessmentReadyAt - elapsed).toFixed(2)
+      : "0.00";
+    canvas.dataset.enemyPlatformFirePlanComplete = platformFirePlan?.completed
+      ? "true"
+      : "false";
     canvas.dataset.enemyPlatformSensorQuality = Math.max(
       0,
       ...[...enemyPlatform.sensorState.values()].map((state) => state.quality),
@@ -6989,6 +7202,13 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformReleasedInFlight = "0";
     canvas.dataset.enemyPlatformTrackLossHold = "0.00";
+    canvas.dataset.enemyPlatformFirePlanWave = "0";
+    canvas.dataset.enemyPlatformAuthorized = "0";
+    canvas.dataset.enemyPlatformCommitted = "0";
+    canvas.dataset.enemyPlatformAssessedHits = "0";
+    canvas.dataset.enemyPlatformResolvedWeapons = "0";
+    canvas.dataset.enemyPlatformAssessmentPending = "0.00";
+    canvas.dataset.enemyPlatformFirePlanComplete = "false";
     canvas.dataset.shipHull = hullIntegrity.toFixed(2);
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformTrackAge = "0.00";

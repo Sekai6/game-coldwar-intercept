@@ -49,6 +49,14 @@ export interface PlatformWeaponSlot {
   datalinkLatency: number;
   datalinkMinimumQuality: number;
   salvoPattern?: "model-order" | "alternate-groups";
+  salvoDoctrine?: {
+    minimumSalvoSize: number;
+    maximumSalvoSize: number;
+    maximumWeaponsInFlight: number;
+    expectedLeakProbability: number;
+    targetHullEstimate: number;
+    assessmentDelay: number;
+  };
 }
 
 export interface PlatformWeaponHardpoint {
@@ -223,4 +231,5 @@ export interface PlatformLaunchReservation {
   threat: EnemyType;
   launchAt: number;
   releaseInterval: number;
+  firePlanWave?: number;
 }
