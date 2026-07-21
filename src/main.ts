@@ -2281,7 +2281,28 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
           ? `BDA DISABLED ${Math.round(estimate.disabledConfidence * 100)}%`
           : `BDA ${estimate.lowerPercent}-${estimate.upperPercent}%`;
   }
-  targetState.textContent = `HARP ${surfaceStrikeAmmo}/${strikeMagazine} / ${bda}`;
+  const enemySlot = enemyPlatform.definition.weaponSlots[0],
+    enemyStates = [...enemyPlatform.hardpointState.values()],
+    enemyFired = enemyStates.filter((state) => state === "fired").length,
+    enemyReserved = enemyStates.filter((state) => state === "reserved").length,
+    enemyTrackAge = enemyPlatform.weaponTrackAge.get(enemySlot.id) ?? 0,
+    enemyRequiredAge = enemySlot.minimumTrackAge + enemySlot.fireControlDelay;
+  let enemyFireState = "OPFOR SEARCH";
+  if (enemyFired > 0) enemyFireState = `OPFOR LAUNCHED ${enemyFired}`;
+  else if (enemyPlatform.targetTrack.source === "esm")
+    enemyFireState = "OPFOR ESM CUE";
+  else if (
+    enemyPlatform.targetTrack.source === "radar" &&
+    enemyPlatform.targetTrack.quality >= enemySlot.minimumTrackQuality
+  )
+    enemyFireState =
+      enemyTrackAge >= enemyRequiredAge
+        ? "OPFOR FC READY"
+        : `OPFOR FC BUILD ${Math.max(0, enemyRequiredAge - enemyTrackAge).toFixed(1)}s`;
+  else if (enemyReserved > 0) enemyFireState = "OPFOR TRACK BUILD";
+  targetState.textContent =
+    `HARP ${surfaceStrikeAmmo}/${strikeMagazine} / ${bda} / ${enemyFireState}`;
+  targetState.setAttribute("data-opfor-fire-state", enemyFireState);
 }
 const targetMarker = document.querySelector("#targetMarker") as HTMLElement,
   targetMarkerLabel = document.querySelector(

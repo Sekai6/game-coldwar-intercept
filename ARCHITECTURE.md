@@ -17,6 +17,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/platforms/defense.ts`: observed-track threat scoring shared by platform maneuver and point-defense allocation.
 - `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, sensor updates, and observed-track-driven platform maneuver OODA.
 - Passive ESM cues are observation-only tracks. They may influence maneuver, while weapon track-age accumulation remains gated by each slot's higher direct-radar quality requirement.
+- `scripts/verify-bilateral-launch.mjs` is the ship-class matrix gate for bilateral surface fire: each friendly class must launch its configured strike and the platform must release physical weapons against both.
 - `src/platforms/catalog.ts`: enemy-platform registry and lookup.
 - `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.
 - `src/surface-combat.ts`: generic friendly anti-ship missile runtime, terminal seeker, finite platform defenses, and platform damage.
