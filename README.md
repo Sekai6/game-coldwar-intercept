@@ -156,7 +156,7 @@ npm run build
 - 防御舰、攻击来源和兼容导弹类型。
 - 首波数量、发射间隔、初始高度、中心坐标和编队宽度。
 - 防御舰坐标，以及在战术雷达上点选双方位置。
-- RIM-67、SM-2MR、SM-2ER、Harpoon 和 CIWS 初始库存。
+- RIM-67、SM-2MR、SM-2ER、Harpoon 和 CIWS 请求库存；Mk 41 请求总数超过实体单元数时会按比例压缩到可用单元。
 - SAM 通道、末段照射器、第二波类型/数量/延迟。
 - 前后发射器以及敌平台近防、反舰发射器、火控、ECM、诱饵和损管健康度。
 - `P-15 RAID`、`SEA SKIMMER`、`SATURATION`、`HIGH SPEED`、`HARPOON RAID` 快速预设。
@@ -171,7 +171,9 @@ npm run build
 | 舰船 | 时代/角色 | 主雷达 | 发射系统 | 默认 SAM 库存 | Harpoon |
 |---|---|---|---|---|---:|
 | USS Long Beach (CGN-9) | NTU 1980s / 核动力导弹巡洋舰 | AN/SPS-48E + AN/SPS-49 | 2 座 Mk 10 | RIM-67 6、SM-2MR 12、SM-2ER 8 | 8 |
-| USS Lake Champlain (CG-57) | 1990s AEGIS 防空巡洋舰 | AN/SPY-1B + AN/SPS-49 | 前后 Mk 41，64 个游戏化单元 | SM-2MR 48、SM-2ER 32 | 8 |
+| USS Lake Champlain (CG-57) | 1990s AEGIS 防空巡洋舰 | AN/SPY-1B + AN/SPS-49 | 前后 Mk 41，64 个游戏化单元 | 实际默认装填：SM-2MR 39、SM-2ER 25 | 8 |
+
+CG-57 元数据中的场景请求默认值为 SM-2MR 48、SM-2ER 32；由于合计超过 64 个实体单元，`allocateVlsLoadout()` 在开局按请求比例分配为 39 枚与 25 枚。用户修改场景库存时也遵循同一容量约束。
 
 舰型配置还声明航速、加减速、转弯率、雷达截面、显著高度、防区距离、子系统名称/位置和命中区段。`main.ts` 不按舰名选择这些值。
 
