@@ -186,6 +186,7 @@ export const MOSKVA = {
       channels: 2,
       range: 42,
       interval: 0.42,
+      reengagementDelay: 0.9,
       basePk: 0.38,
       localSaturationPenalty: 0.08,
       engagementsPerTarget: 2,

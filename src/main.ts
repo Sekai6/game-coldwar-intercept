@@ -4965,6 +4965,16 @@ function updateSurfaceCombat(
         : "inf",
     )
     .join(",");
+  canvas.dataset.platformIncomingTrackEngagements = incomingDefenseTracks
+    .map((incomingTrack) => incomingTrack?.engagements ?? 0)
+    .join(",");
+  canvas.dataset.platformIncomingTrackReengagement = incomingDefenseTracks
+    .map((incomingTrack) =>
+      incomingTrack
+        ? Math.max(0, incomingTrack.nextEngagementReadyAt - elapsed).toFixed(2)
+        : "0.00",
+    )
+    .join(",");
   const prioritizedIncomingTracks = enemyPlatform
     ? [...enemyPlatform.incomingTracks.values()]
         .filter((incomingTrack) => incomingTrack.threatScore > 0)

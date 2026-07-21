@@ -189,6 +189,7 @@ function updatePlatformIncomingTrack(
       estimatedTimeToImpact: Infinity,
       localTrackDensity: 0,
       engagements: 0,
+      nextEngagementReadyAt: -Infinity,
     } satisfies PlatformIncomingTrack;
     platform.incomingTracks.set(missile.id, track);
   }
@@ -463,6 +464,8 @@ export function updateSurfaceStrikeMissile(
       elapsed + pointDefense.interval;
     missile.pointDefenseEngagements++;
     platformTrack.track.engagements++;
+    platformTrack.track.nextEngagementReadyAt =
+      elapsed + pointDefense.reengagementDelay;
     const health =
       (missile.target.subsystemHealth.get("point-defense") ?? 100) / 100;
     const pk = THREE.MathUtils.clamp(

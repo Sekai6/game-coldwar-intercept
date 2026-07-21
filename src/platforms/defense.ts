@@ -79,6 +79,7 @@ export function pointDefensePriorityTracks(
     (track) =>
       track.threatScore > 0 &&
       track.engagements < maximumEngagements &&
-      elapsed >= track.fireControlReadyAt,
+      elapsed >= track.fireControlReadyAt &&
+      elapsed >= track.nextEngagementReadyAt,
   );
 }

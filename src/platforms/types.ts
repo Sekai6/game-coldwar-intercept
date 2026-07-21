@@ -96,6 +96,7 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
       channels: number;
       range: number;
       interval: number;
+      reengagementDelay: number;
       basePk: number;
       localSaturationPenalty: number;
       engagementsPerTarget: number;
@@ -161,6 +162,7 @@ export interface PlatformIncomingTrack {
   estimatedTimeToImpact: number;
   localTrackDensity: number;
   engagements: number;
+  nextEngagementReadyAt: number;
 }
 
 export interface PlatformLaunchReservation {
