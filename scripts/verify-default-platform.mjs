@@ -27,7 +27,9 @@ const strikeLauncherHealth = process.env.OPFOR_STRIKE_LAUNCHER_HEALTH ?? "100";
 const requestedCount = process.env.OPFOR_REQUESTED_COUNT ?? "4";
 const platform = await page.locator("#sbPlatform").inputValue();
 if (platform === "AIRBORNE") throw new Error("platform sandbox defaulted to AIRBORNE");
+const initialCenterZ = Number(await page.locator("#sbZ").inputValue());
 await page.locator("#sbType").selectOption("P-500");
+await page.locator("#sbZ").fill("-380");
 await page.locator("#sbCount").fill(requestedCount);
 await page.locator("#sbInterval").fill("1");
 await page.locator("#sbOpforPointDefenseHealth").fill("0");
@@ -63,6 +65,7 @@ const result = await canvas.evaluate((element) => ({
   sensorQuality: element.dataset.enemyPlatformSensorQuality ?? "",
   maneuver: element.dataset.enemyPlatformManeuverMode ?? "",
 }));
+result.initialCenterZ = initialCenterZ;
 result.fireControlHealth = Number(fireControlHealth);
 result.strikeLauncherHealth = Number(strikeLauncherHealth);
 await page.keyboard.press("5");
@@ -82,6 +85,7 @@ await browser.close();
 if (
   errors.length ||
   result.platform === "AIRBORNE" ||
+  result.initialCenterZ !== -610 ||
   result.centerZ !== -380 ||
   result.fired < 4 ||
   result.launchEffects < 4 ||

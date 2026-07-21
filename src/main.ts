@@ -2535,7 +2535,7 @@ sandbox.style.cssText =
 const threatOptions = THREAT_DEFINITIONS
   .map((definition) => `<option>${definition.id}</option>`)
   .join("");
-sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType">${threatOptions}</select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.12" max="500" step="0.1" value="1.2"></label><label>CENTER X<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
+sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType">${threatOptions}</select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.12" max="500" step="0.1" value="1.2"></label><label>CENTER X (10 = 1 KM)<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z (10 = 1 KM)<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
 (sandbox.querySelector("#sbType") as HTMLSelectElement).value =
   DEFAULT_THREAT_ID;
 const defaultThreatPreset = getThreatDefinition(DEFAULT_THREAT_ID).preset;
@@ -2688,8 +2688,15 @@ sandboxGrid.insertBefore(shipField, sandboxGrid.firstChild);
 sandboxGrid.insertBefore(platformField, shipField.nextSibling);
 function syncPlatformThreatOptions() {
   const selection = platformSelect.value as EnemyPlatformType | "AIRBORNE";
-  if (selection !== "AIRBORNE")
-    (sandbox.querySelector("#sbZ") as HTMLInputElement).value = "-380";
+  if (selection !== "AIRBORNE") {
+    const range = getEnemyPlatformDefinition(selection).defaultScenarioRange;
+    (sandbox.querySelector("#sbX") as HTMLInputElement).value = String(
+      numberInput("#sbShipX"),
+    );
+    (sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(
+      numberInput("#sbShipZ") - range,
+    );
+  }
   const compatible =
     selection === "AIRBORNE"
       ? THREAT_DEFINITIONS.map((definition) => definition.id)
@@ -2935,7 +2942,11 @@ threatSelect.onchange = () => {
     profile.cruiseAltitude,
   );
   (sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(
-    platformSelect.value === "AIRBORNE" ? -profile.defaultRange : -380,
+    platformSelect.value === "AIRBORNE"
+      ? -profile.defaultRange
+      : numberInput("#sbShipZ") -
+          getEnemyPlatformDefinition(platformSelect.value as EnemyPlatformType)
+            .defaultScenarioRange,
   );
 };
 radarCanvas.addEventListener("pointerdown", (e) => {
@@ -7313,6 +7324,10 @@ function tick(now: number) {
   if (enemyPlatform) {
     const states = [...enemyPlatform.hardpointState.values()];
     canvas.dataset.enemyPlatform = enemyPlatform.definition.id;
+    canvas.dataset.surfaceRangeKm = (
+      enemyPlatform.model.position.distanceTo(defender.position) /
+      WORLD_UNITS_PER_KM
+    ).toFixed(2);
     canvas.dataset.enemyPlatformReady = String(
       states.filter((state) => state === "ready").length,
     );
@@ -7455,6 +7470,7 @@ function tick(now: number) {
     canvas.dataset.shipHull = hullIntegrity.toFixed(2);
   } else {
     canvas.dataset.enemyPlatform = "AIRBORNE";
+    canvas.dataset.surfaceRangeKm = "not-applicable";
     canvas.dataset.enemyPlatformReady = "0";
     canvas.dataset.enemyPlatformReserved = "0";
     canvas.dataset.enemyPlatformFired = "0";

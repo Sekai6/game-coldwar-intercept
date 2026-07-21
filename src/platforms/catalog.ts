@@ -12,6 +12,8 @@ const definitions = new Map<EnemyPlatformType, EnemyPlatformDefinition<EnemyPlat
 );
 
 for (const definition of ENEMY_PLATFORM_DEFINITIONS) {
+  if (!Number.isFinite(definition.defaultScenarioRange) || definition.defaultScenarioRange <= 0)
+    throw new Error(`${definition.id}: default scenario range must be positive`);
   const slotIds = new Set<string>();
   for (const slot of definition.weaponSlots) {
     if (slotIds.has(slot.id)) throw new Error(`${definition.id}: duplicate weapon slot ${slot.id}`);

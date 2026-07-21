@@ -97,6 +97,7 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
   nation: string;
   era: string;
   role: string;
+  defaultScenarioRange: number;
   radarCrossSection: number;
   significantHeightMeters: number;
   mobility: {

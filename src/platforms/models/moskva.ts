@@ -198,6 +198,7 @@ export const MOSKVA = {
   nation: "USSR / RUSSIA",
   era: "1980s-2000s",
   role: "GUIDED MISSILE CRUISER / SURFACE STRIKE",
+  defaultScenarioRange: 650,
   radarCrossSection: 15,
   significantHeightMeters: 36,
   mobility: {
