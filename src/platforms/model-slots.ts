@@ -7,9 +7,19 @@ import type {
 export function createPlatformModelSlots(): EnemyPlatformModelSlots {
   return {
     weaponHardpoints: [],
+    pointDefenseMounts: [],
     sensorAnchors: {},
     rotatingSensors: [],
   };
+}
+
+export function addPointDefenseMount(
+  slots: EnemyPlatformModelSlots,
+  id: string,
+  traverse: THREE.Object3D,
+  muzzle: THREE.Object3D,
+) {
+  slots.pointDefenseMounts.push({ id, traverse, muzzle });
 }
 
 export function addWeaponHardpoint(

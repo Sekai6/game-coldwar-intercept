@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { createLoftedHullGeometry, createSheerDeckGeometry, createWaterlineBandGeometry, type HullStation } from "../../models/hull-geometry";
 import { addModelStrut as addStrut, createSlopedBoxGeometry as slopedBox } from "../../models/model-primitives";
 import { applySurfaceDetail } from "../../visual/material-textures";
-import { addSensorAnchor, addWeaponHardpoint, createPlatformModelSlots } from "../model-slots";
+import { addPointDefenseMount, addSensorAnchor, addWeaponHardpoint, createPlatformModelSlots } from "../model-slots";
 import type { EnemyPlatformDefinition } from "../types";
 
 const MOSKVA_HULL: readonly HullStation[] = [
@@ -138,12 +138,52 @@ function createMoskvaModel() {
     ship.add(rail);
   }
 
+  for (const side of [-1, 1])
+    for (const [index, x] of [-7, -14, -21].entries()) {
+      const turret = new THREE.Group();
+      turret.position.set(x, 7.25, side * 4.05);
+      turret.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      const base = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.62, 0.78, 0.48, 12),
+        darkMaterial,
+      );
+      const housing = new THREE.Mesh(
+        new THREE.SphereGeometry(
+          0.55,
+          12,
+          8,
+          0,
+          Math.PI * 2,
+          0,
+          Math.PI * 0.72,
+        ),
+        superMaterial,
+      );
+      housing.position.y = 0.42;
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.065, 0.09, 1.8, 8),
+        darkMaterial,
+      );
+      barrel.rotation.z = Math.PI / 2;
+      barrel.position.set(1.05, 0.55, 0);
+      const muzzle = new THREE.Object3D();
+      muzzle.position.set(1.95, 0.55, 0);
+      turret.add(base, housing, barrel, muzzle);
+      ship.add(turret);
+      addPointDefenseMount(
+        slots,
+        `ak-630-${side > 0 ? "starboard" : "port"}-${index + 1}`,
+        turret,
+        muzzle,
+      );
+    }
+
   ship.userData.platformSlots = slots;
   ship.userData.hullMaterial = hullMaterial;
   ship.userData.hullLength = 83;
   ship.userData.hullBeam = 9.24;
   ship.userData.hullLengthBeamRatio = 83 / 9.24;
-  ship.userData.detail = [forwardHouse, bridge, aftHouse, forwardMast, aftMast, ...slots.weaponHardpoints.map((hardpoint) => hardpoint.mount.parent!)];
+  ship.userData.detail = [forwardHouse, bridge, aftHouse, forwardMast, aftMast, ...slots.weaponHardpoints.map((hardpoint) => hardpoint.mount.parent!), ...slots.pointDefenseMounts.map((mount) => mount.traverse)];
   return ship;
 }
 

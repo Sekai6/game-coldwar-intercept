@@ -43,6 +43,14 @@ function validateModelSlots(
       throw new Error(
         `${definition.id}: sensor ${sensor.id} is missing anchor ${sensor.anchorId}`,
       );
+  if (
+    definition.survivability.pointDefense.channels > 0 &&
+    slots.pointDefenseMounts.length <
+      definition.survivability.pointDefense.channels
+  )
+    throw new Error(
+      `${definition.id}: point-defense channels exceed physical mounts`,
+    );
   const systemIds = new Set([
     ...definition.sensorSlots.map((sensor) => sensor.id),
     ...definition.weaponSlots.map((slot) => slot.id),

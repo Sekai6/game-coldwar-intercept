@@ -72,8 +72,15 @@ export interface PlatformWeaponHardpoint {
   salvoGroup?: string;
 }
 
+export interface PlatformPointDefenseMount {
+  id: string;
+  traverse: THREE.Object3D;
+  muzzle: THREE.Object3D;
+}
+
 export interface EnemyPlatformModelSlots {
   weaponHardpoints: PlatformWeaponHardpoint[];
+  pointDefenseMounts: PlatformPointDefenseMount[];
   sensorAnchors: Record<string, THREE.Object3D>;
   rotatingSensors: THREE.Object3D[];
 }
