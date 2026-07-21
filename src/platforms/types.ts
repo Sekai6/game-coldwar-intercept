@@ -46,6 +46,7 @@ export interface PlatformWeaponSlot {
   datalinkUpdateInterval: number;
   datalinkLatency: number;
   datalinkMinimumQuality: number;
+  salvoPattern?: "model-order" | "alternate-groups";
 }
 
 export interface PlatformWeaponHardpoint {
@@ -55,6 +56,7 @@ export interface PlatformWeaponHardpoint {
   localDirection: THREE.Vector3;
   cover?: THREE.Object3D;
   coverMode?: "blow-off" | "hinged";
+  salvoGroup?: string;
 }
 
 export interface EnemyPlatformModelSlots {

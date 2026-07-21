@@ -26,6 +26,7 @@ export type Missile = {
   platformLaunch?: {
     reservation: PlatformLaunchReservation;
     released: boolean;
+    releasedAt: number | null;
     takeoverLogged: boolean;
     commandPoint: THREE.Vector3;
     commandVelocity: THREE.Vector3;

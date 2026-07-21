@@ -80,7 +80,7 @@ function createMoskvaModel() {
         launcher.add(tube, rear, cover, hardpoint);
         ship.add(launcher);
         const index = (side > 0 ? 8 : 0) + bank * 2 + tier;
-        addWeaponHardpoint(slots, hardpoint, `bazalt-${String(index + 1).padStart(2, "0")}`, "bazalt-canisters", new THREE.Vector3(1, 0, 0), cover);
+        addWeaponHardpoint(slots, hardpoint, `bazalt-${String(index + 1).padStart(2, "0")}`, "bazalt-canisters", new THREE.Vector3(1, 0, 0), cover, "blow-off", side < 0 ? "port" : "starboard");
       }
 
   const forwardMast = new THREE.Group();
@@ -173,7 +173,7 @@ export const MOSKVA = {
     { id: "strike-control", displayName: "ARGUMENT / FRONT DOOR", role: "fire-control", anchorId: "argument", maxRange: 680, updateInterval: 0.55, precision: 0.9, radarHeight: 24 },
   ],
   weaponSlots: [
-    { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8, minimumTrackQuality: 0.3, minimumTrackAge: 2.4, fireControlDelay: 1.6, datalinkUpdateInterval: 1.4, datalinkLatency: 0.35, datalinkMinimumQuality: 0.18 },
+    { id: "bazalt-canisters", displayName: "16 x P-500 BAZALT INCLINED CANISTERS", family: "inclined-canister", compatibleThreats: ["P-500"], capacity: 16, minimumInterval: 0.72, exitSpeed: 3.8, boostDuration: 3.8, guidanceTakeover: 4.8, minimumTrackQuality: 0.3, minimumTrackAge: 2.4, fireControlDelay: 1.6, datalinkUpdateInterval: 1.4, datalinkLatency: 0.35, datalinkMinimumQuality: 0.18, salvoPattern: "alternate-groups" },
   ],
   survivability: {
     hull: 100,

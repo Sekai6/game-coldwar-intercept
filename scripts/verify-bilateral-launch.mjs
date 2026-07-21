@@ -30,7 +30,7 @@ async function runShip(shipId) {
   }
   await page.locator("#sbPlatform").selectOption("slava-moskva");
   await page.locator("#sbType").selectOption("P-500");
-  await page.locator("#sbCount").fill("2");
+  await page.locator("#sbCount").fill("4");
   await page.locator("#sbInterval").fill("1.5");
   await page.locator("#sbZ").fill("-380");
   await page.locator("#sbSpread").fill("0");
@@ -43,7 +43,7 @@ async function runShip(shipId) {
       const canvas = document.querySelector("canvas");
       return (
         Number(canvas?.dataset.surfaceStrikeActive ?? 0) > 0 &&
-        Number(canvas?.dataset.enemyPlatformFired ?? 0) >= 2
+        Number(canvas?.dataset.enemyPlatformFired ?? 0) >= 4
       );
     },
     null,
@@ -57,6 +57,16 @@ async function runShip(shipId) {
     ownTrackQuality: Number(element.dataset.surfaceTrackQuality ?? 0),
     ownFireControl: element.dataset.surfaceFireControlState ?? "unknown",
     enemyFired: Number(element.dataset.enemyPlatformFired ?? 0),
+    enemyFiredOrder: (element.dataset.enemyPlatformFiredOrder ?? "")
+      .split(",")
+      .filter(Boolean),
+    enemyReleaseTimes: (element.dataset.enemyPlatformReleaseTimes ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map(Number),
+    enemyCoversVisible: Number(
+      element.dataset.enemyPlatformCoversVisible ?? 0,
+    ),
     enemyTrackQuality: Number(
       element.dataset.enemyPlatformTargetTrackQuality ?? 0,
     ),
@@ -84,7 +94,13 @@ if (
       result.ownWave < 1 ||
       result.ownActive < 1 ||
       result.ownTrackQuality <= 0 ||
-      result.enemyFired < 2 ||
+      result.enemyFired < 4 ||
+      result.enemyFiredOrder.join(",") !==
+        "bazalt-01,bazalt-09,bazalt-02,bazalt-10" ||
+      result.enemyReleaseTimes.some(
+        (time, index, times) => index > 0 && time - times[index - 1] < 1.49,
+      ) ||
+      result.enemyCoversVisible !== 12 ||
       !result.displayedFireState.startsWith("OPFOR LAUNCHED") ||
       result.enemyTrackSource !== "radar" ||
       result.enemyTrackQuality <= 0,

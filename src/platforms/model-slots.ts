@@ -20,6 +20,7 @@ export function addWeaponHardpoint(
   localDirection: THREE.Vector3,
   cover?: THREE.Object3D,
   coverMode: PlatformWeaponHardpoint["coverMode"] = "blow-off",
+  salvoGroup?: string,
 ) {
   const hardpoint: PlatformWeaponHardpoint = {
     id,
@@ -28,6 +29,7 @@ export function addWeaponHardpoint(
     localDirection: localDirection.clone().normalize(),
     cover,
     coverMode,
+    salvoGroup,
   };
   slots.weaponHardpoints.push(hardpoint);
   return hardpoint;

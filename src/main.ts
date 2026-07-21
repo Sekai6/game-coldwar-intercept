@@ -600,6 +600,7 @@ function addMissile(
       ? {
           reservation: platformReservation,
           released: false,
+          releasedAt: null,
           takeoverLogged: false,
           commandPoint: platformReservation.platform.targetTrack.valid
             ? platformReservation.platform.targetTrack.position.clone()
@@ -6134,6 +6135,27 @@ function updateIncomingMissile(m: Missile, dt: number) {
       return;
     }
     if (elapsed >= m.launchAt) {
+      const earlierReservationPending = missiles.some((candidate) => {
+        const launch = candidate.platformLaunch;
+        return (
+          launch &&
+          launch !== pendingPlatformLaunch &&
+          !launch.released &&
+          launch.reservation.platform === platform &&
+          launch.reservation.weaponSlot.id ===
+            pendingPlatformLaunch.reservation.weaponSlot.id &&
+          launch.reservation.launchAt <
+            pendingPlatformLaunch.reservation.launchAt &&
+          candidate.phase !== "destroyed"
+        );
+      });
+      if (earlierReservationPending) {
+        m.launchAt = elapsed + 0.05;
+        m.mesh.visible = false;
+        m.path.visible = false;
+        m.mesh.userData.seekerLine.visible = false;
+        return;
+      }
       const trackQuality = Math.max(
         0,
         ...[...platform.sensorState.values()].map((state) => state.quality),
@@ -6185,6 +6207,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
   const platformLaunch = m.platformLaunch;
   if (platformLaunch && !platformLaunch.released) {
     platformLaunch.released = true;
+    platformLaunch.releasedAt = elapsed;
     const platformTrack = platformLaunch.reservation.platform.targetTrack;
     if (platformTrack.valid) {
       platformLaunch.commandPoint
@@ -6851,6 +6874,19 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformFired = String(
       states.filter((state) => state === "fired").length,
     );
+    const releasedPlatformWeapons = missiles
+      .filter((missile) => missile.platformLaunch?.released)
+      .sort(
+        (a, b) =>
+          (a.platformLaunch!.releasedAt ?? Infinity) -
+          (b.platformLaunch!.releasedAt ?? Infinity),
+      );
+    canvas.dataset.enemyPlatformFiredOrder = releasedPlatformWeapons
+      .map((missile) => missile.platformLaunch!.reservation.hardpoint.id)
+      .join(",");
+    canvas.dataset.enemyPlatformReleaseTimes = releasedPlatformWeapons
+      .map((missile) => missile.platformLaunch!.releasedAt?.toFixed(2) ?? "")
+      .join(",");
     canvas.dataset.enemyPlatformCanceled = String(
       states.filter((state) => state === "canceled").length,
     );
@@ -6890,6 +6926,8 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformReady = "0";
     canvas.dataset.enemyPlatformReserved = "0";
     canvas.dataset.enemyPlatformFired = "0";
+    canvas.dataset.enemyPlatformFiredOrder = "";
+    canvas.dataset.enemyPlatformReleaseTimes = "";
     canvas.dataset.enemyPlatformCanceled = "0";
     canvas.dataset.enemyPlatformSensorQuality = "0.000";
     canvas.dataset.enemyPlatformTrackAge = "0.00";

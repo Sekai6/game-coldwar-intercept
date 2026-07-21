@@ -7,6 +7,7 @@ import type {
   EnemyPlatformModelSlots,
   PlatformLaunchReservation,
   PlatformDamageControlEvent,
+  PlatformWeaponHardpoint,
 } from "./types";
 import { assessPlatformIncomingTracks } from "./defense";
 
@@ -162,11 +163,15 @@ export function reservePlatformLaunches(
     throw new Error(
       `${platform.definition.id}: no launcher slot supports ${threat}`,
     );
-  const hardpoints = platform.slots.weaponHardpoints.filter(
+  const availableHardpoints = platform.slots.weaponHardpoints.filter(
     (hardpoint) =>
       hardpoint.slotId === weaponSlot.id &&
       platform.hardpointState.get(hardpoint.id) === "ready",
   );
+  const hardpoints =
+    weaponSlot.salvoPattern === "alternate-groups"
+      ? alternateHardpointGroups(availableHardpoints)
+      : availableHardpoints;
   const count = Math.min(Math.max(0, requestedCount), hardpoints.length);
   const interval = Math.max(weaponSlot.minimumInterval, requestedInterval);
   const slotStart = Math.max(
@@ -192,6 +197,27 @@ export function reservePlatformLaunches(
       slotStart + count * interval,
     );
   return reservations;
+}
+
+function alternateHardpointGroups(
+  hardpoints: readonly PlatformWeaponHardpoint[],
+) {
+  const groups = new Map<string, PlatformWeaponHardpoint[]>();
+  for (const hardpoint of hardpoints) {
+    const group = hardpoint.salvoGroup ?? hardpoint.id;
+    const members = groups.get(group) ?? [];
+    members.push(hardpoint);
+    groups.set(group, members);
+  }
+  if (groups.size <= 1) return [...hardpoints];
+  const ordered: PlatformWeaponHardpoint[] = [];
+  const queues = [...groups.values()];
+  for (let index = 0; ordered.length < hardpoints.length; index++)
+    for (const queue of queues) {
+      const hardpoint = queue[index];
+      if (hardpoint) ordered.push(hardpoint);
+    }
+  return ordered;
 }
 
 export function reservationOrigin(reservation: PlatformLaunchReservation) {
