@@ -67,6 +67,7 @@ import {
   planSurfaceSalvo,
 } from "./surface-doctrine";
 import { pointDefenseCapability } from "./platforms/defense";
+import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import type {
   AarCategory,
   AarEvent,
@@ -4999,28 +5000,6 @@ function planSurfaceStrike(manual = false) {
     `SURFACE OODA / WAVE ${surfaceStrikeWave} / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / ${salvoPlan.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvoPlan.planningLeakProbability * 100)}% / ROUTE +/-${(strike.routeLateralOffset / 10).toFixed(1)} km / TOT WINDOW ${strike.arrivalWindow.toFixed(1)}s / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
   );
   return true;
-}
-
-function recordPlatformPointDefenseShot(
-  platform: EnemyPlatformInstance,
-  mountId: string,
-  origin: THREE.Vector3,
-  targetBearing: number,
-  traverseError: number,
-) {
-  const history = (platform.model.userData.pointDefenseMountHistory ??= []) as string[];
-  history.push(mountId);
-  if (history.length > 24) history.shift();
-  platform.model.userData.lastPointDefenseMount = mountId;
-  platform.model.userData.lastPointDefenseBearing = targetBearing;
-  platform.model.userData.lastPointDefenseTraverseError = traverseError;
-  platform.model.userData.pointDefenseShots =
-    Number(platform.model.userData.pointDefenseShots ?? 0) + 1;
-  platform.model.userData.pointDefenseOriginOffset = origin
-    .clone()
-    .sub(platform.model.position)
-    .setY(0)
-    .length();
 }
 
 function updateSurfaceCombat(
