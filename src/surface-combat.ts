@@ -42,6 +42,16 @@ export type SurfaceStrikeMissile = {
   lastDatalinkQuality: number;
   seekerAcquired: boolean;
   targetLostAt: number | null;
+  pendingPointDefense: {
+    resolveAt: number;
+    pk: number;
+    threatScore: number;
+    estimatedTimeToImpact: number;
+    localTrackDensity: number;
+    engagement: number;
+    maximumEngagements: number;
+    willHit: boolean;
+  } | null;
 };
 
 export type SurfaceStrikeEvent =
@@ -63,6 +73,14 @@ export type SurfaceStrikeEvent =
       kind: "point-defense-ready";
       missile: SurfaceStrikeMissile;
       quality: number;
+    }
+  | {
+      kind: "point-defense-fire";
+      missile: SurfaceStrikeMissile;
+      pk: number;
+      timeOfFlight: number;
+      engagement: number;
+      maximumEngagements: number;
     }
   | {
       kind: "soft-kill";
@@ -155,6 +173,7 @@ export function createSurfaceStrikeMissile(
     lastDatalinkQuality: -1,
     seekerAcquired: false,
     targetLostAt: null,
+    pendingPointDefense: null,
   };
 }
 
@@ -446,6 +465,28 @@ export function updateSurfaceStrikeMissile(
   const defenseTrackRange = platformTrack.track.position.distanceTo(
     missile.target.model.position,
   );
+  if (
+    missile.pendingPointDefense &&
+    elapsed >= missile.pendingPointDefense.resolveAt
+  ) {
+    const shot = missile.pendingPointDefense;
+    missile.pendingPointDefense = null;
+    if (shot.willHit) {
+      missile.phase = "destroyed";
+      missile.mesh.visible = false;
+      missile.path.visible = false;
+      return {
+        kind: "point-defense",
+        missile,
+        ...shot,
+      } satisfies SurfaceStrikeEvent;
+    }
+    return {
+      kind: "point-defense-miss",
+      missile,
+      ...shot,
+    } satisfies SurfaceStrikeEvent;
+  }
   const availableChannel = missile.target.pointDefenseChannelReady.findIndex(
     (readyAt) => elapsed >= readyAt,
   );
@@ -458,14 +499,11 @@ export function updateSurfaceStrikeMissile(
       missile.id &&
     defenseTrackRange < pointDefense.range &&
     missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
+    !missile.pendingPointDefense &&
     availableChannel >= 0
   ) {
-    missile.target.pointDefenseChannelReady[availableChannel] =
-      elapsed + pointDefense.interval;
     missile.pointDefenseEngagements++;
     platformTrack.track.engagements++;
-    platformTrack.track.nextEngagementReadyAt =
-      elapsed + pointDefense.reengagementDelay;
     const health =
       (missile.target.subsystemHealth.get("point-defense") ?? 100) / 100;
     const pk = THREE.MathUtils.clamp(
@@ -479,8 +517,7 @@ export function updateSurfaceStrikeMissile(
       0.72,
     );
     const engagement = missile.pointDefenseEngagements;
-    const engagementEvent = {
-      missile,
+    const engagementData = {
       pk,
       threatScore: platformTrack.track.threatScore,
       estimatedTimeToImpact: platformTrack.track.estimatedTimeToImpact,
@@ -488,23 +525,33 @@ export function updateSurfaceStrikeMissile(
       engagement,
       maximumEngagements: pointDefense.engagementsPerTarget,
     };
-    if (
-      deterministicRoll(
-        missile,
-        3 + engagement * 5.17 + Math.floor(missile.age),
-      ) < pk
-    ) {
-      missile.phase = "destroyed";
-      missile.mesh.visible = false;
-      missile.path.visible = false;
-      return {
-        kind: "point-defense",
-        ...engagementEvent,
-      } satisfies SurfaceStrikeEvent;
-    }
+    const timeOfFlight = Math.max(
+      pointDefense.minimumTimeOfFlight,
+      defenseTrackRange / Math.max(1, pointDefense.effectorSpeed),
+    );
+    const resolveAt = elapsed + timeOfFlight;
+    missile.target.pointDefenseChannelReady[availableChannel] = Math.max(
+      elapsed + pointDefense.interval,
+      resolveAt,
+    );
+    platformTrack.track.nextEngagementReadyAt =
+      resolveAt + pointDefense.reengagementDelay;
+    missile.pendingPointDefense = {
+      resolveAt,
+      ...engagementData,
+      willHit:
+        deterministicRoll(
+          missile,
+          3 + engagement * 5.17 + Math.floor(missile.age),
+        ) < pk,
+    };
     return {
-      kind: "point-defense-miss",
-      ...engagementEvent,
+      kind: "point-defense-fire",
+      missile,
+      pk,
+      timeOfFlight,
+      engagement,
+      maximumEngagements: pointDefense.engagementsPerTarget,
     } satisfies SurfaceStrikeEvent;
   }
 

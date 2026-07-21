@@ -2979,6 +2979,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     }, 0),
 );
 function classifyAarEvent(text: string): AarCategory {
+  if (/POINT DEFENSE FIRE/.test(text)) return "fire";
   if (
     /INTERCEPT|SOFT KILL|SURFACE KILL|POINT DEFENSE|HARPOON HIT|IMPACT|CIWS KILL|MISS|DAMAGED|DEGRADED|CRITICAL|DESTROYED|FRAGMENTATION|DAMAGE ISOLATION|ROUND[S]? TRAPPED/.test(
       text,
@@ -4800,6 +4801,15 @@ function updateSurfaceCombat(
       log(
         `${missile.target.definition.name} POINT DEFENSE READY / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}%`,
       );
+    else if (event.kind === "point-defense-fire") {
+      const origin = missile.target.model.position
+        .clone()
+        .add(new THREE.Vector3(0, 8, 0));
+      ciwsTracer(missile.mesh.position, origin);
+      log(
+        `${missile.target.definition.name} POINT DEFENSE FIRE / HARPOON ${missile.id} / SHOT ${event.engagement}/${event.maximumEngagements} / TOF ${event.timeOfFlight.toFixed(2)}s / PK ${Math.round(event.pk * 100)}%`,
+      );
+    }
     else if (event.kind === "soft-kill")
       {
         surfaceSoftKills++;
@@ -4937,6 +4947,13 @@ function updateSurfaceCombat(
       missile.commandPoint
         .distanceTo(missile.target.model.position)
         .toFixed(1),
+    )
+    .join(",");
+  canvas.dataset.surfaceStrikePointDefensePending = liveSurfaceStrikes
+    .map((missile) =>
+      missile.pendingPointDefense
+        ? Math.max(0, missile.pendingPointDefense.resolveAt - elapsed).toFixed(2)
+        : "none",
     )
     .join(",");
   const platformDefense = enemyPlatform?.definition.survivability.pointDefense;

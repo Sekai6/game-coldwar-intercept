@@ -97,6 +97,8 @@ export interface EnemyPlatformDefinition<Id extends string = string> {
       range: number;
       interval: number;
       reengagementDelay: number;
+      effectorSpeed: number;
+      minimumTimeOfFlight: number;
       basePk: number;
       localSaturationPenalty: number;
       engagementsPerTarget: number;
