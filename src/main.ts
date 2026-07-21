@@ -1438,7 +1438,10 @@ function resetVlsCells() {
     cell.lid.rotation.z = 0;
   }
 }
-function createVlsLaunchEffect(origin: THREE.Vector3) {
+function createVlsLaunchEffect(
+  origin: THREE.Vector3,
+  departureDirection?: THREE.Vector3,
+) {
   const group = new THREE.Group(),
     flame = new THREE.Mesh(
       new THREE.ConeGeometry(0.55, 4.8, 12, 1, true),
@@ -1475,6 +1478,11 @@ function createVlsLaunchEffect(origin: THREE.Vector3) {
     group.add(puff);
   }
   group.position.copy(origin);
+  if (departureDirection && departureDirection.lengthSq() > 0)
+    group.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, -1, 0),
+      departureDirection.clone().normalize().negate(),
+    );
   scene.add(group);
   vlsLaunchEffects.push({ group, flame, smoke, light, age: 0 });
 }
@@ -6571,6 +6579,15 @@ function updateIncomingMissile(m: Missile, dt: number) {
     }
     platformLaunch.nextDatalink = elapsed;
     releasePlatformHardpoint(platformLaunch.reservation);
+    createVlsLaunchEffect(
+      m.mesh.position,
+      reservationDirection(platformLaunch.reservation),
+    );
+    platformLaunch.reservation.platform.model.userData.platformLaunchEffects =
+      Number(
+        platformLaunch.reservation.platform.model.userData.platformLaunchEffects ??
+          0,
+      ) + 1;
     platformLaunch.reservation.platform.weaponSlotNextRelease.set(
       platformLaunch.reservation.weaponSlot.id,
       elapsed + platformLaunch.reservation.releaseInterval,
@@ -7258,6 +7275,9 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformFired = String(
       states.filter((state) => state === "fired").length,
     );
+    canvas.dataset.enemyPlatformLaunchEffects = String(
+      enemyPlatform.model.userData.platformLaunchEffects ?? 0,
+    );
     const releasedPlatformWeapons = missiles
       .filter((missile) => missile.platformLaunch?.released)
       .sort(
@@ -7391,6 +7411,7 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformReady = "0";
     canvas.dataset.enemyPlatformReserved = "0";
     canvas.dataset.enemyPlatformFired = "0";
+    canvas.dataset.enemyPlatformLaunchEffects = "0";
     canvas.dataset.enemyPlatformFiredOrder = "";
     canvas.dataset.enemyPlatformReleaseTimes = "";
     canvas.dataset.enemyPlatformArrivalPlans = "";

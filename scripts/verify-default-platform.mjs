@@ -43,6 +43,7 @@ const result = await canvas.evaluate((element) => ({
   platform: document.querySelector("#sbPlatform")?.value ?? "",
   centerZ: Number(document.querySelector("#sbZ")?.value ?? 0),
   fired: Number(element.dataset.enemyPlatformFired ?? 0),
+  launchEffects: Number(element.dataset.enemyPlatformLaunchEffects ?? 0),
   wave: Number(element.dataset.enemyPlatformFirePlanWave ?? 0),
   trackQuality: element.dataset.enemyPlatformTargetTrackQuality ?? "",
   trackSource: element.dataset.enemyPlatformTargetTrackSource ?? "",
@@ -62,6 +63,7 @@ if (
   result.platform === "AIRBORNE" ||
   result.centerZ !== -380 ||
   result.fired < 4 ||
+  result.launchEffects < 4 ||
   result.wave < 1
 )
   process.exitCode = 1;
