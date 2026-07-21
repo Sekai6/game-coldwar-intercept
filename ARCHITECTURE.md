@@ -18,6 +18,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, sensor updates, and observed-track-driven platform maneuver OODA.
 - Weapon slots may request `alternate-groups`; model hardpoints supply opaque `salvoGroup` labels, and the generic reservation scheduler round-robins groups while preserving release queue order.
 - Passive ESM cues are observation-only tracks. They may influence maneuver, while weapon track-age accumulation remains gated by each slot's higher direct-radar quality requirement.
+- Direct-radar fire-control memory has a slot-defined holdover. Natural missed scans decay the solution; explicit sensor shutdown bypasses holdover and allows ESM to replace the track only as a maneuver cue.
 - `scripts/verify-bilateral-launch.mjs` is the ship-class matrix gate for bilateral surface fire: each friendly class must launch its configured strike and the platform must release physical weapons against both.
 - `src/platforms/catalog.ts`: enemy-platform registry and lookup.
 - `src/platforms/models/<platform>.ts`: one platform-specific model and complete capability definition.

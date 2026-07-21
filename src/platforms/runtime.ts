@@ -541,9 +541,20 @@ export function updateEnemyPlatform(
   const ewHealth =
       (platform.subsystemHealth.get("electronic-warfare") ?? 100) / 100,
     radarTrack = sensorDetected && detectedQuality > 0.08,
+    directTrackHoldover = Math.max(
+      0,
+      ...platform.definition.weaponSlots.map(
+        (slot) => slot.fireControlTrackHoldover,
+      ),
+    ),
+    directTrackMemory =
+      sensorsEnabled &&
+      track.source === "radar" &&
+      elapsed - track.lastUpdate <= directTrackHoldover,
     esmTrack =
       targetEmitting &&
       ewHealth > 0.04 &&
+      !directTrackMemory &&
       (!radarTrack || detectedQuality < 0.22) &&
       elapsed - track.lastUpdate >= 1.1;
   if (radarTrack) {
@@ -624,11 +635,22 @@ export function updateEnemyPlatform(
   for (const slot of platform.definition.weaponSlots) {
     const sufficient =
       track.valid && track.quality >= slot.minimumTrackQuality;
+    const holdingDirectTrack =
+      !sufficient &&
+      track.valid &&
+      track.source === "radar" &&
+      elapsed - track.lastUpdate <= slot.fireControlTrackHoldover;
+    const previousAge = platform.weaponTrackAge.get(slot.id) ?? 0;
     platform.weaponTrackAge.set(
       slot.id,
-      sufficient ? (platform.weaponTrackAge.get(slot.id) ?? 0) + dt : 0,
+      sufficient
+        ? previousAge + dt
+        : holdingDirectTrack
+          ? Math.max(0, previousAge - dt * 0.35)
+          : 0,
     );
-    if (!sufficient) platform.weaponTrackReadyLogged.delete(slot.id);
+    if (!sufficient && !holdingDirectTrack)
+      platform.weaponTrackReadyLogged.delete(slot.id);
   }
   return {
     maneuverChanged: previousManeuverMode !== platform.maneuverMode,

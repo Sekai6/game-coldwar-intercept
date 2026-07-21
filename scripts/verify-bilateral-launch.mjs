@@ -82,10 +82,49 @@ async function runShip(shipId) {
 const results = [];
 for (const shipId of ["long-beach", "ticonderoga"])
   results.push(await runShip(shipId));
+
+await page.goto(process.env.APP_URL ?? "http://127.0.0.1:5173/", {
+  waitUntil: "networkidle",
+});
+await page.locator("#sbPlatform").selectOption("slava-moskva");
+await page.locator("#sbType").selectOption("P-500");
+await page.locator("#sbCount").fill("4");
+await page.locator("#sbInterval").fill("1.5");
+await page.locator("#sbZ").fill("-380");
+await page.locator("#sbSpread").fill("0");
+await page.locator("#sbStart").click();
+await page.getByRole("button", { name: "TIME: 1X" }).click();
+await page.getByRole("button", { name: "TIME: 2X" }).click();
+await page.waitForFunction(
+  () => Number(document.querySelector("canvas")?.dataset.enemyPlatformFired ?? 0) === 1,
+  null,
+  { timeout: 20_000 },
+);
+await page.getByRole("button", { name: "OPFOR RADAR: ACTIVE" }).click();
+await page.waitForFunction(
+  () => document.querySelector("canvas")?.dataset.opforRadar === "silent",
+  null,
+  { timeout: 2_000 },
+);
+const firedAtSilence = Number(
+  await page
+    .locator("canvas")
+    .first()
+    .getAttribute("data-enemy-platform-fired"),
+);
+await page.waitForTimeout(5_000);
+const radarLoss = await page.locator("canvas").first().evaluate((element) => ({
+  radar: element.dataset.opforRadar ?? "unknown",
+  fired: Number(element.dataset.enemyPlatformFired ?? 0),
+  reserved: Number(element.dataset.enemyPlatformReserved ?? 0),
+  trackSource: element.dataset.enemyPlatformTargetTrackSource ?? "none",
+  trackQuality: Number(element.dataset.enemyPlatformTargetTrackQuality ?? 0),
+}));
+radarLoss.firedAtSilence = firedAtSilence;
 await page.setViewportSize({ width: 390, height: 844 });
 await page.screenshot({ path: "verification-bilateral-mobile.png", fullPage: true });
 
-console.log(JSON.stringify({ results, errors }, null, 2));
+console.log(JSON.stringify({ results, radarLoss, errors }, null, 2));
 await browser.close();
 if (
   errors.length > 0 ||
@@ -100,10 +139,18 @@ if (
       result.enemyReleaseTimes.some(
         (time, index, times) => index > 0 && time - times[index - 1] < 1.49,
       ) ||
+      result.enemyReleaseTimes.some(
+        (time, index, times) => index > 0 && time - times[index - 1] > 1.56,
+      ) ||
       result.enemyCoversVisible !== 12 ||
       !result.displayedFireState.startsWith("OPFOR LAUNCHED") ||
       result.enemyTrackSource !== "radar" ||
       result.enemyTrackQuality <= 0,
-  )
+  ) ||
+  radarLoss.radar !== "silent" ||
+  radarLoss.fired !== radarLoss.firedAtSilence ||
+  radarLoss.fired >= 4 ||
+  radarLoss.reserved < 1 ||
+  radarLoss.trackSource === "radar"
 )
   process.exitCode = 1;

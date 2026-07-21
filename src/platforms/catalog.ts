@@ -18,6 +18,8 @@ for (const definition of ENEMY_PLATFORM_DEFINITIONS) {
     slotIds.add(slot.id);
     if (Number(slot.capacity) <= 0 || Number(slot.compatibleThreats.length) === 0)
       throw new Error(`${definition.id}: ${slot.id} needs capacity and compatible threats`);
+    if (slot.fireControlTrackHoldover < 0)
+      throw new Error(`${definition.id}: ${slot.id} needs a non-negative fire-control holdover`);
   }
 }
 
