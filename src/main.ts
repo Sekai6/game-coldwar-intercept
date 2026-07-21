@@ -2743,6 +2743,8 @@ shipSelect.onchange = () => {
     "100";
   (sandbox.querySelector("#sbOpforStrikeLauncherHealth") as HTMLInputElement).value =
     "100";
+  (sandbox.querySelector("#sbOpforFireControlHealth") as HTMLInputElement).value =
+    "100";
   (sandbox.querySelector("#sbOpforEcmHealth") as HTMLInputElement).value =
     "100";
   (sandbox.querySelector("#sbOpforDecoyHealth") as HTMLInputElement).value =
@@ -2801,6 +2803,7 @@ for (const [label, id] of [
   ["AFT LAUNCHER HEALTH", "sbLauncherAftHealth"],
   ["OPFOR POINT DEFENSE HEALTH", "sbOpforPointDefenseHealth"],
   ["OPFOR STRIKE LAUNCHER HEALTH", "sbOpforStrikeLauncherHealth"],
+  ["OPFOR FIRE CONTROL HEALTH", "sbOpforFireControlHealth"],
   ["OPFOR ECM HEALTH", "sbOpforEcmHealth"],
   ["OPFOR DECOY LAUNCHER HEALTH", "sbOpforDecoyHealth"],
   ["OPFOR DAMAGE CONTROL HEALTH", "sbOpforDamageControlHealth"],
@@ -3216,6 +3219,14 @@ radarCanvas.addEventListener("pointerdown", (e) => {
           "bazalt-canisters",
           THREE.MathUtils.clamp(
             numberInput("#sbOpforStrikeLauncherHealth"),
+            0,
+            100,
+          ),
+        );
+        enemyPlatform.subsystemHealth.set(
+          "strike-control",
+          THREE.MathUtils.clamp(
+            numberInput("#sbOpforFireControlHealth"),
             0,
             100,
           ),
@@ -6480,6 +6491,9 @@ function updateIncomingMissile(m: Missile, dt: number) {
       weaponSlot = pendingPlatformLaunch.reservation.weaponSlot,
       launcherHealth =
         (platform.subsystemHealth.get(weaponSlot.id) ?? 100) / 100,
+      fireControlHealth =
+        (platform.subsystemHealth.get(weaponSlot.fireControlSensorId) ?? 100) /
+        100,
       trackQuality = Math.max(
         0,
         ...[...platform.sensorState.values()].map((state) => state.quality),
@@ -6500,6 +6514,10 @@ function updateIncomingMissile(m: Missile, dt: number) {
     }
     if (launcherHealth <= 0.05) {
       cancelPendingPlatformLaunch(m, "STRIKE LAUNCHER DISABLED");
+      return;
+    }
+    if (fireControlHealth <= 0.05) {
+      cancelPendingPlatformLaunch(m, "FIRE CONTROL DISABLED");
       return;
     }
     if (fireControlReady) {

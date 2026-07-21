@@ -29,6 +29,7 @@ await page.locator("#sbCount").fill("4");
 await page.locator("#sbInterval").fill("1");
 await page.locator("#sbOpforPointDefenseHealth").fill("0");
 await page.locator("#sbOpforStrikeLauncherHealth").fill("100");
+await page.locator("#sbOpforFireControlHealth").fill("100");
 await page.locator("#sbOpforEcmHealth").fill("0");
 await page.locator("#sbOpforDecoyHealth").fill("0");
 await page.locator("#sbStart").click();

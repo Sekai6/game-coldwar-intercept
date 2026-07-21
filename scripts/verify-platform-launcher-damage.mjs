@@ -9,6 +9,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
+const disabledSystem = process.env.OPFOR_DISABLED_SYSTEM ?? "launcher";
 page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
 page.on("pageerror", (error) => errors.push(error.message));
 await page.goto(process.env.APP_URL ?? "http://127.0.0.1:5173/", {
@@ -18,7 +19,12 @@ await page.locator("#sbPlatform").selectOption("slava-moskva");
 await page.locator("#sbType").selectOption("P-500");
 await page.locator("#sbCount").fill("4");
 await page.locator("#sbInterval").fill("1");
-await page.locator("#sbOpforStrikeLauncherHealth").fill("0");
+await page
+  .locator("#sbOpforStrikeLauncherHealth")
+  .fill(disabledSystem === "launcher" ? "0" : "100");
+await page
+  .locator("#sbOpforFireControlHealth")
+  .fill(disabledSystem === "fire-control" ? "0" : "100");
 await page.locator("#sbOpforPointDefenseHealth").fill("0");
 await page.locator("#sbOpforEcmHealth").fill("0");
 await page.locator("#sbOpforDecoyHealth").fill("0");
@@ -32,7 +38,7 @@ const state = await page.locator("canvas").first().evaluate((element) => ({
   canceled: Number(element.dataset.enemyPlatformCanceled ?? 0),
   effects: Number(element.dataset.enemyPlatformLaunchEffects ?? 0),
 }));
-console.log(JSON.stringify({ state, errors }, null, 2));
+console.log(JSON.stringify({ disabledSystem, state, errors }, null, 2));
 await browser.close();
 if (errors.length || state.fired !== 0 || state.effects !== 0 || state.canceled < 4)
   process.exitCode = 1;

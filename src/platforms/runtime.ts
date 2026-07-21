@@ -30,6 +30,13 @@ function validateModelSlots(
       );
   }
   for (const slot of definition.weaponSlots) {
+    const fireControlSensor = definition.sensorSlots.find(
+      (sensor) => sensor.id === slot.fireControlSensorId,
+    );
+    if (!fireControlSensor || fireControlSensor.role !== "fire-control")
+      throw new Error(
+        `${definition.id}: ${slot.id} needs a fire-control sensor`,
+      );
     const count = slots.weaponHardpoints.filter(
       (hardpoint) => hardpoint.slotId === slot.id,
     ).length;
@@ -674,8 +681,12 @@ export function updateEnemyPlatform(
     }
   }
   for (const slot of platform.definition.weaponSlots) {
+    const fireControlHealth =
+      (platform.subsystemHealth.get(slot.fireControlSensorId) ?? 100) / 100;
     const sufficient =
-      track.valid && track.quality >= slot.minimumTrackQuality;
+      fireControlHealth > 0.05 &&
+      track.valid &&
+      track.quality >= slot.minimumTrackQuality;
     const holdingDirectTrack =
       !sufficient &&
       track.valid &&

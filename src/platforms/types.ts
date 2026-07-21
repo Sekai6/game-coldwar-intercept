@@ -35,6 +35,7 @@ export interface PlatformWeaponSlot {
   displayName: string;
   family: PlatformLauncherFamily;
   compatibleThreats: readonly EnemyType[];
+  fireControlSensorId: string;
   capacity: number;
   minimumInterval: number;
   exitSpeed: number;
