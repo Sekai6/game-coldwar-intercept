@@ -54,6 +54,8 @@ const result = await canvas.evaluate((element) => ({
   sensorQuality: element.dataset.enemyPlatformSensorQuality ?? "",
   maneuver: element.dataset.enemyPlatformManeuverMode ?? "",
 }));
+await page.keyboard.press("5");
+await page.waitForTimeout(500);
 await page.screenshot({ path: "verification-default-platform.png", fullPage: true });
 result.errors = errors;
 console.log(JSON.stringify(result, null, 2));
