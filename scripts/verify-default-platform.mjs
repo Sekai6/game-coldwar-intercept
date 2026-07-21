@@ -35,9 +35,9 @@ await page.getByRole("button", { name: "TIME: 1X" }).click();
 await page.getByRole("button", { name: "TIME: 2X" }).click();
 const canvas = page.locator("canvas").first();
 await page.waitForFunction(
-  () => Number(document.querySelector("canvas")?.dataset.enemyPlatformFired ?? 0) > 0,
+  () => Number(document.querySelector("canvas")?.dataset.enemyPlatformFired ?? 0) >= 4,
   null,
-  { timeout: 60_000 },
+  { timeout: 45_000 },
 );
 const result = await canvas.evaluate((element) => ({
   platform: document.querySelector("#sbPlatform")?.value ?? "",
@@ -61,7 +61,7 @@ if (
   errors.length ||
   result.platform === "AIRBORNE" ||
   result.centerZ !== -380 ||
-  result.fired < 1 ||
+  result.fired < 4 ||
   result.wave < 1
 )
   process.exitCode = 1;
