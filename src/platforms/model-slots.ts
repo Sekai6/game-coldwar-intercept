@@ -20,6 +20,8 @@ export function addPointDefenseMount(
   muzzle: THREE.Object3D,
   sectorCenter: number,
   sectorHalfAngle: number,
+  traverseRate: number,
+  alignmentTolerance: number,
 ) {
   slots.pointDefenseMounts.push({
     id,
@@ -27,6 +29,8 @@ export function addPointDefenseMount(
     muzzle,
     sectorCenter,
     sectorHalfAngle,
+    traverseRate,
+    alignmentTolerance,
   });
 }
 

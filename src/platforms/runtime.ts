@@ -60,7 +60,12 @@ function validateModelSlots(
       !Number.isFinite(mount.sectorCenter) ||
       !Number.isFinite(mount.sectorHalfAngle) ||
       mount.sectorHalfAngle <= 0 ||
-      mount.sectorHalfAngle > Math.PI
+      mount.sectorHalfAngle > Math.PI ||
+      !Number.isFinite(mount.traverseRate) ||
+      mount.traverseRate <= 0 ||
+      !Number.isFinite(mount.alignmentTolerance) ||
+      mount.alignmentTolerance <= 0 ||
+      mount.alignmentTolerance > mount.sectorHalfAngle
     )
       throw new Error(`${definition.id}: invalid firing sector for ${mount.id}`);
   }

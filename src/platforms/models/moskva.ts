@@ -177,6 +177,8 @@ function createMoskvaModel() {
         muzzle,
         THREE.MathUtils.degToRad(side > 0 ? 75 : -75),
         THREE.MathUtils.degToRad(100),
+        THREE.MathUtils.degToRad(95),
+        THREE.MathUtils.degToRad(4),
       );
     }
 

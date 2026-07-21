@@ -76,11 +76,17 @@ const state = await canvas.evaluate((element) => ({
   shots: Number(element.dataset.platformPointDefenseShots ?? 0),
   lastMount: element.dataset.platformPointDefenseLastMount ?? "none",
   lastBearing: Number(element.dataset.platformPointDefenseLastBearing ?? 0),
+  lastTraverseError: Number(
+    element.dataset.platformPointDefenseLastTraverseError ?? 0,
+  ),
   lastSectorCenter: Number(
     element.dataset.platformPointDefenseLastSectorCenter ?? 0,
   ),
   lastSectorHalfAngle: Number(
     element.dataset.platformPointDefenseLastSectorHalfAngle ?? 0,
+  ),
+  lastAlignmentTolerance: Number(
+    element.dataset.platformPointDefenseLastAlignmentTolerance ?? 0,
   ),
   mountHistory: (element.dataset.platformPointDefenseMountHistory ?? "")
     .split(",")
@@ -119,6 +125,8 @@ if (
   state.originOffset < 5 ||
   lastSectorError > state.lastSectorHalfAngle + 0.001 ||
   state.lastSectorHalfAngle < 1 ||
+  Math.abs(state.lastTraverseError) > state.lastAlignmentTolerance + 0.001 ||
+  state.lastAlignmentTolerance <= 0 ||
   state.effectiveChannels !== 2 ||
   state.engagementsRemaining > 4 ||
   state.incomingTracks < 1 ||

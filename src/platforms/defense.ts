@@ -35,7 +35,13 @@ export function pointDefenseMountSolution(
       (mountReady.get(mount.id) ?? 0) <= elapsed,
   );
   if (!candidates.length) return null;
-  const mount = candidates.reduce((nearest, candidate) =>
+  const oldestReadyAt = Math.min(
+    ...candidates.map((candidate) => mountReady.get(candidate.id) ?? 0),
+  );
+  const restedCandidates = candidates.filter(
+    (candidate) => (mountReady.get(candidate.id) ?? 0) <= oldestReadyAt + 1e-6,
+  );
+  const mount = restedCandidates.reduce((nearest, candidate) =>
     candidate.traverse.position.distanceTo(localTarget) <
     nearest.traverse.position.distanceTo(localTarget)
       ? candidate
@@ -43,18 +49,34 @@ export function pointDefenseMountSolution(
   );
   const delta = localTarget.clone().sub(mount.traverse.position);
   const desiredTraverse = Math.atan2(-delta.z, delta.x);
+  let traverseError = angleDifference(desiredTraverse, mount.traverse.rotation.y);
+  let aligned = Math.abs(traverseError) <= mount.alignmentTolerance;
   if (reserve) {
-    mount.traverse.rotation.y = desiredTraverse;
-    mountReady.set(
-      mount.id,
-      elapsed + platform.definition.survivability.pointDefense.interval,
+    const lastAimUpdate = (platform.model.userData.pointDefenseMountAimUpdate ??=
+      new Map<string, number>()) as Map<string, number>;
+    const previousUpdate = lastAimUpdate.get(mount.id) ?? elapsed;
+    const aimDelta = Math.max(0, Math.min(0.25, elapsed - previousUpdate));
+    lastAimUpdate.set(mount.id, elapsed);
+    mount.traverse.rotation.y += THREE.MathUtils.clamp(
+      traverseError,
+      -mount.traverseRate * aimDelta,
+      mount.traverseRate * aimDelta,
     );
+    traverseError = angleDifference(desiredTraverse, mount.traverse.rotation.y);
+    aligned = Math.abs(traverseError) <= mount.alignmentTolerance;
+    if (aligned)
+      mountReady.set(
+        mount.id,
+        elapsed + platform.definition.survivability.pointDefense.interval,
+      );
     platform.model.updateMatrixWorld(true);
   }
   return {
     mount,
     targetBearing,
     desiredTraverse,
+    traverseError,
+    aligned,
     origin: mount.muzzle.getWorldPosition(new THREE.Vector3()),
   };
 }

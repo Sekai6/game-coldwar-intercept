@@ -5006,12 +5006,14 @@ function recordPlatformPointDefenseShot(
   mountId: string,
   origin: THREE.Vector3,
   targetBearing: number,
+  traverseError: number,
 ) {
   const history = (platform.model.userData.pointDefenseMountHistory ??= []) as string[];
   history.push(mountId);
   if (history.length > 24) history.shift();
   platform.model.userData.lastPointDefenseMount = mountId;
   platform.model.userData.lastPointDefenseBearing = targetBearing;
+  platform.model.userData.lastPointDefenseTraverseError = traverseError;
   platform.model.userData.pointDefenseShots =
     Number(platform.model.userData.pointDefenseShots ?? 0) + 1;
   platform.model.userData.pointDefenseOriginOffset = origin
@@ -5262,6 +5264,7 @@ function updateSurfaceCombat(
         event.mountId,
         event.origin,
         event.targetBearing,
+        event.traverseError,
       );
       ciwsTracer(missile.mesh.position, event.origin);
       log(
@@ -5560,6 +5563,9 @@ function updateSurfaceCombat(
   canvas.dataset.platformPointDefenseLastBearing = Number(
     enemyPlatform?.model.userData.lastPointDefenseBearing ?? 0,
   ).toFixed(4);
+  canvas.dataset.platformPointDefenseLastTraverseError = Number(
+    enemyPlatform?.model.userData.lastPointDefenseTraverseError ?? 0,
+  ).toFixed(4);
   const lastPointDefenseMountId = enemyPlatform?.model.userData
     .lastPointDefenseMount as string | undefined;
   const lastPointDefenseMount = enemyPlatform?.slots.pointDefenseMounts.find(
@@ -5570,6 +5576,9 @@ function updateSurfaceCombat(
   ).toFixed(4);
   canvas.dataset.platformPointDefenseLastSectorHalfAngle = Number(
     lastPointDefenseMount?.sectorHalfAngle ?? 0,
+  ).toFixed(4);
+  canvas.dataset.platformPointDefenseLastAlignmentTolerance = Number(
+    lastPointDefenseMount?.alignmentTolerance ?? 0,
   ).toFixed(4);
   canvas.dataset.platformPointDefenseMountHistory = (
     (enemyPlatform?.model.userData.pointDefenseMountHistory ?? []) as string[]

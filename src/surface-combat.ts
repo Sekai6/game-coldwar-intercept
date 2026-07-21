@@ -102,6 +102,7 @@ export type SurfaceStrikeEvent =
       mountId: string;
       origin: THREE.Vector3;
       targetBearing: number;
+      traverseError: number;
     }
   | { kind: "point-defense-depleted"; missile: SurfaceStrikeMissile }
   | { kind: "point-defense-offline"; missile: SurfaceStrikeMissile }
@@ -694,7 +695,7 @@ export function updateSurfaceStrikeMissile(
       elapsed,
       true,
     );
-    if (!mountSolution) return null;
+    if (!mountSolution || !mountSolution.aligned) return null;
     missile.target.pointDefenseEngagementsRemaining--;
     missile.pointDefenseEngagements++;
     platformTrack.track.engagements++;
@@ -751,6 +752,7 @@ export function updateSurfaceStrikeMissile(
       mountId: mountSolution.mount.id,
       origin: mountSolution.origin,
       targetBearing: mountSolution.targetBearing,
+      traverseError: mountSolution.traverseError,
     } satisfies SurfaceStrikeEvent;
   }
 
