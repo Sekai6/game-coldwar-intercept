@@ -2741,6 +2741,8 @@ shipSelect.onchange = () => {
     "100";
   (sandbox.querySelector("#sbOpforPointDefenseHealth") as HTMLInputElement).value =
     "100";
+  (sandbox.querySelector("#sbOpforStrikeLauncherHealth") as HTMLInputElement).value =
+    "100";
   (sandbox.querySelector("#sbOpforEcmHealth") as HTMLInputElement).value =
     "100";
   (sandbox.querySelector("#sbOpforDecoyHealth") as HTMLInputElement).value =
@@ -2798,6 +2800,7 @@ for (const [label, id] of [
   ["FWD LAUNCHER HEALTH", "sbLauncherFwdHealth"],
   ["AFT LAUNCHER HEALTH", "sbLauncherAftHealth"],
   ["OPFOR POINT DEFENSE HEALTH", "sbOpforPointDefenseHealth"],
+  ["OPFOR STRIKE LAUNCHER HEALTH", "sbOpforStrikeLauncherHealth"],
   ["OPFOR ECM HEALTH", "sbOpforEcmHealth"],
   ["OPFOR DECOY LAUNCHER HEALTH", "sbOpforDecoyHealth"],
   ["OPFOR DAMAGE CONTROL HEALTH", "sbOpforDamageControlHealth"],
@@ -3208,6 +3211,14 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         enemyPlatform.subsystemHealth.set(
           "point-defense",
           pointDefenseHealth,
+        );
+        enemyPlatform.subsystemHealth.set(
+          "bazalt-canisters",
+          THREE.MathUtils.clamp(
+            numberInput("#sbOpforStrikeLauncherHealth"),
+            0,
+            100,
+          ),
         );
         enemyPlatform.subsystemHealth.set(
           "electronic-warfare",
@@ -6467,6 +6478,8 @@ function updateIncomingMissile(m: Missile, dt: number) {
   if (pendingPlatformLaunch && !pendingPlatformLaunch.released) {
     const platform = pendingPlatformLaunch.reservation.platform,
       weaponSlot = pendingPlatformLaunch.reservation.weaponSlot,
+      launcherHealth =
+        (platform.subsystemHealth.get(weaponSlot.id) ?? 100) / 100,
       trackQuality = Math.max(
         0,
         ...[...platform.sensorState.values()].map((state) => state.quality),
@@ -6483,6 +6496,10 @@ function updateIncomingMissile(m: Missile, dt: number) {
       );
     if (platform.destroyed) {
       cancelPendingPlatformLaunch(m, "PLATFORM DISABLED");
+      return;
+    }
+    if (launcherHealth <= 0.05) {
+      cancelPendingPlatformLaunch(m, "STRIKE LAUNCHER DISABLED");
       return;
     }
     if (fireControlReady) {

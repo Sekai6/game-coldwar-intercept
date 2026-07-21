@@ -196,11 +196,24 @@ export function reservePlatformLaunches(
       hardpoint.slotId === weaponSlot.id &&
       platform.hardpointState.get(hardpoint.id) === "ready",
   );
+  const launcherHealth = THREE.MathUtils.clamp(
+    (platform.subsystemHealth.get(weaponSlot.id) ?? 100) / 100,
+    0,
+    1,
+  );
+  const functionalCapacity =
+    launcherHealth <= 0.05
+      ? 0
+      : Math.max(1, Math.ceil(weaponSlot.capacity * launcherHealth));
   const hardpoints =
     weaponSlot.salvoPattern === "alternate-groups"
       ? alternateHardpointGroups(availableHardpoints)
       : availableHardpoints;
-  const count = Math.min(Math.max(0, requestedCount), hardpoints.length);
+  const count = Math.min(
+    Math.max(0, requestedCount),
+    hardpoints.length,
+    functionalCapacity,
+  );
   const interval = Math.max(weaponSlot.minimumInterval, requestedInterval);
   const slotStart = Math.max(
     firstLaunchAt,
