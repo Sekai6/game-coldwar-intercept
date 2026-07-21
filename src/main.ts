@@ -5001,46 +5001,17 @@ function planSurfaceStrike(manual = false) {
   return true;
 }
 
-function platformPointDefenseOrigin(
+function recordPlatformPointDefenseShot(
   platform: EnemyPlatformInstance,
-  targetPosition: THREE.Vector3,
+  mountId: string,
+  origin: THREE.Vector3,
+  targetBearing: number,
 ) {
-  const mounts = platform.slots.pointDefenseMounts;
-  if (!mounts.length)
-    return platform.model.position.clone().add(new THREE.Vector3(0, 8, 0));
-  const localTarget = platform.model.worldToLocal(targetPosition.clone()),
-    targetSide = Math.sign(localTarget.z),
-    sideMounts =
-      Math.abs(localTarget.z) > 1
-        ? mounts.filter(
-            (mount) => Math.sign(mount.traverse.position.z) === targetSide,
-          )
-        : mounts,
-    candidates = sideMounts.length ? sideMounts : mounts,
-    mountReady = (platform.model.userData.pointDefenseMountReady ??=
-      new Map<string, number>()) as Map<string, number>,
-    readyCandidates = candidates.filter(
-      (candidate) => (mountReady.get(candidate.id) ?? 0) <= elapsed,
-    ),
-    selectionPool = readyCandidates.length ? readyCandidates : candidates,
-    mount = selectionPool.reduce((nearest, candidate) => {
-      const candidateReady = mountReady.get(candidate.id) ?? 0,
-        nearestReady = mountReady.get(nearest.id) ?? 0;
-      if (!readyCandidates.length && candidateReady !== nearestReady)
-        return candidateReady < nearestReady ? candidate : nearest;
-      return candidate.traverse.position.distanceTo(localTarget) <
-        nearest.traverse.position.distanceTo(localTarget)
-        ? candidate
-        : nearest;
-    }),
-    delta = localTarget.clone().sub(mount.traverse.position);
-  mount.traverse.rotation.y = Math.atan2(-delta.z, delta.x);
-  platform.model.updateMatrixWorld(true);
-  const origin = mount.muzzle.getWorldPosition(new THREE.Vector3()),
-    history = (platform.model.userData.pointDefenseMountHistory ??= []) as string[];
-  history.push(mount.id);
+  const history = (platform.model.userData.pointDefenseMountHistory ??= []) as string[];
+  history.push(mountId);
   if (history.length > 24) history.shift();
-  platform.model.userData.lastPointDefenseMount = mount.id;
+  platform.model.userData.lastPointDefenseMount = mountId;
+  platform.model.userData.lastPointDefenseBearing = targetBearing;
   platform.model.userData.pointDefenseShots =
     Number(platform.model.userData.pointDefenseShots ?? 0) + 1;
   platform.model.userData.pointDefenseOriginOffset = origin
@@ -5048,11 +5019,6 @@ function platformPointDefenseOrigin(
     .sub(platform.model.position)
     .setY(0)
     .length();
-  mountReady.set(
-    mount.id,
-    elapsed + platform.definition.survivability.pointDefense.interval,
-  );
-  return origin;
 }
 
 function updateSurfaceCombat(
@@ -5291,11 +5257,13 @@ function updateSurfaceCombat(
         `${missile.target.definition.name} POINT DEFENSE READY / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}%`,
       );
     else if (event.kind === "point-defense-fire") {
-      const origin = platformPointDefenseOrigin(
+      recordPlatformPointDefenseShot(
         missile.target,
-        missile.mesh.position,
+        event.mountId,
+        event.origin,
+        event.targetBearing,
       );
-      ciwsTracer(missile.mesh.position, origin);
+      ciwsTracer(missile.mesh.position, event.origin);
       log(
         `${missile.target.definition.name} POINT DEFENSE FIRE / ${String(missile.target.model.userData.lastPointDefenseMount).toUpperCase()} / HARPOON ${missile.id} / SHOT ${event.engagement}/${event.maximumEngagements} / TOF ${event.timeOfFlight.toFixed(2)}s / PK ${Math.round(event.pk * 100)}% / READY BURSTS ${event.engagementsRemaining}`,
       );
@@ -5589,6 +5557,20 @@ function updateSurfaceCombat(
   canvas.dataset.platformPointDefenseLastMount = String(
     enemyPlatform?.model.userData.lastPointDefenseMount ?? "none",
   );
+  canvas.dataset.platformPointDefenseLastBearing = Number(
+    enemyPlatform?.model.userData.lastPointDefenseBearing ?? 0,
+  ).toFixed(4);
+  const lastPointDefenseMountId = enemyPlatform?.model.userData
+    .lastPointDefenseMount as string | undefined;
+  const lastPointDefenseMount = enemyPlatform?.slots.pointDefenseMounts.find(
+    (mount) => mount.id === lastPointDefenseMountId,
+  );
+  canvas.dataset.platformPointDefenseLastSectorCenter = Number(
+    lastPointDefenseMount?.sectorCenter ?? 0,
+  ).toFixed(4);
+  canvas.dataset.platformPointDefenseLastSectorHalfAngle = Number(
+    lastPointDefenseMount?.sectorHalfAngle ?? 0,
+  ).toFixed(4);
   canvas.dataset.platformPointDefenseMountHistory = (
     (enemyPlatform?.model.userData.pointDefenseMountHistory ?? []) as string[]
   ).join(",");

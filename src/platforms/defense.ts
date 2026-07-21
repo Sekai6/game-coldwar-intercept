@@ -1,6 +1,64 @@
 import * as THREE from "three";
 import type { EnemyPlatformInstance, PlatformIncomingTrack } from "./types";
 
+function angleDifference(target: number, current: number) {
+  return Math.atan2(Math.sin(target - current), Math.cos(target - current));
+}
+
+export function pointDefenseBearingInSector(
+  targetBearing: number,
+  sectorCenter: number,
+  sectorHalfAngle: number,
+) {
+  return (
+    Math.abs(angleDifference(targetBearing, sectorCenter)) <= sectorHalfAngle
+  );
+}
+
+export function pointDefenseMountSolution(
+  platform: EnemyPlatformInstance,
+  targetPosition: THREE.Vector3,
+  elapsed: number,
+  reserve = false,
+) {
+  const localTarget = platform.model.worldToLocal(targetPosition.clone());
+  const targetBearing = Math.atan2(localTarget.z, localTarget.x);
+  const mountReady = (platform.model.userData.pointDefenseMountReady ??=
+    new Map<string, number>()) as Map<string, number>;
+  const candidates = platform.slots.pointDefenseMounts.filter(
+    (mount) =>
+      pointDefenseBearingInSector(
+        targetBearing,
+        mount.sectorCenter,
+        mount.sectorHalfAngle,
+      ) &&
+      (mountReady.get(mount.id) ?? 0) <= elapsed,
+  );
+  if (!candidates.length) return null;
+  const mount = candidates.reduce((nearest, candidate) =>
+    candidate.traverse.position.distanceTo(localTarget) <
+    nearest.traverse.position.distanceTo(localTarget)
+      ? candidate
+      : nearest,
+  );
+  const delta = localTarget.clone().sub(mount.traverse.position);
+  const desiredTraverse = Math.atan2(-delta.z, delta.x);
+  if (reserve) {
+    mount.traverse.rotation.y = desiredTraverse;
+    mountReady.set(
+      mount.id,
+      elapsed + platform.definition.survivability.pointDefense.interval,
+    );
+    platform.model.updateMatrixWorld(true);
+  }
+  return {
+    mount,
+    targetBearing,
+    desiredTraverse,
+    origin: mount.muzzle.getWorldPosition(new THREE.Vector3()),
+  };
+}
+
 export function pointDefenseCapability(platform: EnemyPlatformInstance) {
   const definition = platform.definition.survivability.pointDefense;
   const health = THREE.MathUtils.clamp(

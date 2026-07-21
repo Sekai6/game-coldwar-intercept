@@ -7,6 +7,7 @@ import type { ChaffCloud } from "./combat-types";
 import type { ModelWeaponHardpoint, ShipDefinition } from "./ship-types";
 import {
   pointDefenseCapability,
+  pointDefenseMountSolution,
   pointDefensePriorityTracks,
 } from "./platforms/defense";
 import { getThreatDefinition } from "./threats/catalog";
@@ -98,6 +99,9 @@ export type SurfaceStrikeEvent =
       engagement: number;
       maximumEngagements: number;
       engagementsRemaining: number;
+      mountId: string;
+      origin: THREE.Vector3;
+      targetBearing: number;
     }
   | { kind: "point-defense-depleted"; missile: SurfaceStrikeMissile }
   | { kind: "point-defense-offline"; missile: SurfaceStrikeMissile }
@@ -640,13 +644,20 @@ export function updateSurfaceStrikeMissile(
     (readyAt, index) =>
       index < capability.effectiveChannels && elapsed >= readyAt,
   );
+  const priorityTrack = pointDefensePriorityTracks(missile.target, elapsed).find(
+    (track) =>
+      pointDefenseMountSolution(
+        missile.target,
+        track.position,
+        elapsed,
+      ) !== null,
+  );
   const pointDefenseEligible =
     !missile.target.destroyed &&
     terminal &&
     platformTrack.valid &&
     elapsed >= platformTrack.track.fireControlReadyAt &&
-    pointDefensePriorityTracks(missile.target, elapsed)[0]?.missileId ===
-      missile.id &&
+    priorityTrack?.missileId === missile.id &&
     defenseTrackRange < pointDefense.range &&
     missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
     !missile.pendingPointDefense;
@@ -677,6 +688,13 @@ export function updateSurfaceStrikeMissile(
     missile.target.pointDefenseEngagementsRemaining > 0 &&
     availableChannel >= 0
   ) {
+    const mountSolution = pointDefenseMountSolution(
+      missile.target,
+      platformTrack.track.position,
+      elapsed,
+      true,
+    );
+    if (!mountSolution) return null;
     missile.target.pointDefenseEngagementsRemaining--;
     missile.pointDefenseEngagements++;
     platformTrack.track.engagements++;
@@ -730,6 +748,9 @@ export function updateSurfaceStrikeMissile(
       engagement,
       maximumEngagements: pointDefense.engagementsPerTarget,
       engagementsRemaining: missile.target.pointDefenseEngagementsRemaining,
+      mountId: mountSolution.mount.id,
+      origin: mountSolution.origin,
+      targetBearing: mountSolution.targetBearing,
     } satisfies SurfaceStrikeEvent;
   }
 

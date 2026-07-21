@@ -17,6 +17,34 @@ page.on("pageerror", (error) => errors.push(error.message));
 await page.goto(process.env.APP_URL ?? "http://127.0.0.1:5173/", {
   waitUntil: "networkidle",
 });
+const sectorChecks = await page.evaluate(async () => {
+  const { pointDefenseBearingInSector } = await import(
+    "/src/platforms/defense.ts"
+  );
+  const degrees = (value) => (value * Math.PI) / 180;
+  return {
+    bowCoveredStarboard: pointDefenseBearingInSector(
+      degrees(0),
+      degrees(75),
+      degrees(100),
+    ),
+    bowCoveredPort: pointDefenseBearingInSector(
+      degrees(0),
+      degrees(-75),
+      degrees(100),
+    ),
+    aftBlockedStarboard: pointDefenseBearingInSector(
+      degrees(180),
+      degrees(75),
+      degrees(100),
+    ),
+    aftBlockedPort: pointDefenseBearingInSector(
+      degrees(180),
+      degrees(-75),
+      degrees(100),
+    ),
+  };
+});
 const selects = page.locator("select");
 for (let index = 0; index < (await selects.count()); index++) {
   const options = await selects.nth(index).locator("option").allTextContents();
@@ -47,6 +75,13 @@ const state = await canvas.evaluate((element) => ({
   mounts: Number(element.dataset.platformPointDefenseMounts ?? 0),
   shots: Number(element.dataset.platformPointDefenseShots ?? 0),
   lastMount: element.dataset.platformPointDefenseLastMount ?? "none",
+  lastBearing: Number(element.dataset.platformPointDefenseLastBearing ?? 0),
+  lastSectorCenter: Number(
+    element.dataset.platformPointDefenseLastSectorCenter ?? 0,
+  ),
+  lastSectorHalfAngle: Number(
+    element.dataset.platformPointDefenseLastSectorHalfAngle ?? 0,
+  ),
   mountHistory: (element.dataset.platformPointDefenseMountHistory ?? "")
     .split(",")
     .filter(Boolean),
@@ -58,13 +93,19 @@ const state = await canvas.evaluate((element) => ({
   incomingTracks: Number(element.dataset.platformIncomingTrackCount ?? 0),
 }));
 const uniqueMounts = new Set(state.mountHistory);
+const lastSectorError = Math.abs(
+  Math.atan2(
+    Math.sin(state.lastBearing - state.lastSectorCenter),
+    Math.cos(state.lastBearing - state.lastSectorCenter),
+  ),
+);
 await page.keyboard.press("5");
 await page.waitForTimeout(800);
 await page.screenshot({
   path: "verification-platform-defense-visual.png",
   fullPage: true,
 });
-console.log(JSON.stringify({ state, errors }, null, 2));
+console.log(JSON.stringify({ state, sectorChecks, errors }, null, 2));
 await browser.close();
 
 if (
@@ -76,8 +117,14 @@ if (
   uniqueMounts.size < 2 ||
   !state.lastMount.startsWith("ak-630-") ||
   state.originOffset < 5 ||
+  lastSectorError > state.lastSectorHalfAngle + 0.001 ||
+  state.lastSectorHalfAngle < 1 ||
   state.effectiveChannels !== 2 ||
   state.engagementsRemaining > 4 ||
-  state.incomingTracks < 1
+  state.incomingTracks < 1 ||
+  !sectorChecks.bowCoveredStarboard ||
+  !sectorChecks.bowCoveredPort ||
+  sectorChecks.aftBlockedStarboard ||
+  sectorChecks.aftBlockedPort
 )
   process.exitCode = 1;

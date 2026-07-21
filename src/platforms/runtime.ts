@@ -51,6 +51,19 @@ function validateModelSlots(
     throw new Error(
       `${definition.id}: point-defense channels exceed physical mounts`,
     );
+  const pointDefenseMountIds = new Set<string>();
+  for (const mount of slots.pointDefenseMounts) {
+    if (pointDefenseMountIds.has(mount.id))
+      throw new Error(`${definition.id}: duplicate point-defense mount ${mount.id}`);
+    pointDefenseMountIds.add(mount.id);
+    if (
+      !Number.isFinite(mount.sectorCenter) ||
+      !Number.isFinite(mount.sectorHalfAngle) ||
+      mount.sectorHalfAngle <= 0 ||
+      mount.sectorHalfAngle > Math.PI
+    )
+      throw new Error(`${definition.id}: invalid firing sector for ${mount.id}`);
+  }
   const systemIds = new Set([
     ...definition.sensorSlots.map((sensor) => sensor.id),
     ...definition.weaponSlots.map((slot) => slot.id),

@@ -65,13 +65,18 @@ await page.waitForFunction(
   () => {
     const times =
       document.querySelector("canvas")?.dataset.surfaceStrikeTerminalTimes ?? "";
-    return times.split(",").length === 4 && !times.includes("pending");
+    const firstWave = times.split(",").slice(0, 4);
+    return (
+      firstWave.length === 4 &&
+      firstWave.every((time) => time !== "pending")
+    );
   },
   null,
   { timeout: 45_000 },
 );
 const terminalTimes = (await canvas.getAttribute("data-surface-strike-terminal-times"))
   .split(",")
+  .slice(0, 4)
   .map(Number);
 const arrivalPlans = launchState.arrivalPlans.split(",").map(Number);
 const routeVectors = launchState.routeVectors.split(",").map((value) =>

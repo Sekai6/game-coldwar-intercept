@@ -18,8 +18,16 @@ export function addPointDefenseMount(
   id: string,
   traverse: THREE.Object3D,
   muzzle: THREE.Object3D,
+  sectorCenter: number,
+  sectorHalfAngle: number,
 ) {
-  slots.pointDefenseMounts.push({ id, traverse, muzzle });
+  slots.pointDefenseMounts.push({
+    id,
+    traverse,
+    muzzle,
+    sectorCenter,
+    sectorHalfAngle,
+  });
 }
 
 export function addWeaponHardpoint(

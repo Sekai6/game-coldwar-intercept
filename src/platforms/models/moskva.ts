@@ -175,6 +175,8 @@ function createMoskvaModel() {
         `ak-630-${side > 0 ? "starboard" : "port"}-${index + 1}`,
         turret,
         muzzle,
+        THREE.MathUtils.degToRad(side > 0 ? 75 : -75),
+        THREE.MathUtils.degToRad(100),
       );
     }
 

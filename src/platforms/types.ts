@@ -76,6 +76,8 @@ export interface PlatformPointDefenseMount {
   id: string;
   traverse: THREE.Object3D;
   muzzle: THREE.Object3D;
+  sectorCenter: number;
+  sectorHalfAngle: number;
 }
 
 export interface EnemyPlatformModelSlots {
