@@ -1528,8 +1528,8 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
   const platform = missile.target;
   const softKill = platform.definition.survivability.softKill;
   const track = platform.incomingTracks.get(missile.id);
-  const ewHealth =
-    (platform.subsystemHealth.get("electronic-warfare") ?? 100) / 100;
+  const countermeasureHealth =
+    (platform.subsystemHealth.get("countermeasures") ?? 100) / 100;
   const trackValid =
     !!track &&
     track.detectionLogged &&
@@ -1542,9 +1542,9 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
     ? observedPosition.distanceTo(platform.model.position)
     : Infinity;
   if (
-    !ecmEnabled ||
+    !platformDecoysEnabled ||
     platform.destroyed ||
-    ewHealth <= 0.05 ||
+    countermeasureHealth <= 0.05 ||
     platform.decoyRounds <= 0 ||
     elapsed < platform.nextDecoy ||
     range > softKill.decoyDeployRange ||
@@ -1582,7 +1582,8 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
   });
   platform.decoyRounds--;
   missile.mesh.userData.platformDecoyDeployed = true;
-  platform.nextDecoy = elapsed + softKill.decoyCooldown / Math.max(0.3, ewHealth);
+  platform.nextDecoy =
+    elapsed + softKill.decoyCooldown / Math.max(0.3, countermeasureHealth);
   log(
     `${platform.definition.name} DECOY DEPLOY / ROUNDS ${platform.decoyRounds} / RCS ${softKill.decoyRcs.toFixed(1)}`,
   );
@@ -2178,6 +2179,7 @@ let running = true,
   doctrine: EngagementDoctrine = "SSLS",
   chaffEnabled = true,
   ecmEnabled = true,
+  platformDecoysEnabled = true,
   shipEcmEnabled = true,
   srbocEnabled = true,
   srbocRounds = 12,
@@ -2490,6 +2492,10 @@ shipSelect.onchange = () => {
     "100";
   (sandbox.querySelector("#sbOpforPointDefenseHealth") as HTMLInputElement).value =
     "100";
+  (sandbox.querySelector("#sbOpforEcmHealth") as HTMLInputElement).value =
+    "100";
+  (sandbox.querySelector("#sbOpforDecoyHealth") as HTMLInputElement).value =
+    "100";
 };
 for (const [label, id, value, max] of [
   ["RIM-67 MAGAZINE", "sbRim", String(activeShip.ammo.rim67), "48"],
@@ -2541,6 +2547,8 @@ for (const [label, id] of [
   ["FWD LAUNCHER HEALTH", "sbLauncherFwdHealth"],
   ["AFT LAUNCHER HEALTH", "sbLauncherAftHealth"],
   ["OPFOR POINT DEFENSE HEALTH", "sbOpforPointDefenseHealth"],
+  ["OPFOR ECM HEALTH", "sbOpforEcmHealth"],
+  ["OPFOR DECOY LAUNCHER HEALTH", "sbOpforDecoyHealth"],
 ]) {
   const field = document.createElement("label");
   field.textContent = label;
@@ -2925,6 +2933,14 @@ radarCanvas.addEventListener("pointerdown", (e) => {
         enemyPlatform.subsystemHealth.set(
           "point-defense",
           pointDefenseHealth,
+        );
+        enemyPlatform.subsystemHealth.set(
+          "electronic-warfare",
+          THREE.MathUtils.clamp(numberInput("#sbOpforEcmHealth"), 0, 100),
+        );
+        enemyPlatform.subsystemHealth.set(
+          "countermeasures",
+          THREE.MathUtils.clamp(numberInput("#sbOpforDecoyHealth"), 0, 100),
         );
       }
       ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
@@ -3447,6 +3463,13 @@ const ecmButton = controlButton("OPFOR ECM: ON", () => {
   ecmEnabled = !ecmEnabled;
   ecmButton.textContent = `OPFOR ECM: ${ecmEnabled ? "ON" : "OFF"}`;
   log(`OPFOR ELECTRONIC WARFARE / ${ecmEnabled ? "ACTIVE" : "SILENT"}`);
+});
+const platformDecoyButton = controlButton("OPFOR DECOYS: AUTO", () => {
+  platformDecoysEnabled = !platformDecoysEnabled;
+  platformDecoyButton.textContent = `OPFOR DECOYS: ${platformDecoysEnabled ? "AUTO" : "HOLD"}`;
+  log(
+    `OPFOR COUNTERMEASURES / ${platformDecoysEnabled ? "AUTO" : "HOLD"}`,
+  );
 });
 const shipEcmButton = controlButton("SHIP ECM: AUTO", () => {
   shipEcmEnabled = !shipEcmEnabled;
@@ -4790,7 +4813,9 @@ function updateSurfaceCombat(
       elapsed,
       ecmEnabled,
       opforRadarEnabled,
-      chaffClouds.filter((cloud) => cloud.side === "platform"),
+      platformDecoysEnabled
+        ? chaffClouds.filter((cloud) => cloud.side === "platform")
+        : [],
     );
     if (!event) continue;
     if (event.kind === "seeker-search")
@@ -5086,6 +5111,21 @@ function updateSurfaceCombat(
       : (enemyPlatform.subsystemHealth.get("electronic-warfare") ?? 100) <= 5
         ? "failed"
         : "active";
+  canvas.dataset.platformDecoyState = !enemyPlatform
+    ? "not-applicable"
+    : !platformDecoysEnabled
+      ? "hold"
+      : (enemyPlatform.subsystemHealth.get("countermeasures") ?? 100) <= 5
+        ? "failed"
+        : enemyPlatform.decoyRounds <= 0
+          ? "depleted"
+          : "auto";
+  canvas.dataset.platformEcmHealth = String(
+    Math.round(enemyPlatform?.subsystemHealth.get("electronic-warfare") ?? 0),
+  );
+  canvas.dataset.platformCountermeasureHealth = String(
+    Math.round(enemyPlatform?.subsystemHealth.get("countermeasures") ?? 0),
+  );
   canvas.dataset.enemyPlatformHull = String(
     Math.round(enemyPlatform?.hullIntegrity ?? 0),
   );

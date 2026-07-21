@@ -143,7 +143,8 @@ This runs the TypeScript type check and Vite production bundle. Output is writte
 | `SLEW` | Points focused search at the selected track |
 | `CIWS` | Sets close-in defense to AUTO or HOLD |
 | `THREAT CHAFF` | Enables incoming-missile chaff deployment |
-| `OPFOR ECM` | Enables threat-side interference against SAM guidance and enemy-platform ECM/decoy soft kill against Harpoon |
+| `OPFOR ECM` | Enables threat-side interference against SAM guidance and continuous enemy-platform ECM radiation against Harpoon |
+| `OPFOR DECOYS` | Independently sets finite enemy-platform decoy deployment to AUTO or HOLD |
 | `OPFOR RADAR` | Controls enemy-platform emissions; silence blocks new fire-control tracks and makes airborne weapons coast on their last estimate |
 | `SHIP ECM` | Sets shipboard ECM to AUTO or HOLD |
 | `SRBOC` | Sets Mk 36 chaff deployment to AUTO or HOLD |
@@ -413,9 +414,9 @@ CG-57's forward and aft Mk 41 banks are independent launch resources that may wo
 <a id="threat-ew"></a>
 ### Threat ECM and Chaff
 
-`OPFOR ECM` adds a range-dependent aim-point error to terminal SM-2 guidance. As the interceptor closes, it enters burn-through range and interference falls, generating an `ECM BURN-THROUGH` event. In a surface action ECM represents continuous radiation from the enemy ship's electronic-warfare antennas; it is not a projectile. The finite decoys are what leave the ship. Moskva carries eight game-scaled decoy rounds and releases an orange cloud abeam only after a qualified incoming track enters the 9 km observed deployment region, subject to a 2.2-second cooldown. Platform release range and bearing use the noisy track estimate, never the Harpoon truth transform; only the Harpoon's seeker may use its own range after acquisition for signal competition.
+`OPFOR ECM` adds a range-dependent aim-point error to terminal SM-2 guidance. As the interceptor closes, it enters burn-through range and interference falls, generating an `ECM BURN-THROUGH` event. In a surface action ECM represents continuous radiation from the enemy ship's electronic-warfare antennas; it is not a projectile. `OPFOR DECOYS` independently controls the finite rounds that leave the ship. Moskva carries eight game-scaled decoys and releases an orange cloud abeam only after a qualified incoming track enters the 9 km observed deployment region, subject to a 2.2-second base cooldown. `electronic-warfare` health controls jammer strength, while independent `countermeasures` health controls launcher availability and cooldown; the scenario panel exposes `OPFOR ECM HEALTH` and `OPFOR DECOY LAUNCHER HEALTH`. Platform release range and bearing use the noisy track estimate, never the Harpoon truth transform; only the Harpoon's seeker may use its own range after acquisition for signal competition.
 
-Harpoon soft-kill resolution compares ship return, decoy RCS, missile distance to each, ECM strength, electronic-warfare health, the HOJ threshold, and a 2.4 km burn-through range. Outcomes include `ECM CONTESTED`, `ACTIVE / HOJ`, `BURN THROUGH`, or a soft kill that records its method and probability. Disabling `OPFOR ECM` stops platform radiation and decoy deployment while leaving point defense independent.
+Harpoon soft-kill resolution compares ship return, decoy RCS, missile distance to each, ECM strength, electronic-warfare health, the HOJ threshold, and a 2.4 km burn-through range. Outcomes include `DECOY REJECTED`, `ECM CONTESTED`, `ACTIVE / HOJ`, `BURN THROUGH`, or a soft kill recorded as `DECOY`, `ECM`, or `ECM + DECOY`. Pure decoy capture no longer depends on ECM health. Disabling `OPFOR ECM` stops only radiation; setting `OPFOR DECOYS` to HOLD stops only deployment, while point defense remains independent.
 
 Incoming missiles can also deploy chaff. Terminal SM-2 compares target and chaff radar cross sections and may record `DECOY CAPTURE`. Chaff expands, drifts, and decays over time.
 

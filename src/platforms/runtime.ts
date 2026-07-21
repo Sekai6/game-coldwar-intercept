@@ -85,6 +85,7 @@ export function instantiateEnemyPlatform(
       ["propulsion", 100] as const,
       ["point-defense", 100] as const,
       ["electronic-warfare", 100] as const,
+      ["countermeasures", 100] as const,
     ]),
     incomingTracks: new Map(),
     pointDefenseChannelReady: Array.from(

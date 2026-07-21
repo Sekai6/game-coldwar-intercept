@@ -326,7 +326,7 @@ export function updateSurfaceStrikeMissile(
   missile: SurfaceStrikeMissile,
   dt: number,
   elapsed: number,
-  softKillEnabled: boolean,
+  platformEcmEnabled: boolean,
   platformSensorsEnabled: boolean,
   platformDecoys: readonly ChaffCloud[],
 ) {
@@ -400,26 +400,28 @@ export function updateSurfaceStrikeMissile(
     trueRange <= softKill.decoyDeployRange
   ) {
     missile.softKillResolved = true;
-    if (!softKillEnabled) {
-      missile.mesh.userData.seekerState = "ACTIVE / NO JAM";
+    const nearestDecoy = platformDecoys
+      .filter((cloud) => cloud.rcs > 0.1)
+      .sort(
+        (a, b) =>
+          a.position.distanceToSquared(missile.mesh.position) -
+          b.position.distanceToSquared(missile.mesh.position),
+      )[0];
+    const ecmHealth =
+      (missile.target.subsystemHealth.get("electronic-warfare") ?? 100) / 100;
+    const ecmAvailable = platformEcmEnabled && ecmHealth > 0.05;
+    if (!ecmAvailable && !nearestDecoy) {
+      missile.mesh.userData.seekerState = "ACTIVE / NO COUNTERMEASURES";
     } else {
-      const ecmHealth =
-        (missile.target.subsystemHealth.get("electronic-warfare") ?? 100) /
-        100;
-      const ecmInterference = THREE.MathUtils.clamp(
-        Math.pow(trueRange / Math.max(1, softKill.burnThroughRange), 2) *
-          softKill.ecmStrength *
-          ecmHealth,
-        0,
-        1,
-      );
-      const nearestDecoy = platformDecoys
-        .filter((cloud) => cloud.rcs > 0.1)
-        .sort(
-          (a, b) =>
-            a.position.distanceToSquared(missile.mesh.position) -
-            b.position.distanceToSquared(missile.mesh.position),
-        )[0];
+      const ecmInterference = ecmAvailable
+        ? THREE.MathUtils.clamp(
+            Math.pow(trueRange / Math.max(1, softKill.burnThroughRange), 2) *
+              softKill.ecmStrength *
+              ecmHealth,
+            0,
+            1,
+          )
+        : 0;
       const targetPower =
         missile.target.definition.radarCrossSection /
         Math.pow(Math.max(1, trueRange), 4);
@@ -437,7 +439,6 @@ export function updateSurfaceStrikeMissile(
       const pk = THREE.MathUtils.clamp(
         (decoyCapture * (0.52 + ecmInterference * 0.28) +
           ecmInterference * 0.04) *
-          ecmHealth *
           (homeOnJam ? 0.62 : 1),
         0,
         0.78,
@@ -465,7 +466,9 @@ export function updateSurfaceStrikeMissile(
             ? "ACTIVE / HOJ"
             : ecmInterference > 0.08
               ? "ACTIVE / ECM CONTESTED"
-              : "ACTIVE";
+              : nearestDecoy
+                ? "ACTIVE / DECOY REJECTED"
+                : "ACTIVE";
     }
   }
 
