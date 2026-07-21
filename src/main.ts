@@ -2699,6 +2699,9 @@ function syncPlatformThreatOptions() {
   }
 }
 platformSelect.onchange = syncPlatformThreatOptions;
+// The default sandbox path should exercise the platform-vs-ship battle.
+platformSelect.value = ENEMY_PLATFORM_DEFINITIONS[0]?.id ?? "AIRBORNE";
+syncPlatformThreatOptions();
 shipSelect.onchange = () => {
   configureShip(shipSelect.value as ShipClass);
   syncWeaponOptions();
@@ -2882,7 +2885,7 @@ threatSelect.onchange = () => {
     profile.cruiseAltitude,
   );
   (sandbox.querySelector("#sbZ") as HTMLInputElement).value = String(
-    -profile.defaultRange,
+    platformSelect.value === "AIRBORNE" ? -profile.defaultRange : -380,
   );
 };
 radarCanvas.addEventListener("pointerdown", (e) => {

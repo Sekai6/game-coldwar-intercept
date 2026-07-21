@@ -75,6 +75,7 @@ function validateModelSlots(
     "propulsion",
     "point-defense",
     "electronic-warfare",
+    "electronic-support",
     "countermeasures",
     "damage-control",
   ]);
@@ -139,6 +140,7 @@ export function instantiateEnemyPlatform(
       ["propulsion", 100] as const,
       ["point-defense", 100] as const,
       ["electronic-warfare", 100] as const,
+      ["electronic-support", 100] as const,
       ["countermeasures", 100] as const,
       ["damage-control", 100] as const,
     ]),
@@ -564,8 +566,8 @@ export function updateEnemyPlatform(
     } else state.quality *= 0.78;
   }
   const track = platform.targetTrack;
-  const ewHealth =
-      (platform.subsystemHealth.get("electronic-warfare") ?? 100) / 100,
+  const esmHealth =
+      (platform.subsystemHealth.get("electronic-support") ?? 100) / 100,
     radarTrack = sensorDetected && detectedQuality > 0.08,
     directTrackHoldover = Math.max(
       0,
@@ -579,7 +581,7 @@ export function updateEnemyPlatform(
       elapsed - track.lastUpdate <= directTrackHoldover,
     esmTrack =
       targetEmitting &&
-      ewHealth > 0.04 &&
+      esmHealth > 0.04 &&
       !directTrackMemory &&
       (!radarTrack || detectedQuality < 0.22) &&
       elapsed - track.lastUpdate >= 1.1;
@@ -613,14 +615,14 @@ export function updateEnemyPlatform(
         targetPosition.x - platform.model.position.x,
       ),
       bearingError =
-        THREE.MathUtils.degToRad(2.5 + (1 - ewHealth) * 5) *
+        THREE.MathUtils.degToRad(2.5 + (1 - esmHealth) * 5) *
         Math.sin(elapsed * 0.37 + platform.definition.id.length),
       measuredBearing = trueBearing + bearingError,
       trueRange = platform.model.position.distanceTo(targetPosition),
       measuredRange =
         trueRange *
         (1 +
-          (0.16 + (1 - ewHealth) * 0.2) *
+          (0.16 + (1 - esmHealth) * 0.2) *
             Math.sin(elapsed * 0.23 + 1.7));
     track.position
       .copy(platform.model.position)
@@ -633,13 +635,13 @@ export function updateEnemyPlatform(
       );
     track.velocity.copy(targetVelocity);
     track.quality = THREE.MathUtils.clamp(
-      0.12 + ewHealth * 0.08,
+      0.12 + esmHealth * 0.08,
       0.12,
       0.2,
     );
     track.uncertainty = Math.max(
       70,
-      trueRange * (0.24 + (1 - ewHealth) * 0.16),
+      trueRange * (0.24 + (1 - esmHealth) * 0.16),
     );
     track.lastUpdate = elapsed;
     track.valid = true;
