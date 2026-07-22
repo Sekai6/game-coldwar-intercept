@@ -750,6 +750,12 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
     maximumTrackAge: 4,
     minimumTrackAge: 2.2,
     fireControlDelay: 1.6,
+    passiveTargeting: {
+      minimumTrackQuality: 0.18,
+      minimumTrackAge: 5,
+      fireControlDelay: 2,
+      maximumUncertainty: 190,
+    },
     datalinkUpdateInterval: 2.4,
     datalinkLatency: 0.4,
     datalinkMinimumQuality: 0.18,

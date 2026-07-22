@@ -10,6 +10,7 @@ import {
   shipSurfaceHardpoints,
   type ModelWeaponHardpoint,
   type ShipClass,
+  type ShipDefinition,
   type ShipManeuverMode,
   type SubsystemId,
 } from "./ship-types";
@@ -57,6 +58,7 @@ import {
 import type {
   EnemyPlatformInstance,
   PlatformLaunchReservation,
+  PlatformWeaponSlot,
 } from "./platforms/types";
 import {
   createSurfaceStrikeMissile,
@@ -419,12 +421,14 @@ let surfaceHardpointState = new Map<
   surfaceTrackStableTime = 0,
   surfaceEsmNextScan = 0,
   surfaceEsmCue = {
+    id: -1,
     position: new THREE.Vector3(),
     velocity: new THREE.Vector3(),
     quality: 0,
     uncertainty: Infinity,
     age: Infinity,
     valid: false,
+    horizonLimited: true,
   },
   surfaceFireControlReadyAt = Infinity,
   surfaceFireControlReadyLogged = false;
@@ -679,6 +683,34 @@ function assessPlatformFirePlan(plan: PlatformFirePlan) {
   };
 }
 
+function platformTargetingSolution(
+  platform: EnemyPlatformInstance,
+  slot: PlatformWeaponSlot,
+) {
+  const track = platform.targetTrack,
+    passive = slot.passiveTargeting,
+    passiveQualified =
+      track.valid &&
+      track.source === "esm" &&
+      !!passive &&
+      track.quality >= passive.minimumTrackQuality &&
+      track.uncertainty <= passive.maximumUncertainty;
+  return {
+    qualified:
+      track.valid &&
+      (passiveQualified ||
+        (track.source === "radar" &&
+          track.quality >= slot.minimumTrackQuality)),
+    passive: passiveQualified,
+    minimumTrackQuality: passiveQualified
+      ? passive!.minimumTrackQuality
+      : slot.minimumTrackQuality,
+    requiredAge: passiveQualified
+      ? passive!.minimumTrackAge + passive!.fireControlDelay
+      : slot.minimumTrackAge + slot.fireControlDelay,
+  };
+}
+
 function commitPlatformFirePlanWave(
   plan: PlatformFirePlan,
   allowUnresolvedFireControl = false,
@@ -698,12 +730,9 @@ function commitPlatformFirePlanWave(
     return false;
   }
   const trackAge = plan.platform.weaponTrackAge.get(slot.id) ?? 0,
-    directFireControl =
-      plan.platform.targetTrack.valid &&
-      plan.platform.targetTrack.source === "radar" &&
-      plan.platform.targetTrack.quality >= slot.minimumTrackQuality &&
-      trackAge >= slot.minimumTrackAge + slot.fireControlDelay;
-  if (!allowUnresolvedFireControl && !directFireControl) return false;
+    targeting = platformTargetingSolution(plan.platform, slot),
+    fireControlReady = targeting.qualified && trackAge >= targeting.requiredAge;
+  if (!allowUnresolvedFireControl && !fireControlReady) return false;
   const plannedWeapons = platformFirePlanWeapons(plan),
     assessment = plan.lastAssessment ?? assessPlatformFirePlan(plan),
     inFlight = plannedWeapons.filter(
@@ -2488,14 +2517,18 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
     enemyFired = enemyStates.filter((state) => state === "fired").length,
     enemyReserved = enemyStates.filter((state) => state === "reserved").length,
     enemyTrackAge = enemyPlatform.weaponTrackAge.get(enemySlot.id) ?? 0,
-    enemyRequiredAge = enemySlot.minimumTrackAge + enemySlot.fireControlDelay;
+    enemyTargeting = platformTargetingSolution(enemyPlatform, enemySlot),
+    enemyRequiredAge = enemyTargeting.requiredAge;
   let enemyFireState = "OPFOR SEARCH";
   if (platformFirePlan?.assessmentPending)
     enemyFireState = `OPFOR BDA ${Math.max(0, platformFirePlan.assessmentReadyAt - elapsed).toFixed(1)}s`;
   else if (enemyFired > 0)
     enemyFireState = `OPFOR LAUNCHED ${enemyFired}${platformFirePlan ? ` / WAVE ${platformFirePlan.wave}` : ""}`;
-  else if (enemyPlatform.targetTrack.source === "esm")
-    enemyFireState = "OPFOR ESM CUE";
+  else if (enemyTargeting.passive)
+    enemyFireState =
+      enemyTrackAge >= enemyRequiredAge
+        ? "OPFOR PASSIVE READY"
+        : `OPFOR PASSIVE BUILD ${Math.max(0, enemyRequiredAge - enemyTrackAge).toFixed(1)}s`;
   else if (
     enemyPlatform.targetTrack.source === "radar" &&
     enemyPlatform.targetTrack.quality >= enemySlot.minimumTrackQuality
@@ -4913,36 +4946,64 @@ setInterval(() => {
   }
   radarCtx.globalAlpha = 1;
 }, 100);
+function surfaceTargetingSolution(strike: NonNullable<ShipDefinition["surfaceStrike"]>) {
+  const direct = surfacePicture.trackForTarget(1);
+  if (
+    direct &&
+    direct.age <= strike.maximumTrackAge &&
+    direct.quality >= strike.requiredTrackQuality
+  )
+    return {
+      track: direct,
+      passive: false,
+      minimumTrackAge: strike.minimumTrackAge,
+      fireControlDelay: strike.fireControlDelay,
+    };
+  const passive = strike.passiveTargeting;
+  if (
+    passive &&
+    surfaceEsmCue.valid &&
+    surfaceEsmCue.age <= strike.maximumTrackAge &&
+    surfaceEsmCue.quality >= passive.minimumTrackQuality &&
+    surfaceEsmCue.uncertainty <= passive.maximumUncertainty
+  )
+    return {
+      track: surfaceEsmCue,
+      passive: true,
+      minimumTrackAge: passive.minimumTrackAge,
+      fireControlDelay: passive.fireControlDelay,
+    };
+  return null;
+}
+
 function planSurfaceStrike(manual = false) {
   const strike = activeShip.surfaceStrike;
   if (!strike || !enemyPlatform || enemyPlatform.destroyed) {
     if (manual) log("SURFACE STRIKE INHIBIT / NO VALID PLATFORM TARGET");
     return false;
   }
-  const track = surfacePicture.trackForTarget(1);
-  if (
-    !track ||
-    track.age > strike.maximumTrackAge ||
-    track.quality < strike.requiredTrackQuality
-  ) {
+  const solution = surfaceTargetingSolution(strike),
+    directTrack = surfacePicture.trackForTarget(1);
+  if (!solution) {
     if (manual)
       log(
-        `SURFACE STRIKE INHIBIT / ${track && track.age > strike.maximumTrackAge ? `STALE TRACK ${track.age.toFixed(1)}s` : `TRACK QUALITY ${track ? Math.round(track.quality * 100) : 0}% / REQUIRES ${Math.round(strike.requiredTrackQuality * 100)}%`}`,
+        `SURFACE STRIKE INHIBIT / ${directTrack && directTrack.age > strike.maximumTrackAge ? `STALE TRACK ${directTrack.age.toFixed(1)}s` : `NO QUALIFIED RADAR OR PASSIVE TARGETING SOLUTION`}`,
       );
     return false;
   }
+  const { track } = solution;
   if (
-    surfaceTrackStableTime < strike.minimumTrackAge ||
+    surfaceTrackStableTime < solution.minimumTrackAge ||
     elapsed < surfaceFireControlReadyAt
   ) {
     if (manual) {
       const confirmationRemaining = Math.max(
           0,
-          strike.minimumTrackAge - surfaceTrackStableTime,
+          solution.minimumTrackAge - surfaceTrackStableTime,
         ),
         commandRemaining = Number.isFinite(surfaceFireControlReadyAt)
           ? Math.max(0, surfaceFireControlReadyAt - elapsed)
-          : confirmationRemaining + strike.fireControlDelay,
+          : confirmationRemaining + solution.fireControlDelay,
         remaining = Math.max(confirmationRemaining, commandRemaining);
       log(
         `SURFACE STRIKE INHIBIT / FIRE CONTROL BUILD / ${Math.max(0, remaining).toFixed(1)}s REMAINING`,
@@ -5040,7 +5101,7 @@ function planSurfaceStrike(manual = false) {
   surfaceRequiredHits = salvoPlan.requiredHits;
   surfacePlanningLeakProbability = salvoPlan.planningLeakProbability;
   log(
-    `SURFACE OODA / WAVE ${surfaceStrikeWave} / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / ${salvoPlan.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvoPlan.planningLeakProbability * 100)}% / ROUTE +/-${(strike.routeLateralOffset / 10).toFixed(1)} km / TOT WINDOW ${strike.arrivalWindow.toFixed(1)}s / TRACK ${track.id} TQ ${Math.round(track.quality * 100)}% / ${(range / 10).toFixed(1)} km`,
+    `SURFACE OODA / WAVE ${surfaceStrikeWave} / ${manual ? "MANUAL" : "AUTO"} / ${count} x ${strike.weapon} / ${salvoPlan.requiredHits} HITS REQUIRED / PLEAK ${Math.round(salvoPlan.planningLeakProbability * 100)}% / ROUTE +/-${(strike.routeLateralOffset / 10).toFixed(1)} km / TOT WINDOW ${strike.arrivalWindow.toFixed(1)}s / ${solution.passive ? "PASSIVE CUE" : `TRACK ${track.id}`} TQ ${Math.round(track.quality * 100)}% / UNC ${(track.uncertainty / 10).toFixed(1)} km / ${(range / 10).toFixed(1)} km`,
   );
   return true;
 }
@@ -5138,26 +5199,28 @@ function updateSurfaceCombat(
     );
   }
   if (!strike) return;
-  if (
-    track &&
-    track.age <= strike.maximumTrackAge &&
-    track.quality >= strike.requiredTrackQuality
-  ) {
-    if (surfaceTrackId !== track.id) {
-      surfaceTrackId = track.id;
+  const targeting = surfaceTargetingSolution(strike);
+  if (targeting) {
+    const targetingTrack = targeting.track;
+    if (surfaceTrackId !== targetingTrack.id) {
+      surfaceTrackId = targetingTrack.id;
       surfaceTrackStableTime = 0;
       surfaceFireControlReadyAt = Infinity;
       surfaceFireControlReadyLogged = false;
-      log(`SURFACE TRACK ${track.id} / CONTINUITY BUILD`);
+      log(
+        targeting.passive
+          ? `SURFACE PASSIVE CUE / SEARCH AREA BUILD / UNC ${(targetingTrack.uncertainty / 10).toFixed(1)} km`
+          : `SURFACE TRACK ${targetingTrack.id} / CONTINUITY BUILD`,
+      );
     }
     surfaceTrackStableTime += dt;
     if (
-      surfaceTrackStableTime >= strike.minimumTrackAge &&
+      surfaceTrackStableTime >= targeting.minimumTrackAge &&
       !Number.isFinite(surfaceFireControlReadyAt)
     ) {
-      surfaceFireControlReadyAt = elapsed + strike.fireControlDelay;
+      surfaceFireControlReadyAt = elapsed + targeting.fireControlDelay;
       log(
-        `SURFACE FIRE CONTROL / TRACK ${track.id} CORRELATED / COMMAND DELAY ${strike.fireControlDelay.toFixed(1)}s`,
+        `SURFACE FIRE CONTROL / ${targeting.passive ? "PASSIVE SEARCH BASKET" : `TRACK ${targetingTrack.id} CORRELATED`} / COMMAND DELAY ${targeting.fireControlDelay.toFixed(1)}s`,
       );
     }
     if (
@@ -5165,10 +5228,14 @@ function updateSurfaceCombat(
       !surfaceFireControlReadyLogged
     ) {
       surfaceFireControlReadyLogged = true;
-      log(`SURFACE FIRE CONTROL READY / TRACK ${track.id}`);
+      log(
+        targeting.passive
+          ? "SURFACE PASSIVE TARGETING READY / BEARING-ONLY LAUNCH AUTHORIZED"
+          : `SURFACE FIRE CONTROL READY / TRACK ${targetingTrack.id}`,
+      );
     }
   } else {
-    surfaceTrackId = track?.id ?? 0;
+    surfaceTrackId = 0;
     surfaceTrackStableTime = 0;
     surfaceFireControlReadyAt = Infinity;
     surfaceFireControlReadyLogged = false;
@@ -5214,27 +5281,33 @@ function updateSurfaceCombat(
 
   for (const missile of surfaceStrikeMissiles) {
     if (missile.phase === "destroyed") continue;
+    const guidanceSolution = surfaceTargetingSolution(strike),
+      guidanceTrack = guidanceSolution?.track;
     if (
-      track &&
-      track.age <= strike.maximumTrackAge &&
-      track.quality >= strike.datalinkMinimumQuality &&
+      guidanceTrack &&
+      guidanceTrack.age <= strike.maximumTrackAge &&
+      guidanceTrack.quality >=
+        (guidanceSolution.passive
+          ? (strike.passiveTargeting?.minimumTrackQuality ??
+            strike.datalinkMinimumQuality)
+          : strike.datalinkMinimumQuality) &&
       elapsed >= missile.nextDatalink &&
       !missile.seekerAcquired
     ) {
       missile.commandPoint
-        .copy(track.position)
-        .addScaledVector(track.velocity, strike.datalinkLatency);
-      missile.commandVelocity.copy(track.velocity);
+        .copy(guidanceTrack.position)
+        .addScaledVector(guidanceTrack.velocity, strike.datalinkLatency);
+      missile.commandVelocity.copy(guidanceTrack.velocity);
       missile.datalinkValid = true;
       missile.nextDatalink = elapsed + strike.datalinkUpdateInterval;
       if (
         missile.lastDatalinkQuality < 0 ||
-        Math.abs(track.quality - missile.lastDatalinkQuality) >= 0.12
+        Math.abs(guidanceTrack.quality - missile.lastDatalinkQuality) >= 0.12
       ) {
         log(
-          `HARPOON ${missile.id} DATALINK UPDATE / ${missile.target.definition.name} TRACK ${track.id} / TQ ${Math.round(track.quality * 100)}%`,
+          `HARPOON ${missile.id} DATALINK UPDATE / ${missile.target.definition.name} ${guidanceSolution.passive ? "PASSIVE CUE" : `TRACK ${guidanceTrack.id}`} / TQ ${Math.round(guidanceTrack.quality * 100)}%`,
         );
-        missile.lastDatalinkQuality = track.quality;
+        missile.lastDatalinkQuality = guidanceTrack.quality;
       }
     } else if (
       elapsed >= missile.nextDatalink &&
@@ -5372,10 +5445,19 @@ function updateSurfaceCombat(
   );
   canvas.dataset.surfaceTrackSpeed = (track?.velocity.length() ?? 0).toFixed(4);
   canvas.dataset.surfaceTrackStableTime = surfaceTrackStableTime.toFixed(2);
+  canvas.dataset.surfaceTargetingSource = targeting
+    ? targeting.passive
+      ? "passive"
+      : "radar"
+    : "none";
   canvas.dataset.surfaceFireControlState = surfaceFireControlReadyLogged
-    ? "ready"
+    ? targeting?.passive
+      ? "passive-ready"
+      : "ready"
     : Number.isFinite(surfaceFireControlReadyAt)
-      ? "command-delay"
+      ? targeting?.passive
+        ? "passive-command-delay"
+        : "command-delay"
       : "track-build";
   canvas.dataset.surfaceStrikeAmmo = String(surfaceStrikeAmmo);
   canvas.dataset.surfaceStrikeActive = String(
@@ -6515,16 +6597,17 @@ function updateIncomingMissile(m: Missile, dt: number) {
       fireControlHealth =
         (platform.subsystemHealth.get(weaponSlot.fireControlSensorId) ?? 100) /
         100,
-      trackQuality = Math.max(
-        0,
-        ...[...platform.sensorState.values()].map((state) => state.quality),
-      ),
+      targeting = platformTargetingSolution(platform, weaponSlot),
+      trackQuality = platform.targetTrack.valid
+        ? platform.targetTrack.quality
+        : 0,
       trackAge = platform.weaponTrackAge.get(weaponSlot.id) ?? 0,
       effectiveTrackQuality =
         trackQuality * THREE.MathUtils.lerp(0.55, 1, fireControlHealth),
-      requiredAge = weaponSlot.minimumTrackAge + weaponSlot.fireControlDelay,
+      requiredAge = targeting.requiredAge,
       fireControlReady =
-        effectiveTrackQuality >= weaponSlot.minimumTrackQuality &&
+        targeting.qualified &&
+        effectiveTrackQuality >= targeting.minimumTrackQuality &&
         trackAge >= requiredAge,
       salvoCommitted = platform.slots.weaponHardpoints.some(
         (hardpoint) =>
@@ -6579,13 +6662,14 @@ function updateIncomingMissile(m: Missile, dt: number) {
         return;
       }
       if (
-        trackQuality < weaponSlot.minimumTrackQuality ||
+        !targeting.qualified ||
+        effectiveTrackQuality < targeting.minimumTrackQuality ||
         trackAge < requiredAge
       ) {
         if (!m.mesh.userData.platformTrackHoldLogged) {
           m.mesh.userData.platformTrackHoldLogged = true;
           log(
-            `${platform.definition.name} TRACK BUILD / ${weaponSlot.displayName} / TQ ${Math.round(trackQuality * 100)}% / AGE ${trackAge.toFixed(1)}/${requiredAge.toFixed(1)}s`,
+            `${platform.definition.name} TRACK BUILD / ${weaponSlot.displayName} / ${targeting.passive ? "PASSIVE CUE" : "RADAR"} TQ ${Math.round(trackQuality * 100)}% / AGE ${trackAge.toFixed(1)}/${requiredAge.toFixed(1)}s`,
           );
         }
         m.launchAt = elapsed + 0.25;
@@ -6597,7 +6681,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
       if (!platform.weaponTrackReadyLogged.has(weaponSlot.id)) {
         platform.weaponTrackReadyLogged.add(weaponSlot.id);
         log(
-          `${platform.definition.name} FIRE CONTROL READY / ${weaponSlot.displayName} / TQ ${Math.round(trackQuality * 100)}% / TRACK AGE ${trackAge.toFixed(1)}s`,
+          `${platform.definition.name} ${targeting.passive ? "PASSIVE TARGETING READY" : "FIRE CONTROL READY"} / ${weaponSlot.displayName} / TQ ${Math.round(trackQuality * 100)}% / TRACK AGE ${trackAge.toFixed(1)}s`,
         );
       }
       const nextRelease = platform.weaponSlotNextRelease.get(weaponSlot.id) ?? 0;

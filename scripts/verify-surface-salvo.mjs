@@ -113,7 +113,9 @@ try {
         canvas?.dataset.surfaceEsmCue === "valid" &&
         canvas?.dataset.enemyPlatformTargetTrackSource === "esm" &&
         canvas?.dataset.shipManeuverMode === "close" &&
-        canvas?.dataset.enemyPlatformManeuverMode === "close"
+        canvas?.dataset.enemyPlatformManeuverMode === "close" &&
+        Number(canvas?.dataset.surfaceStrikeWave ?? 0) >= 1 &&
+        Number(canvas?.dataset.enemyPlatformFired ?? 0) >= 1
       );
     },
     null,
@@ -157,7 +159,7 @@ if (
   farRangeCue.enemyTrackSource !== "esm" ||
   farRangeCue.ownManeuver !== "close" ||
   farRangeCue.enemyManeuver !== "close" ||
-  farRangeCue.ownWave !== "0" ||
-  farRangeCue.enemyFired !== "0"
+  Number(farRangeCue.ownWave) < 1 ||
+  Number(farRangeCue.enemyFired) < 1
 )
   process.exitCode = 1;

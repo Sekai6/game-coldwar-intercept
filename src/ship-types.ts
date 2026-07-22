@@ -95,6 +95,12 @@ export interface ShipDefinition {
     maximumTrackAge: number;
     minimumTrackAge: number;
     fireControlDelay: number;
+    passiveTargeting?: {
+      minimumTrackQuality: number;
+      minimumTrackAge: number;
+      fireControlDelay: number;
+      maximumUncertainty: number;
+    };
     datalinkUpdateInterval: number;
     datalinkLatency: number;
     datalinkMinimumQuality: number;

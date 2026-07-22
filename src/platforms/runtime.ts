@@ -683,11 +683,19 @@ export function updateEnemyPlatform(
   for (const slot of platform.definition.weaponSlots) {
     const fireControlHealth =
       (platform.subsystemHealth.get(slot.fireControlSensorId) ?? 100) / 100;
+    const passive = slot.passiveTargeting,
+      passiveTrack =
+        track.source === "esm" &&
+        !!passive &&
+        track.quality >= passive.minimumTrackQuality &&
+        track.uncertainty <= passive.maximumUncertainty;
     const sufficient =
       fireControlHealth > 0.05 &&
       track.valid &&
       track.quality * THREE.MathUtils.lerp(0.55, 1, fireControlHealth) >=
-        slot.minimumTrackQuality;
+        (passiveTrack
+          ? (passive?.minimumTrackQuality ?? slot.minimumTrackQuality)
+          : slot.minimumTrackQuality);
     const holdingDirectTrack =
       !sufficient &&
       track.valid &&

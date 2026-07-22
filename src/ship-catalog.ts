@@ -35,6 +35,12 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
     maximumTrackAge: 4,
     minimumTrackAge: 2.8,
     fireControlDelay: 2.2,
+    passiveTargeting: {
+      minimumTrackQuality: 0.18,
+      minimumTrackAge: 6,
+      fireControlDelay: 2.5,
+      maximumUncertainty: 190,
+    },
     datalinkUpdateInterval: 2.8,
     datalinkLatency: 0.55,
     datalinkMinimumQuality: 0.22,
