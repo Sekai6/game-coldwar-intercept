@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type { TargetableEntity } from "../combat-entity";
 import type { DefenseTarget, Missile } from "../combat-types";
 import type { EnemyType } from "../threats/catalog";
+import type { Track } from "../sim";
+import type { DefenseObservation } from "../defense/targeting";
 
 export type DefenseTargetAdapterOptions = {
   phase: DefenseTarget["phase"];
@@ -26,6 +28,20 @@ export function adaptTargetableEntity(
     },
     entity,
     displayName: options.displayName,
+  };
+}
+
+export function adaptCombatTrack(
+  track: Track,
+  target: DefenseTarget,
+): DefenseObservation {
+  return {
+    id: track.sourceId,
+    kind: target.entity?.kind ?? "missile",
+    position: track.position,
+    velocity: track.velocity,
+    quality: track.quality,
+    updatedAt: track.lastSeen,
   };
 }
 

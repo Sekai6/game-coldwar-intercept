@@ -3,7 +3,7 @@ export type ObservedTargetKind = "ship" | "aircraft" | "missile" | "decoy" | "un
 export type VectorObservation = { x: number; y: number; z: number };
 
 export interface DefenseObservation {
-  id: string;
+  id: string | number;
   kind: ObservedTargetKind;
   position: VectorObservation;
   velocity: VectorObservation;

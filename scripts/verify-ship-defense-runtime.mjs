@@ -61,7 +61,15 @@ recordLaunch(engagements, missile);
 recordLaunch(engagements, missile);
 const resolved = resolveShot(engagements, missile, "miss", 12);
 assert(resolved?.shots === 2 && resolved.pending === 1 && resolved.misses === 1, "engagement accounting failed");
-assert(threatScore(missile, 0.8, new THREE.Vector3(), 40) > 200, "terminal missile scoring failed");
+const observation = {
+  id: missile.entity.id,
+  kind: "missile",
+  position: missile.mesh.position,
+  velocity: missile.velocity,
+  quality: 0.8,
+  updatedAt: 0,
+};
+assert(threatScore(observation, "terminal", "missile", new THREE.Vector3(), 40) > 200, "terminal missile scoring failed");
 
 assert(Math.abs(moveToward(0, 2, 0.5) - 0.5) < 1e-9, "linear slew failed");
 assert(Math.abs(moveAngle(Math.PI - 0.1, -Math.PI + 0.1, 0.05) - (Math.PI - 0.05)) < 1e-9, "wrapped angle slew failed");
@@ -72,4 +80,4 @@ launcher.model.userData.arms = [armA, armB];
 setMk10Elevation(launcher, 0.4);
 assert(launcher.elevation === 0.4 && armA.rotation.z === 0.4 && armB.rotation.z === 0.4, "Mk 10 elevation sync failed");
 
-console.log(JSON.stringify({ targets: 2, shots: resolved.shots, score: threatScore(missile, 0.8, new THREE.Vector3(), 40), elevation: launcher.elevation }, null, 2));
+console.log(JSON.stringify({ targets: 2, shots: resolved.shots, score: threatScore(observation, "terminal", "missile", new THREE.Vector3(), 40), elevation: launcher.elevation }, null, 2));

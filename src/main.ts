@@ -5,7 +5,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import "./style.css";
-import { CombatPicture, radarHorizonWorldUnits } from "./sim";
+import { CombatPicture, radarHorizonWorldUnits, type Track } from "./sim";
 import {
   shipSurfaceHardpoints,
   type ModelWeaponHardpoint,
@@ -75,7 +75,7 @@ import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
 import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
 import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
-import { adaptTargetableEntity, allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
+import { adaptCombatTrack, adaptTargetableEntity, allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward, setMk10Elevation } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
@@ -605,10 +605,12 @@ function settleEngagement(
       `DOCTRINE LOOK / TARGET ${defenseSourceForTarget(interceptor.target)} / ${state.misses} MISS`,
     );
 }
-function missileThreatScore(missile: DefenseTarget, quality: number) {
+function missileThreatScore(missile: DefenseTarget, track: Track) {
+  const observation = adaptCombatTrack(track, missile);
   return threatScore(
-    missile,
-    quality,
+    observation,
+    missile.phase,
+    observation.kind,
     defender.position,
     incomingProfiles[missile.threatType].threatPriority,
   );
@@ -6023,8 +6025,8 @@ function updateCombat(dt: number) {
     })
     .sort(
       (a, b) =>
-        missileThreatScore(defenseTargetForSource(b.sourceId)!, b.quality) -
-        missileThreatScore(defenseTargetForSource(a.sourceId)!, a.quality),
+        missileThreatScore(defenseTargetForSource(b.sourceId)!, b) -
+        missileThreatScore(defenseTargetForSource(a.sourceId)!, a),
     )[0];
   const terminalSm2 = activeInterceptors
     .filter(
@@ -6084,7 +6086,7 @@ function updateCombat(dt: number) {
     best
   ) {
     const target = defenseTargetForSource(best.sourceId)!,
-      range = target.mesh.position.distanceTo(defender.position),
+      range = best.position.distanceTo(defender.position),
       rim = weaponProfiles["RIM-67"],
       mr = weaponProfiles["SM-2MR"],
       er = weaponProfiles["SM-2ER"],
