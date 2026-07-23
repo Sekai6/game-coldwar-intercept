@@ -43,7 +43,9 @@
     "verify:track-source-ids": "tsc src/sim.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-track-source-ids.mjs",
     "verify:air-sensors": "tsc src/air/sensors.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-sensors.mjs",
     "verify:radar-countermeasures": "tsc src/radar-countermeasures.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-radar-countermeasures.mjs",
-    "verify:anti-ship-guidance": "tsc src/anti-ship-guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-anti-ship-guidance.mjs"
+    "verify:anti-ship-guidance": "tsc src/anti-ship-guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-anti-ship-guidance.mjs",
+    "verify:acmi-export": "tsc src/aar/acmi-exporter.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-acmi-export.mjs",
+    "verify:acmi-ui": "node scripts/verify-acmi-ui.mjs"
   },
   "dependencies": {
     "three": "^0.178.0"

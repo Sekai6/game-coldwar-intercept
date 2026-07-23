@@ -5,6 +5,8 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import "./style.css";
+import { exportTacviewAcmi } from "./aar/acmi-exporter";
+import { downloadTextFile } from "./aar/download";
 import { CombatPicture, radarHorizonWorldUnits, type Track } from "./sim";
 import {
   shipSurfaceHardpoints,
@@ -2340,6 +2342,14 @@ sandbox.insertBefore(airScenarioField, sandbox.querySelector("#sbStart"));
 const airScenarioInput = airScenarioField.querySelector(
   "input",
 ) as HTMLInputElement;
+const tacviewExportField = document.createElement("label");
+tacviewExportField.className = "sandbox-toggle";
+tacviewExportField.innerHTML =
+  '<input id="sbTacviewAutoExport" type="checkbox"> AUTO-EXPORT TACVIEW ACMI AFTER ACTION';
+sandbox.insertBefore(tacviewExportField, sandbox.querySelector("#sbStart"));
+const tacviewAutoExportInput = tacviewExportField.querySelector(
+  "input",
+) as HTMLInputElement;
 const airPresetField = document.createElement("label");
 airPresetField.className = "sandbox-field";
 airPresetField.innerHTML = `<span>AIR PRESET</span><select id="sbAirPreset">${Object.entries(
@@ -3208,10 +3218,13 @@ function classifyAarEvent(text: string): AarCategory {
 }
 function captureAarSnapshot(force = false) {
   if (!force && elapsed + 1e-6 < nextAarSnapshot) return;
+  const headingFromVelocity = (velocity: THREE.Vector3) =>
+    velocity.lengthSq() > 1e-6 ? Math.atan2(velocity.x, -velocity.z) : 0;
   const snapshot: AarSnapshot = {
     time: elapsed,
     ship: {
       x: defender.position.x,
+      y: defender.position.y,
       z: defender.position.z,
       heading: defender.rotation.y,
       hull: hullIntegrity,
@@ -3221,7 +3234,9 @@ function captureAarSnapshot(force = false) {
       .map((m, id) => ({
         id: id + 1,
         x: m.mesh.position.x,
+        y: m.mesh.position.y,
         z: m.mesh.position.z,
+        heading: headingFromVelocity(m.velocity),
         phase: m.phase,
         threatType: m.threatType,
       })),
@@ -3231,18 +3246,23 @@ function captureAarSnapshot(force = false) {
       .map((x) => ({
         id: x.id + 1,
         x: x.i.mesh.position.x,
+        y: x.i.mesh.position.y,
         z: x.i.mesh.position.z,
+        heading: headingFromVelocity(x.i.velocity),
         weapon: x.i.weapon,
         targetId: defenseSourceForTarget(x.i.target),
       })),
-    chaff: chaffClouds.map((c) => ({
+    chaff: chaffClouds.map((c, id) => ({
+      id: c.serial || id + 1,
       x: c.position.x,
+      y: c.position.y,
       z: c.position.z,
       side: c.side,
     })),
     enemyPlatform: enemyPlatform
       ? {
           x: enemyPlatform.model.position.x,
+          y: enemyPlatform.model.position.y,
           z: enemyPlatform.model.position.z,
           heading: enemyPlatform.model.rotation.y,
           hull: enemyPlatform.hullIntegrity,
@@ -3253,7 +3273,9 @@ function captureAarSnapshot(force = false) {
     surfaceStrikes: surfaceStrikeMissiles.map((missile) => ({
       id: missile.id,
       x: missile.mesh.position.x,
+      y: missile.mesh.position.y,
       z: missile.mesh.position.z,
+      heading: headingFromVelocity(missile.velocity),
       phase: missile.phase,
     })),
     aircraft: airCombat.aircraft.map((aircraft) => ({
@@ -3263,6 +3285,7 @@ function captureAarSnapshot(force = false) {
       x: aircraft.position.x,
       y: aircraft.position.y,
       z: aircraft.position.z,
+      heading: headingFromVelocity(aircraft.velocity),
       state: aircraft.state,
       mission: aircraft.mission,
       alive: aircraft.alive,
@@ -3275,6 +3298,7 @@ function captureAarSnapshot(force = false) {
       x: missile.position.x,
       y: missile.position.y,
       z: missile.position.z,
+      heading: headingFromVelocity(missile.velocity),
       phase: missile.phase,
       targetId: missile.targetId,
     })),
@@ -3491,7 +3515,7 @@ function showAar(outcome: string, score: number) {
     harpoons = aarEvents.filter((e) =>
       /RGM-84 HARPOON SURFACE LAUNCH/i.test(e.text),
     ).length;
-  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>PROG DAMAGE<b>${surfaceProgressiveDamage.toFixed(1)}</b></span><span>SFC MISSES<b>${surfaceMisses}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
+  resultPanel.innerHTML = `<header class="aar-top"><div><small>AFTER ACTION REVIEW / ${activeShip.name}</small><h2>${outcome}</h2></div><div class="aar-score">SCORE <b>${score}</b></div></header><div class="aar-metrics"><span>THREATS<b>${missiles.length}</b></span><span>SAM SHOTS<b>${samShots}</b></span><span>HARD KILLS<b>${hardKills}</b></span><span>SOFT KILLS<b>${softKills}</b></span><span>LEAKERS<b>${impacts}</b></span><span>HARPOONS<b>${harpoons}</b></span><span>SURFACE HITS<b>${surfaceHits}</b></span><span>PROG DAMAGE<b>${surfaceProgressiveDamage.toFixed(1)}</b></span><span>SFC MISSES<b>${surfaceMisses}</b></span><span>SFC SOFT KILLS<b>${surfaceSoftKills}</b></span><span>SFC PD KILLS<b>${surfacePointDefenseKills}</b></span><span>TARGET HULL<b>${Math.round(enemyPlatform?.hullIntegrity ?? 0)}%</b></span><span>HULL<b>${hullIntegrity}%</b></span></div><div class="aar-body"><section class="aar-replay"><div class="aar-section-head"><b>TACTICAL REPLAY</b><span id="aarTime"></span></div><canvas id="aarCanvas" width="900" height="440"></canvas><div class="aar-controls"><button id="aarStart" title="Jump to start">|&lt;</button><button id="aarPlay">PLAY</button><input id="aarSlider" type="range" min="0" max="${Math.max(0, aarSnapshots.length - 1)}" value="${Math.max(0, aarSnapshots.length - 1)}"><button id="aarEnd" title="Jump to end">&gt;|</button></div></section><aside class="aar-timeline"><div class="aar-section-head"><b>EVENT TIMELINE</b><span>${aarEvents.length} EVENTS</span></div><div id="aarEvents"></div></aside></div><footer class="aar-footer"><button id="aarExportTacview">EXPORT TACVIEW</button><button id="aarClose">CLOSE AAR</button><button id="restartMission">RESTART EXERCISE</button></footer>`;
   const eventList = resultPanel.querySelector("#aarEvents")!;
   aarEvents.forEach((event, eventIndex) => {
     const button = document.createElement("button");
@@ -3545,10 +3569,24 @@ function showAar(outcome: string, score: number) {
       aarReplayTimer = undefined;
       resultPanel.style.display = "none";
     };
+  (resultPanel.querySelector("#aarExportTacview") as HTMLButtonElement).onclick =
+    exportCurrentTacview;
   (resultPanel.querySelector("#restartMission") as HTMLButtonElement).onclick =
     () => location.reload();
   resultPanel.style.display = "flex";
   renderAarFrame(aarSnapshots.length - 1);
+}
+function tacviewFilename() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `coldwar-intercept-${stamp}.acmi`;
+}
+function exportCurrentTacview() {
+  const acmi = exportTacviewAcmi(aarSnapshots, aarEvents, {
+    title: `${activeShip.name} After Action Review`,
+    referenceTime: new Date(),
+    blueShipName: `${activeShip.name} ${activeShip.hullNumber}`,
+  });
+  downloadTextFile(acmi, tacviewFilename());
 }
 function augmentAarSubsystemSummary() {
   const metrics = resultPanel.querySelector(".aar-metrics");
@@ -3594,6 +3632,7 @@ function finishMission(victory: boolean, outcomeOverride?: string) {
         : `${activeShip.name} DISABLED`);
   showAar(outcome, score);
   augmentAarSubsystemSummary();
+  if (tacviewAutoExportInput.checked) exportCurrentTacview();
 }
 function controlButton(label: string, action: () => void) {
   const b = document.createElement("button");

@@ -673,6 +673,8 @@ Shared subsystem slots use semantic names such as `primaryRadar`, `fireControl`,
 
 Shipboard and airborne defenders share one pipeline: `target-source registration -> sensor track -> DefenseConsumer scoring -> resource authorization -> EngagementRecord -> physical release -> settlement`. Registration never implies detection or grants target truth. `DefenseTargetRegistry` accepts live pluggable sources, supports removal, and rejects duplicate source names or target IDs; radar, SAM, CIWS, and airborne OODA do not enumerate a specific platform container directly.
 
+The AAR panel includes `EXPORT TACVIEW`, which writes the quarter-second ship, aircraft, weapon, interceptor, and decoy timeline as Tacview ACMI 2.2 text. `AUTO-EXPORT TACVIEW ACMI AFTER ACTION` is opt-in and disabled by default. Export uses a virtual `31.2 N, 121.5 E` reference origin, with `1 world unit = 100 m` horizontally and `50 m` vertically; this preserves relative geometry without claiming a real mission location.
+
 <a id="adding-ships-and-weapons"></a>
 ### Adding Ships and Weapons
 

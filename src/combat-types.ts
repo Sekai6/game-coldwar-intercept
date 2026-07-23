@@ -170,24 +170,29 @@ export type AarCategory =
 export type AarEvent = { time: number; text: string; category: AarCategory };
 export type AarSnapshot = {
   time: number;
-  ship: { x: number; z: number; heading: number; hull: number };
+  ship: { x: number; y: number; z: number; heading: number; hull: number };
   missiles: {
     id: number;
     x: number;
+    y: number;
     z: number;
+    heading: number;
     phase: MissilePhase;
     threatType: EnemyType;
   }[];
   interceptors: {
     id: number;
     x: number;
+    y: number;
     z: number;
+    heading: number;
     weapon: WeaponType;
     targetId: number | string;
   }[];
-  chaff: { x: number; z: number; side: "threat" | "ship" | "platform" }[];
+  chaff: { id: number; x: number; y: number; z: number; side: "threat" | "ship" | "platform" }[];
   enemyPlatform: {
     x: number;
+    y: number;
     z: number;
     heading: number;
     hull: number;
@@ -197,7 +202,9 @@ export type AarSnapshot = {
   surfaceStrikes: {
     id: number;
     x: number;
+    y: number;
     z: number;
+    heading: number;
     phase: "boost" | "midcourse" | "terminal" | "penetrating" | "destroyed";
   }[];
   aircraft: {
@@ -207,6 +214,7 @@ export type AarSnapshot = {
     x: number;
     y: number;
     z: number;
+    heading: number;
     state: string;
     mission: string;
     alive: boolean;
@@ -219,6 +227,7 @@ export type AarSnapshot = {
     x: number;
     y: number;
     z: number;
+    heading: number;
     phase: string;
     targetId: string;
   }[];
