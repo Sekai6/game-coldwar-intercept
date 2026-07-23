@@ -211,4 +211,6 @@ export interface AirSpawn {
   heading: THREE.Vector3;
   formationIndex: number;
   leaderId?: string;
+  mission?: AirMissionOrder;
+  protectedFormationId?: string;
 }
