@@ -18,7 +18,9 @@ import {
 import {
   moveAngle,
   moveToward,
+  resetMk10LauncherRuntime,
   setMk10Elevation,
+  updateMk10LauncherRuntime,
 } from "../dist-test/ship-defense/launcher-runtime.js";
 
 const assert = (condition, message) => {
@@ -169,6 +171,70 @@ assert(
   "Mk 10 elevation sync failed",
 );
 
+const mk10Model = new THREE.Group();
+const mk10Arm = new THREE.Group();
+mk10Model.userData.arms = [mk10Arm];
+const round = new THREE.Group();
+round.userData.homePosition = new THREE.Vector3();
+round.userData.homeScale = new THREE.Vector3(1, 1, 1);
+mk10Model.add(round);
+const mk10 = {
+  name: "FORWARD",
+  model: mk10Model,
+  stowAzimuth: 0,
+  phase: "slewing",
+  phaseSince: 0,
+  pending: { target: missile, weapon: "RIM-67" },
+  azimuth: 0,
+  elevation: 0,
+  railIndex: 0,
+  reloadRail: -1,
+  rounds: [round],
+};
+const config = {
+  kind: "mk10",
+  displayName: "MK 10",
+  compatibleWeapons: ["RIM-67"],
+  azimuthRateDeg: 180,
+  elevationRateDeg: 180,
+  reloadSeconds: 1,
+};
+let launches = 0;
+let returned = 0;
+const runMk10 = (elapsed, health = 1, track = new THREE.Vector3(100, 10, 0)) =>
+  updateMk10LauncherRuntime({
+    config,
+    launchers: [mk10],
+    elapsed,
+    dt: 1,
+    health: () => health,
+    trackPosition: () => track,
+    worldToLocal: (position) => position,
+    returnAmmo: () => returned++,
+    cancel: () => {},
+    launch: () => {
+      launches++;
+      return {};
+    },
+    log: () => {},
+  });
+runMk10(0);
+assert(launches === 1 && mk10.phase === "firing" && !round.visible, "Mk 10 did not physically release its rail round");
+runMk10(0.4);
+runMk10(1.4);
+runMk10(2.5);
+assert(mk10.phase === "ready" && round.visible, "Mk 10 did not return, reload, and become ready");
+resetMk10LauncherRuntime([mk10]);
+mk10.pending = { target: missile, weapon: "RIM-67" };
+mk10.phase = "slewing";
+runMk10(3, 0);
+assert(
+  returned === 1 &&
+    (mk10.phase === "returning" || mk10.phase === "ready") &&
+    !mk10.pending,
+  "Mk 10 casualty did not cancel and return ammunition",
+);
+
 console.log(
   JSON.stringify(
     {
@@ -182,6 +248,8 @@ console.log(
         40,
       ),
       elevation: launcher.elevation,
+      mk10Launches: launches,
+      mk10ReturnedRounds: returned,
     },
     null,
     2,

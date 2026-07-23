@@ -99,7 +99,9 @@ import {
 import {
   moveAngle,
   moveToward,
+  resetMk10LauncherRuntime,
   setMk10Elevation,
+  updateMk10LauncherRuntime,
 } from "./ship-defense/launcher-runtime";
 import {
   authorizeLaunch,
@@ -1352,203 +1354,32 @@ function cancelAuthorizedLaunch(request: LauncherRequest) {
 }
 function updateMk10Launchers(dt: number) {
   if (activeShip.launcher.kind !== "mk10") return;
-  const config = activeShip.launcher,
-    tolerance = THREE.MathUtils.degToRad(2);
-  for (const launcher of mk10Launchers) {
-    const health = launcherHealth(launcher),
-      azimuthRate =
-        THREE.MathUtils.degToRad(config.azimuthRateDeg) *
-        (0.25 + 0.75 * health),
-      elevationRate =
-        THREE.MathUtils.degToRad(config.elevationRateDeg) *
-        (0.25 + 0.75 * health),
-      request = launcher.pending;
-    if (request && health <= 0.05) {
-      changeAmmo(request.weapon, 1);
-      cancelAuthorizedLaunch(request);
-      launcher.pending = null;
-      launcher.reloadRail = -1;
-      launcher.phase = "returning";
-      launcher.phaseSince = elapsed;
-      log(
-        `${config.displayName} ${launcher.name} CASUALTY / LAUNCH ABORT / AMMO RETURNED`,
-      );
-    }
-    if (
-      launcher.pending &&
-      launcher.pending.target.phase === "destroyed" &&
-      launcher.phase === "slewing"
-    ) {
-      const cancelled = launcher.pending;
-      changeAmmo(cancelled.weapon, 1);
-      cancelAuthorizedLaunch(cancelled);
-      launcher.pending = null;
-      launcher.phase = "returning";
-      launcher.phaseSince = elapsed;
-      log(
-        `${config.displayName} ${launcher.name} TASK CANCEL / TARGET DESTROYED / AMMO RETURNED`,
-      );
-    }
-    if (launcher.phase === "slewing" && launcher.pending) {
-      const trackId = defenseSourceForTarget(launcher.pending.target),
-        track = combatPicture.trackForTarget(trackId);
-      if (!track) {
-        if (elapsed - launcher.phaseSince > 4.5) {
-          const cancelled = launcher.pending;
-          changeAmmo(cancelled.weapon, 1);
-          cancelAuthorizedLaunch(cancelled);
-          launcher.pending = null;
-          launcher.phase = "returning";
-          launcher.phaseSince = elapsed;
-          log(
-            `${config.displayName} ${launcher.name} TASK CANCEL / TRACK LOST / AMMO RETURNED`,
-          );
-        }
-        continue;
-      }
-      const localTarget = defender.worldToLocal(track.position.clone()),
-        relative = localTarget.sub(launcher.model.position),
-        desiredAzimuth = Math.atan2(-relative.z, relative.x),
-        desiredElevation = THREE.MathUtils.clamp(
-          Math.atan2(relative.y, Math.hypot(relative.x, relative.z)),
-          THREE.MathUtils.degToRad(5),
-          THREE.MathUtils.degToRad(70),
-        );
-      launcher.azimuth = moveAngle(
-        launcher.azimuth,
-        desiredAzimuth,
-        azimuthRate * dt,
-      );
-      setMk10Elevation(
-        launcher,
-        moveToward(launcher.elevation, desiredElevation, elevationRate * dt),
-      );
-      launcher.model.rotation.y = launcher.azimuth;
-      if (
-        Math.abs(angleDifference(desiredAzimuth, launcher.azimuth)) <
-          tolerance &&
-        Math.abs(desiredElevation - launcher.elevation) < tolerance
-      ) {
-        const railIndex = launcher.railIndex,
-          round = launcher.rounds[railIndex],
-          origin = new THREE.Vector3(),
-          quaternion = new THREE.Quaternion();
-        round.getWorldPosition(origin);
-        round.getWorldQuaternion(quaternion);
-        const railDirection = new THREE.Vector3(1, 0, 0)
-          .applyQuaternion(quaternion)
-          .normalize();
-        launcher.reloadRail = railIndex;
-        round.visible = false;
-        log(
-          `${config.displayName} ${launcher.name} ON BEARING / AZ ${Math.round(THREE.MathUtils.radToDeg(launcher.azimuth))} / EL ${Math.round(THREE.MathUtils.radToDeg(launcher.elevation))}`,
-        );
-        launchInterceptor(
-          launcher.pending.target,
-          launcher.pending.weapon,
-          `${config.displayName} ${launcher.name}`,
-          `RAIL ${railIndex + 1}`,
-          origin,
-          railDirection,
-        );
-        launcher.pending = null;
-        launcher.phase = "firing";
-        launcher.phaseSince = elapsed;
-      }
-    } else if (
-      launcher.phase === "firing" &&
-      elapsed - launcher.phaseSince >= 0.38
-    ) {
-      launcher.phase = "returning";
-      launcher.phaseSince = elapsed;
-      log(`${config.displayName} ${launcher.name} RETURN TO LOAD`);
-    } else if (launcher.phase === "returning") {
-      launcher.azimuth = moveAngle(
-        launcher.azimuth,
-        launcher.stowAzimuth,
-        azimuthRate * dt,
-      );
-      launcher.model.rotation.y = launcher.azimuth;
-      setMk10Elevation(
-        launcher,
-        moveToward(launcher.elevation, 0, elevationRate * dt),
-      );
-      if (
-        Math.abs(angleDifference(launcher.stowAzimuth, launcher.azimuth)) <
-          tolerance &&
-        launcher.elevation < tolerance
-      ) {
-        launcher.azimuth = launcher.stowAzimuth;
-        launcher.model.rotation.y = launcher.stowAzimuth;
-        setMk10Elevation(launcher, 0);
-        launcher.phaseSince = elapsed;
-        if (launcher.reloadRail < 0) {
-          launcher.phase = "ready";
-          log(`${config.displayName} ${launcher.name} READY / TASK CANCELLED`);
-          continue;
-        }
-        launcher.phase = "loading";
-        const round = launcher.rounds[launcher.reloadRail],
-          home = round.userData.homePosition as THREE.Vector3;
-        round.position.copy(home).add(new THREE.Vector3(-5.2, -0.12, 0));
-        round.scale
-          .copy(round.userData.homeScale as THREE.Vector3)
-          .multiplyScalar(0.72);
-        round.visible = true;
-        log(
-          `${config.displayName} ${launcher.name} LOADING / RAIL ${launcher.reloadRail + 1}`,
-        );
-      }
-    } else if (launcher.phase === "loading") {
-      if (health <= 0.05) continue;
-      const round = launcher.rounds[launcher.reloadRail],
-        home = round.userData.homePosition as THREE.Vector3,
-        reloadTime = config.reloadSeconds / (0.3 + 0.7 * health),
-        t = THREE.MathUtils.smoothstep(
-          (elapsed - launcher.phaseSince) / reloadTime,
-          0,
-          1,
-        );
-      round.position.lerpVectors(
-        home.clone().add(new THREE.Vector3(-5.2, -0.12, 0)),
-        home,
-        t,
-      );
-      round.scale
-        .copy(round.userData.homeScale as THREE.Vector3)
-        .multiplyScalar(THREE.MathUtils.lerp(0.72, 1, t));
-      if (t >= 1) {
-        round.position.copy(home);
-        round.scale.copy(round.userData.homeScale as THREE.Vector3);
-        launcher.railIndex = (launcher.reloadRail + 1) % launcher.rounds.length;
-        launcher.phase = "ready";
-        launcher.phaseSince = elapsed;
-        log(
-          `${config.displayName} ${launcher.name} READY / RAIL ${launcher.reloadRail + 1}`,
-        );
-      }
-    }
-  }
+  updateMk10LauncherRuntime({
+    config: activeShip.launcher,
+    launchers: mk10Launchers,
+    elapsed,
+    dt,
+    health: launcherHealth,
+    trackPosition: (request) =>
+      combatPicture.trackForTarget(defenseSourceForTarget(request.target))
+        ?.position ?? null,
+    worldToLocal: (position) => defender.worldToLocal(position),
+    returnAmmo: (request) => changeAmmo(request.weapon, 1),
+    cancel: cancelAuthorizedLaunch,
+    launch: (request, launcherLabel, launchPoint, origin, direction) =>
+      launchInterceptor(
+        request.target,
+        request.weapon,
+        launcherLabel,
+        launchPoint,
+        origin,
+        direction,
+      ),
+    log,
+  });
 }
 function resetMk10Launchers() {
-  for (const launcher of mk10Launchers) {
-    launcher.pending = null;
-    launcher.phase = "ready";
-    launcher.phaseSince = 0;
-    launcher.azimuth = launcher.stowAzimuth;
-    launcher.elevation = 0;
-    launcher.railIndex = 0;
-    launcher.reloadRail = 0;
-    launcher.model.rotation.y = launcher.stowAzimuth;
-    (launcher.model.userData.arms as THREE.Group[]).forEach(
-      (arm) => (arm.rotation.z = 0),
-    );
-    launcher.rounds.forEach((round) => {
-      round.visible = true;
-      round.position.copy(round.userData.homePosition as THREE.Vector3);
-      round.scale.copy(round.userData.homeScale as THREE.Vector3);
-    });
-  }
+  resetMk10LauncherRuntime(mk10Launchers);
 }
 function configureVlsLoadout(requestedMr: number, requestedEr: number) {
   if (activeShip.launcher.kind !== "mk41") return { mr: 0, er: 0, other: 0 };

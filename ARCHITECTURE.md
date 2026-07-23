@@ -25,6 +25,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/platforms/types.ts`: enemy-platform definitions, sensor slots, weapon slots, physical hardpoints, and runtime instances.
 - `src/platforms/model-slots.ts`: typed model-anchor registration without platform-name checks.
 - `src/platforms/defense.ts`: observed-track threat scoring shared by platform maneuver and point-defense allocation.
+- `src/ship-defense/launcher-runtime.ts`: Mk 10 task, slew, physical rail release, return-to-load, reload, casualty cancellation, and reset lifecycle. The scene layer injects tracks, health, ammunition, authorization settlement, and interceptor creation rather than owning launcher phase transitions.
 - `src/platforms/runtime.ts`: model/definition validation, hardpoint reservation, cross-wave launcher timing, cover release, sensor updates, and observed-track-driven platform maneuver OODA.
 - Weapon slots may request `alternate-groups`; model hardpoints supply opaque `salvoGroup` labels, and the generic reservation scheduler round-robins groups while preserving release queue order.
 - Weapon slots declare `fireControlTrackHoldover` for short scan gaps and `postCommitTrackLossAbort` for a prolonged loss after the first weapon has left the launcher. The latter cancels only unreleased reservations. An ESM cue counts as a new targeting source only when the slot explicitly declares `passiveTargeting` and satisfies its quality, continuity, and uncertainty gates.
