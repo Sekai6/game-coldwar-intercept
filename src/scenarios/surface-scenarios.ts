@@ -6,6 +6,22 @@ export type InitialSurfaceThreat = {
   threatType: EnemyType;
 };
 
+export type SurfaceScenarioConfig = {
+  defenderPosition: THREE.Vector3;
+  initialSpeedKnots: number;
+  radarEnabled: boolean;
+  autoFire: boolean;
+  shipEcmEnabled: boolean;
+};
+
+export const DEFAULT_SURFACE_CONFIG: SurfaceScenarioConfig = {
+  defenderPosition: new THREE.Vector3(0, 0, 40),
+  initialSpeedKnots: 0,
+  radarEnabled: true,
+  autoFire: true,
+  shipEcmEnabled: true,
+};
+
 export const DEFAULT_SURFACE_SCENARIO: readonly InitialSurfaceThreat[] = [
   { position: new THREE.Vector3(-85, 18, -210), threatType: "P-500" as EnemyType },
   { position: new THREE.Vector3(0, 28, -240), threatType: "P-500" as EnemyType },

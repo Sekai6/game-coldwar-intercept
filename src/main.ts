@@ -74,7 +74,7 @@ import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
 import { createAirShipBridge } from "./air/ship-bridge";
-import { initialSurfaceThreats } from "./scenarios/surface-scenarios";
+import { DEFAULT_SURFACE_CONFIG, initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot } from "./ship-defense/engagement-runtime";
@@ -209,7 +209,7 @@ if (activeShip.fixedSensorFaces)
   defender.userData.fixedSensorFaceHealth = createFaceHealth(
     activeShip.fixedSensorFaces,
   );
-defender.position.set(0, 0, 40);
+defender.position.copy(DEFAULT_SURFACE_CONFIG.defenderPosition);
 defender.traverse((o) => {
   if (o instanceof THREE.Mesh) {
     o.castShadow = true;
@@ -2472,8 +2472,8 @@ let running = true,
   sm2Ammo = activeShip.ammo.sm2mr,
   sm2erAmmo = activeShip.ammo.sm2er,
   selectedWeapon: WeaponType = activeShip.launcher.compatibleWeapons[0],
-  autoFire = true,
-  radarEnabled = true,
+  autoFire = DEFAULT_SURFACE_CONFIG.autoFire,
+  radarEnabled = DEFAULT_SURFACE_CONFIG.radarEnabled,
   timeScale = 1,
   selectedTargetId = 1,
   hullIntegrity = 100,
@@ -2490,7 +2490,7 @@ let running = true,
   chaffEnabled = true,
   ecmEnabled = true,
   platformDecoysEnabled = true,
-  shipEcmEnabled = true,
+  shipEcmEnabled = DEFAULT_SURFACE_CONFIG.shipEcmEnabled,
   srbocEnabled = true,
   srbocRounds = 12,
   lastSrboc = -20;
@@ -2502,7 +2502,7 @@ let dragging = false,
   dist = 210,
   cinematic = false,
   viewMode: 1 | 2 | 3 | 4 | 5 | 6 = 2;
-let shipSpeedKnots = 0,
+let shipSpeedKnots = DEFAULT_SURFACE_CONFIG.initialSpeedKnots,
   shipDesiredHeading = 0,
   shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots,
   shipManeuverMode: ShipManeuverMode = "patrol",
