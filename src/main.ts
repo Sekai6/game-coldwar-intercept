@@ -3,6 +3,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import "./style.css";
 import { exportTacviewAcmi } from "./aar/acmi-exporter";
@@ -177,6 +178,7 @@ renderer.toneMappingExposure = 1.08;
 const composer = new EffectComposer(renderer),
   renderPass = new RenderPass(scene, camera),
   ssaoPass = new SSAOPass(scene, camera, innerWidth, innerHeight),
+  gtaoPass = new GTAOPass(scene, camera, innerWidth, innerHeight),
   bloomPass = new UnrealBloomPass(
     new THREE.Vector2(innerWidth, innerHeight),
     0.42,
@@ -188,13 +190,36 @@ ssaoPass.kernelRadius = 8;
 ssaoPass.minDistance = 0.001;
 ssaoPass.maxDistance = 0.09;
 ssaoPass.enabled = innerWidth > 720;
+gtaoPass.updateGtaoMaterial({ radius: 0.24, distanceExponent: 1.7, thickness: 1.35, distanceFallOff: 1 });
+gtaoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, radiusExponent: 1.8, rings: 3, samples: 12 });
+gtaoPass.enabled = false;
 composer.setPixelRatio(Math.min(devicePixelRatio, 2));
 composer.addPass(renderPass);
 composer.addPass(ssaoPass);
+composer.addPass(gtaoPass);
 composer.addPass(bloomPass);
 composer.addPass(outputPass);
 canvas.dataset.renderPipeline = "webgl2-pbr-ssao-bloom-aces";
 canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+const indirectEnvironmentScene = new THREE.Scene();
+indirectEnvironmentScene.background = new THREE.Color(0x6e9fbd);
+const indirectSea = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshBasicMaterial({ color: 0x082d3b, side: THREE.DoubleSide }),
+);
+indirectSea.rotation.x = -Math.PI / 2;
+indirectEnvironmentScene.add(indirectSea);
+const indirectSun = new THREE.Mesh(
+  new THREE.SphereGeometry(8, 16, 8),
+  new THREE.MeshBasicMaterial({ color: 0xffca86 }),
+);
+indirectSun.position.set(-45, 80, 32);
+indirectEnvironmentScene.add(indirectSun);
+const bouncedLightEnvironment = pmremGenerator.fromScene(indirectEnvironmentScene, 0.18).texture;
+indirectSea.geometry.dispose(); (indirectSea.material as THREE.Material).dispose();
+indirectSun.geometry.dispose(); (indirectSun.material as THREE.Material).dispose();
+pmremGenerator.dispose();
 const ambientSky = new THREE.HemisphereLight(0x9cc7dd, 0x10212b, 1.55);
 scene.add(ambientSky);
 const sun = new THREE.DirectionalLight(0xffe3ad, 2.5);
@@ -2898,6 +2923,10 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   highQualityEnvironmentEnabled = highQualityEnvironmentInput.checked;
   highQualityEnvironment.setEnabled(highQualityEnvironmentEnabled);
   ocean.setHighQuality(highQualityEnvironmentEnabled);
+  ssaoPass.enabled = !highQualityEnvironmentEnabled && innerWidth > 720;
+  gtaoPass.enabled = highQualityEnvironmentEnabled;
+  scene.environment = highQualityEnvironmentEnabled ? bouncedLightEnvironment : null;
+  scene.environmentIntensity = highQualityEnvironmentEnabled ? 0.28 : 1;
   renderer.toneMappingExposure = highQualityEnvironmentEnabled ? 1.08 : 1.08;
   bloomPass.strength = highQualityEnvironmentEnabled ? 0.48 : 0.42;
   bloomPass.radius = highQualityEnvironmentEnabled ? 0.42 : 0.38;
@@ -7592,6 +7621,8 @@ function tick(now: number) {
   canvas.dataset.environmentSunIntensity = sun.intensity.toFixed(2);
   canvas.dataset.environmentExposure = renderer.toneMappingExposure.toFixed(2);
   canvas.dataset.environmentShadowMode = renderer.shadowMap.type === THREE.PCFSoftShadowMap ? "PCF_SOFT" : "OTHER";
+  canvas.dataset.environmentAoMode = gtaoPass.enabled ? "GTAO_DENOISED" : ssaoPass.enabled ? "SSAO" : "OFF";
+  canvas.dataset.environmentIndirectLighting = scene.environment === bouncedLightEnvironment ? "PMREM_MULTI_BOUNCE" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
@@ -7910,6 +7941,7 @@ addEventListener("resize", () => {
   composer.setSize(innerWidth, innerHeight);
   ocean.resize(innerWidth, innerHeight);
   ssaoPass.enabled = innerWidth > 720;
+  if (!highQualityEnvironmentEnabled) ssaoPass.enabled = innerWidth > 720;
   canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
 });
 canvas.addEventListener("pointerdown", (e) => {
