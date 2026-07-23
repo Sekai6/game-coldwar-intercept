@@ -39,6 +39,7 @@
     "verify:air-tracks": "tsc src/air/track-store.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-tracks.mjs",
     "verify:air-missile-runtime": "tsc src/air/missile-runtime.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-missile-runtime.mjs",
     "verify:ship-defense-runtime": "tsc src/defense/allegiance.ts src/ship-defense/defense-targets.ts src/ship-defense/engagement-runtime.ts src/ship-defense/launcher-runtime.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-ship-defense-runtime.mjs",
+    "verify:vls-runtime": "tsc src/ship-defense/launcher-runtime.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-vls-runtime.mjs",
     "verify:track-source-ids": "tsc src/sim.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-track-source-ids.mjs",
     "verify:air-sensors": "tsc src/air/sensors.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-sensors.mjs",
     "verify:radar-countermeasures": "tsc src/radar-countermeasures.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-radar-countermeasures.mjs",

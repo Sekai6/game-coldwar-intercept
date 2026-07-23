@@ -100,8 +100,10 @@ import {
   moveAngle,
   moveToward,
   resetMk10LauncherRuntime,
+  resetVlsRuntime,
   setMk10Elevation,
   updateMk10LauncherRuntime,
+  updateVlsRuntime,
 } from "./ship-defense/launcher-runtime";
 import {
   authorizeLaunch,
@@ -1411,21 +1413,7 @@ function configureVlsLoadout(requestedMr: number, requestedEr: number) {
   };
 }
 function resetVlsCells() {
-  for (const bank of ["FWD", "AFT"] as const) {
-    vlsBanks[bank].lastLaunchAt = -Infinity;
-    vlsBanks[bank].lastCellIndex = -1;
-    vlsBanks[bank].minimumObservedGap = Infinity;
-    vlsBanks[bank].launchHistory.length = 0;
-    vlsBanks[bank].damageCenters.length = 0;
-    vlsBanks[bank].trappedRounds = 0;
-  }
-  for (const cell of vlsCells) {
-    cell.pending = null;
-    cell.phase = "ready";
-    cell.closeTo = "ready";
-    cell.phaseSince = 0;
-    cell.lid.rotation.z = 0;
-  }
+  resetVlsRuntime(vlsCells, vlsBanks);
 }
 function createVlsLaunchEffect(
   origin: THREE.Vector3,
@@ -1509,101 +1497,21 @@ function updateVlsLaunchEffects(dt: number) {
 }
 function updateVlsCells(dt: number) {
   if (activeShip.launcher.kind !== "mk41") return;
-  const config = activeShip.launcher;
-  for (const cell of vlsCells) {
-    const health = subsystemHealth(
-        cell.bank === "FWD" ? "forwardLauncher" : "aftLauncher",
-      ),
-      bank = vlsBanks[cell.bank],
-      sequenceInterval = config.sequenceInterval / (0.35 + 0.65 * health);
-    if (cell.pending && cell.pending.target.phase === "destroyed") {
-      const cancelled = cell.pending;
-      changeAmmo(cancelled.weapon, 1);
-      cancelAuthorizedLaunch(cancelled);
-      cell.pending = null;
-      cell.closeTo = "ready";
-      cell.phase = "closing";
-      cell.phaseSince = elapsed;
-      log(
-        `MK 41 ${cell.bank} CELL ${cell.index + 1} TASK CANCEL / TARGET DESTROYED / ROUND RETAINED`,
-      );
-    }
-    if (cell.pending && health <= 0.05) {
-      cancelAuthorizedLaunch(cell.pending);
-      cell.pending = null;
-      cell.closeTo = "disabled";
-      cell.phase = "closing";
-      cell.phaseSince = elapsed;
-      if (cell.loadout !== "OTHER") bank.trappedRounds++;
-      log(
-        `MK 41 ${cell.bank} CASUALTY / CELL ${cell.index + 1} ABORT / ROUND TRAPPED`,
-      );
-    }
-    if (cell.phase === "opening") {
-      cell.lid.rotation.z = moveToward(
-        cell.lid.rotation.z,
-        Math.PI * 0.52,
-        dt * 4.8,
-      );
-      if (
-        cell.lid.rotation.z >= Math.PI * 0.5 &&
-        cell.pending &&
-        elapsed - bank.lastLaunchAt >= sequenceInterval
-      ) {
-        const origin = new THREE.Vector3(),
-          up = new THREE.Vector3(0, 1, 0),
-          gap = elapsed - bank.lastLaunchAt;
-        if (Number.isFinite(gap))
-          bank.minimumObservedGap = Math.min(bank.minimumObservedGap, gap);
-        bank.lastLaunchAt = elapsed;
-        bank.lastCellIndex = cell.index;
-        bank.launchHistory.push(cell.index + 1);
-        cell.origin.getWorldPosition(origin);
-        up.applyQuaternion(
-          defender.getWorldQuaternion(new THREE.Quaternion()),
-        ).normalize();
-        const interceptor = launchInterceptor(
-          cell.pending.target,
-          cell.pending.weapon,
-          `MK 41 ${cell.bank}`,
-          `CELL ${String(cell.index + 1).padStart(2, "0")}`,
-          origin,
-          up,
-        );
-        interceptor.mesh.userData.vlsLaunch = true;
-        interceptor.mesh.userData.verticalDirection = up.clone();
-        createVlsLaunchEffect(origin);
-        cell.pending = null;
-        cell.closeTo = "spent";
-        cell.phase = "launching";
-        cell.phaseSince = elapsed;
-        log(
-          `MK 41 ${cell.bank} CELL ${cell.index + 1} / ${cell.loadout} HOT LAUNCH / VERTICAL BOOST / SEQUENCE ${sequenceInterval.toFixed(2)}s`,
-        );
-      }
-    } else if (cell.phase === "launching" && elapsed - cell.phaseSince > 0.6) {
-      cell.phase = "closing";
-      cell.phaseSince = elapsed;
-    } else if (cell.phase === "closing") {
-      cell.lid.rotation.z = moveToward(cell.lid.rotation.z, 0, dt * 3.6);
-      if (cell.lid.rotation.z <= 0.01) {
-        cell.lid.rotation.z = 0;
-        cell.phase = cell.closeTo;
-      }
-    }
-  }
-  const readyMr = vlsCells.filter(
-      (cell) => cell.loadout === "SM-2MR" && cell.phase === "ready",
-    ).length,
-    readyEr = vlsCells.filter(
-      (cell) => cell.loadout === "SM-2ER" && cell.phase === "ready",
-    ).length,
-    pendingMr = vlsCells.filter(
-      (cell) => cell.loadout === "SM-2MR" && !!cell.pending,
-    ).length,
-    pendingEr = vlsCells.filter(
-      (cell) => cell.loadout === "SM-2ER" && !!cell.pending,
-    ).length;
+  updateVlsRuntime({
+    config: activeShip.launcher,
+    cells: vlsCells,
+    banks: vlsBanks,
+    elapsed,
+    dt,
+    health: (bank) => subsystemHealth(bank === "FWD" ? "forwardLauncher" : "aftLauncher"),
+    shipQuaternion: () => defender.getWorldQuaternion(new THREE.Quaternion()),
+    returnAmmo: (request) => changeAmmo(request.weapon, 1),
+    cancel: cancelAuthorizedLaunch,
+    launch: (request, launcherLabel, launchPoint, origin, direction) =>
+      launchInterceptor(request.target, request.weapon, launcherLabel, launchPoint, origin, direction),
+    launchEffect: createVlsLaunchEffect,
+    log,
+    report: ({ readyMr, readyEr, pendingMr, pendingEr, spent, disabledFwd, disabledAft, returning }) => {
   canvas.dataset.vlsFwdMinLaunchGap = Number.isFinite(
     vlsBanks.FWD.minimumObservedGap,
   )
@@ -1627,24 +1535,14 @@ function updateVlsCells(dt: number) {
   canvas.dataset.vlsOtherLoaded = String(
     vlsCells.filter((cell) => cell.loadout === "OTHER").length,
   );
-  canvas.dataset.vlsSpent = String(
-    vlsCells.filter((cell) => cell.phase === "spent").length,
-  );
-  canvas.dataset.vlsDisabledFwd = String(
-    vlsCells.filter((cell) => cell.bank === "FWD" && cell.phase === "disabled")
-      .length,
-  );
-  canvas.dataset.vlsDisabledAft = String(
-    vlsCells.filter((cell) => cell.bank === "AFT" && cell.phase === "disabled")
-      .length,
-  );
+  canvas.dataset.vlsSpent = String(spent);
+  canvas.dataset.vlsDisabledFwd = String(disabledFwd);
+  canvas.dataset.vlsDisabledAft = String(disabledAft);
   canvas.dataset.vlsTrappedFwd = String(vlsBanks.FWD.trappedRounds);
   canvas.dataset.vlsTrappedAft = String(vlsBanks.AFT.trappedRounds);
-  canvas.dataset.vlsReturning = String(
-    vlsCells.filter(
-      (cell) => cell.phase === "closing" && cell.closeTo === "ready",
-    ).length,
-  );
+  canvas.dataset.vlsReturning = String(returning);
+    },
+  });
 }
 function separateBooster(interceptor: Interceptor) {
   const booster = interceptor.mesh.userData.booster as THREE.Group | undefined;

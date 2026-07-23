@@ -3,6 +3,8 @@ import type {
   Interceptor,
   LauncherRequest,
   Mk10LauncherState,
+  VlsBankState,
+  VlsCellState,
 } from "../combat-types";
 import type { LauncherConfig } from "../ship-types";
 
@@ -204,5 +206,137 @@ export function resetMk10LauncherRuntime(launchers: readonly Mk10LauncherState[]
       round.position.copy(round.userData.homePosition as THREE.Vector3);
       round.scale.copy(round.userData.homeScale as THREE.Vector3);
     });
+  }
+}
+
+type Mk41Config = Extract<LauncherConfig, { kind: "mk41" }>;
+export type VlsRuntimeSnapshot = {
+  readyMr: number;
+  readyEr: number;
+  pendingMr: number;
+  pendingEr: number;
+  spent: number;
+  disabledFwd: number;
+  disabledAft: number;
+  returning: number;
+};
+
+export type VlsRuntimeDependencies = {
+  config: Mk41Config;
+  cells: readonly VlsCellState[];
+  banks: Record<"FWD" | "AFT", VlsBankState>;
+  elapsed: number;
+  dt: number;
+  health: (bank: VlsCellState["bank"]) => number;
+  shipQuaternion: () => THREE.Quaternion;
+  returnAmmo: (request: LauncherRequest) => void;
+  cancel: (request: LauncherRequest) => void;
+  launch: (
+    request: LauncherRequest,
+    launcherLabel: string,
+    launchPoint: string,
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+  ) => Interceptor;
+  launchEffect: (origin: THREE.Vector3, direction: THREE.Vector3) => void;
+  log: (message: string) => void;
+  report?: (snapshot: VlsRuntimeSnapshot) => void;
+};
+
+export function updateVlsRuntime(deps: VlsRuntimeDependencies): void {
+  for (const cell of deps.cells) {
+    const health = deps.health(cell.bank);
+    const bank = deps.banks[cell.bank];
+    const sequenceInterval = deps.config.sequenceInterval / (0.35 + 0.65 * health);
+    if (cell.pending?.target.phase === "destroyed") {
+      const request = cell.pending;
+      deps.returnAmmo(request);
+      deps.cancel(request);
+      cell.pending = null;
+      cell.closeTo = "ready";
+      cell.phase = "closing";
+      cell.phaseSince = deps.elapsed;
+      deps.log(`MK 41 ${cell.bank} CELL ${cell.index + 1} TASK CANCEL / TARGET DESTROYED / ROUND RETAINED`);
+    }
+    if (cell.pending && health <= 0.05) {
+      deps.cancel(cell.pending);
+      cell.pending = null;
+      cell.closeTo = "disabled";
+      cell.phase = "closing";
+      cell.phaseSince = deps.elapsed;
+      if (cell.loadout !== "OTHER") bank.trappedRounds++;
+      deps.log(`MK 41 ${cell.bank} CASUALTY / CELL ${cell.index + 1} ABORT / ROUND TRAPPED`);
+    }
+    if (cell.phase === "opening") {
+      cell.lid.rotation.z = moveToward(cell.lid.rotation.z, Math.PI * 0.52, deps.dt * 4.8);
+      if (
+        cell.lid.rotation.z >= Math.PI * 0.5 &&
+        cell.pending &&
+        deps.elapsed - bank.lastLaunchAt >= sequenceInterval
+      ) {
+        const origin = cell.origin.getWorldPosition(new THREE.Vector3());
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(deps.shipQuaternion()).normalize();
+        const gap = deps.elapsed - bank.lastLaunchAt;
+        if (Number.isFinite(gap)) bank.minimumObservedGap = Math.min(bank.minimumObservedGap, gap);
+        bank.lastLaunchAt = deps.elapsed;
+        bank.lastCellIndex = cell.index;
+        bank.launchHistory.push(cell.index + 1);
+        const interceptor = deps.launch(
+          cell.pending,
+          `MK 41 ${cell.bank}`,
+          `CELL ${String(cell.index + 1).padStart(2, "0")}`,
+          origin,
+          up,
+        );
+        interceptor.mesh.userData.vlsLaunch = true;
+        interceptor.mesh.userData.verticalDirection = up.clone();
+        deps.launchEffect(origin, up);
+        cell.pending = null;
+        cell.closeTo = "spent";
+        cell.phase = "launching";
+        cell.phaseSince = deps.elapsed;
+        deps.log(`MK 41 ${cell.bank} CELL ${cell.index + 1} / ${cell.loadout} HOT LAUNCH / VERTICAL BOOST / SEQUENCE ${sequenceInterval.toFixed(2)}s`);
+      }
+    } else if (cell.phase === "launching" && deps.elapsed - cell.phaseSince > 0.6) {
+      cell.phase = "closing";
+      cell.phaseSince = deps.elapsed;
+    } else if (cell.phase === "closing") {
+      cell.lid.rotation.z = moveToward(cell.lid.rotation.z, 0, deps.dt * 3.6);
+      if (cell.lid.rotation.z <= 0.01) {
+        cell.lid.rotation.z = 0;
+        cell.phase = cell.closeTo;
+      }
+    }
+  }
+  deps.report?.({
+    readyMr: deps.cells.filter((cell) => cell.loadout === "SM-2MR" && cell.phase === "ready").length,
+    readyEr: deps.cells.filter((cell) => cell.loadout === "SM-2ER" && cell.phase === "ready").length,
+    pendingMr: deps.cells.filter((cell) => cell.loadout === "SM-2MR" && !!cell.pending).length,
+    pendingEr: deps.cells.filter((cell) => cell.loadout === "SM-2ER" && !!cell.pending).length,
+    spent: deps.cells.filter((cell) => cell.phase === "spent").length,
+    disabledFwd: deps.cells.filter((cell) => cell.bank === "FWD" && cell.phase === "disabled").length,
+    disabledAft: deps.cells.filter((cell) => cell.bank === "AFT" && cell.phase === "disabled").length,
+    returning: deps.cells.filter((cell) => cell.phase === "closing" && cell.closeTo === "ready").length,
+  });
+}
+
+export function resetVlsRuntime(
+  cells: readonly VlsCellState[],
+  banks: Record<"FWD" | "AFT", VlsBankState>,
+): void {
+  for (const name of ["FWD", "AFT"] as const) {
+    banks[name].lastLaunchAt = -Infinity;
+    banks[name].lastCellIndex = -1;
+    banks[name].minimumObservedGap = Infinity;
+    banks[name].launchHistory.length = 0;
+    banks[name].damageCenters.length = 0;
+    banks[name].trappedRounds = 0;
+  }
+  for (const cell of cells) {
+    cell.pending = null;
+    cell.phase = "ready";
+    cell.closeTo = "ready";
+    cell.phaseSince = 0;
+    cell.lid.rotation.z = 0;
   }
 }

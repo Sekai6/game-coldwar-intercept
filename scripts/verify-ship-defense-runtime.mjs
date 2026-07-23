@@ -1,4 +1,4 @@
-import * as THREE from "three";
+﻿import * as THREE from "three";
 import { opposingSides } from "../dist-test/defense/allegiance.js";
 import {
   adaptTargetableEntity,
@@ -31,6 +31,7 @@ assert(
   opposingSides({ side: "blue" }, { side: "red" }),
   "opposing sides were not hostile",
 );
+
 assert(
   opposingSides({ side: "red" }, { side: "blue" }),
   "reversed defender roles were not hostile",
