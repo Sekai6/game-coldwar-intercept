@@ -15,7 +15,7 @@ export type DefenseTarget = {
   mesh: THREE.Group;
   velocity: THREE.Vector3;
   phase: MissilePhase;
-  kind: EnemyType;
+  threatType: EnemyType;
   rcs: number;
   entity?: CombatEntity;
   displayName?: string;
@@ -176,7 +176,7 @@ export type AarSnapshot = {
     x: number;
     z: number;
     phase: MissilePhase;
-    kind: EnemyType;
+    threatType: EnemyType;
   }[];
   interceptors: {
     id: number;

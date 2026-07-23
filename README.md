@@ -41,6 +41,8 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 `DefenseTarget` 现在直接保存真实 `CombatEntity` 引用，舰载系统从该实体读取稳定 ID、阵营、类别、位置、速度、特征和存活状态。原有 `externalAirEntityId`、`externalAirCategory`、`externalAirMissileId`、`externalDisplayName` 旁路字段已删除；`AirShipDefenseContact` 只补充舰载防空需要的显示名称和威胁模板。
 
+威胁型号字段统一命名为 `DefenseTarget.threatType`，用于 P-500、KSR-5、Harpoon 等游戏化性能目录查找；`CombatEntity.kind` 只允许表示 `ship/aircraft/missile/decoy` 实体类别。舰载制导、CIWS、HUD 与 AAR 已完成迁移，联合验证会拒绝任何重新出现的防空目标 `.kind` 型号字段。
+
 联合任务结算会等待仍在执行战斗任务的飞机和在飞空中武器。反舰载机释放任务武器后进入脱离，敌机与敌方武器清空后 CAP 才进入返航。AAR 快照记录飞机三维位置、任务/状态、结构健康、空中武器以及实体箔条/热焰弹，不再在海战子系统清空时截断空战记录。
 
 机载雷达现在实际计算 RCS 四次方根、雷达地平线、传感器精度、系统健康、ECM 降距/降质和烧穿距离。飞机的导弹防御由短时告警航迹触发；未被 RWR/MAWS/近距目视条件发现的武器不会提前触发规避或干扰弹。`npm run verify:air-sensors` 串行验证 ECM、烧穿和告警包线。

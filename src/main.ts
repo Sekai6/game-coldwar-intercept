@@ -496,7 +496,7 @@ function synchronizeAirDefenseTargets() {
           return contact.entity.velocity;
         },
         phase: "inbound",
-        kind: contact.template,
+        threatType: contact.template,
         get rcs() {
           return contact.entity.radarCrossSection;
         },
@@ -647,7 +647,7 @@ function missileThreatScore(missile: DefenseTarget, quality: number) {
       : missile.phase === "midcourse"
         ? 35
         : 0) +
-    incomingProfiles[missile.kind].threatPriority +
+    incomingProfiles[missile.threatType].threatPriority +
     (missile.entity?.kind === "missile" ? 85 : 0) -
     (missile.entity?.kind === "aircraft" ? 35 : 0) +
     quality * 12
@@ -655,18 +655,18 @@ function missileThreatScore(missile: DefenseTarget, quality: number) {
 }
 function addMissile(
   pos: THREE.Vector3,
-  kind: EnemyType = DEFAULT_THREAT_ID,
+  threatType: EnemyType = DEFAULT_THREAT_ID,
   launchAt = 0,
   platformReservation?: PlatformLaunchReservation,
 ) {
-  const profile = incomingProfiles[kind],
+  const profile = incomingProfiles[threatType],
     ordinal = missiles.length,
     aimOffset = new THREE.Vector3(
       Math.sin((ordinal + 1) * 2.399) * 2.8,
       0,
       Math.cos((ordinal + 1) * 1.73) * 1.2,
     ),
-    g = getThreatDefinition(kind).createModel();
+    g = getThreatDefinition(threatType).createModel();
   const attackModes = profile.terminalAttackModes;
   g.userData.terminalAttackMode = attackModes
     ? attackModes[ordinal % attackModes.length]
@@ -721,7 +721,7 @@ function addMissile(
     age: 0,
     history,
     path,
-    kind,
+    threatType,
     speedFactor: profile.cruiseSpeed,
     rcs: profile.radarCrossSection,
     launchAt,
@@ -1875,7 +1875,7 @@ function deployChaff(source: Missile) {
     serial: ++chaffSerial,
   });
   source.mesh.userData.chaffDeployed = true;
-  log(`${source.kind} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`);
+  log(`${source.threatType} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`);
 }
 function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
   const platform = missile.target;
@@ -3586,7 +3586,7 @@ function captureAarSnapshot(force = false) {
         x: m.mesh.position.x,
         z: m.mesh.position.z,
         phase: m.phase,
-        kind: m.kind,
+        threatType: m.threatType,
       })),
     interceptors: interceptors
       .map((i, id) => ({ i, id }))
@@ -4838,7 +4838,7 @@ function updateCiws() {
   if (tti < 0.35) {
     lastCiwsShot = elapsed;
     log(
-      `CIWS HOLD / WINDOW CLOSED / ${target.m.kind} / ${tti.toFixed(2)}s / ${target.mount.name}`,
+      `CIWS HOLD / WINDOW CLOSED / ${target.m.threatType} / ${tti.toFixed(2)}s / ${target.mount.name}`,
     );
     return;
   }
@@ -4874,11 +4874,11 @@ function updateCiws() {
   const saturation = Math.max(1, candidates.length),
     basePk =
       (Math.max(0.08, 0.46 / saturation) -
-        incomingProfiles[target.m.kind].ciwsPenalty) *
+        incomingProfiles[target.m.threatType].ciwsPenalty) *
       (0.25 + 0.75 * health),
     singlePk =
-      incomingProfiles[target.m.kind].ciwsPkCap !== undefined
-        ? Math.min(incomingProfiles[target.m.kind].ciwsPkCap!, basePk)
+      incomingProfiles[target.m.threatType].ciwsPkCap !== undefined
+        ? Math.min(incomingProfiles[target.m.threatType].ciwsPkCap!, basePk)
         : Math.max(0.04, basePk),
     windowFactor = Math.min(1.35, 0.75 + bursts * 0.12),
     pk = Math.min(0.72, singlePk * windowFactor),
@@ -4888,7 +4888,7 @@ function updateCiws() {
       ciwsRounds,
     );
   log(
-    `CIWS WINDOW / ${target.m.kind} / ${tti.toFixed(1)}s / ${bursts} BURSTS / PK ${Math.round(pk * 100)}% / ${target.mount.name}`,
+    `CIWS WINDOW / ${target.m.threatType} / ${tti.toFixed(1)}s / ${bursts} BURSTS / PK ${Math.round(pk * 100)}% / ${target.mount.name}`,
   );
   if (roll < pk) {
     const destroyed = resolveAirDefenseHit(target.m, 42);
@@ -6130,7 +6130,7 @@ function updateCombat(dt: number) {
             : range > profile.maxRange
               ? "OUT OF ENVELOPE"
               : "IN RANGE";
-    threatName.textContent = `TRACK ${selectedTrack ? String(selectedTrack.id).padStart(2, "0") : "--"} / ${selectedTrack?.classification === "classified" ? selected.kind : (selectedTrack?.classification.toUpperCase() ?? "PENDING ID")}`;
+    threatName.textContent = `TRACK ${selectedTrack ? String(selectedTrack.id).padStart(2, "0") : "--"} / ${selectedTrack?.classification === "classified" ? selected.threatType : (selectedTrack?.classification.toUpperCase() ?? "PENDING ID")}`;
     threatRange.textContent = `${(range / 10).toFixed(1)} km`;
     threatAltitude.textContent = selectedTrack
       ? fireControl
@@ -6433,7 +6433,7 @@ function updateCombat(dt: number) {
               seekerBlend,
             )
         : i.commandPoint.clone();
-    const seaSkimmer = incomingProfiles[i.target.kind].trajectory === "sea-skimmer",
+    const seaSkimmer = incomingProfiles[i.target.threatType].trajectory === "sea-skimmer",
       estimatedLaunchRange = Math.min(
         profile.maxRange,
         range + i.distanceTraveled,
@@ -6460,7 +6460,7 @@ function updateCombat(dt: number) {
       if (!i.mesh.userData.trajectoryProfileLogged) {
         i.mesh.userData.trajectoryProfileLogged = true;
         log(
-          `${i.weapon} SEA-SKIMMER FORWARD INTERCEPT / ${i.target.kind} / CRUISE ALT ${Math.round(lowAltitudeCorridor * 50)} m`,
+          `${i.weapon} SEA-SKIMMER FORWARD INTERCEPT / ${i.target.threatType} / CRUISE ALT ${Math.round(lowAltitudeCorridor * 50)} m`,
         );
       }
     } else if (i.age < profile.boost)
@@ -6816,7 +6816,7 @@ function initializePlatformWaveArrivalPlan(missile: Missile) {
       Math.max(0, waveMissiles.length - 1) * launch.reservation.releaseInterval,
     commonArrivalAt =
       finalReleaseAt +
-      observedRange / Math.max(0.1, incomingProfiles[missile.kind].cruiseSpeed);
+      observedRange / Math.max(0.1, incomingProfiles[missile.threatType].cruiseSpeed);
   for (const [ordinal, waveMissile] of waveMissiles.entries()) {
     const waveLaunch = waveMissile.platformLaunch;
     if (!waveLaunch) continue;
@@ -6994,7 +6994,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     );
     m.mesh.userData.platformDeparturePhase = "TUBE EXIT";
     log(
-      `${platformLaunch.reservation.platform.definition.name} / ${platformLaunch.reservation.hardpoint.id.toUpperCase()} / ${m.kind} CANISTER LAUNCH`,
+      `${platformLaunch.reservation.platform.definition.name} / ${platformLaunch.reservation.hardpoint.id.toUpperCase()} / ${m.threatType} CANISTER LAUNCH`,
     );
   }
   if (platformLaunch)
@@ -7008,8 +7008,8 @@ function updateIncomingMissile(m: Missile, dt: number) {
         m.age,
         m.mesh.position,
         platformLaunch.commandPoint,
-        incomingProfiles[m.kind].cruiseAltitude,
-        incomingProfiles[m.kind].cruiseSpeed,
+        incomingProfiles[m.threatType].cruiseAltitude,
+        incomingProfiles[m.threatType].cruiseSpeed,
       )
     : null;
   if (platformLaunch && departure) {
@@ -7030,7 +7030,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
       m.path.geometry = new THREE.BufferGeometry().setFromPoints(m.history);
     }
     if (missiles.indexOf(m) + 1 === selectedTargetId) {
-      canvas.dataset.selectedThreatKind = m.kind;
+      canvas.dataset.selectedThreatKind = m.threatType;
       canvas.dataset.selectedThreatPhase = m.phase;
       canvas.dataset.selectedThreatAltitude = m.mesh.position.y.toFixed(3);
       canvas.dataset.selectedThreatRange = m.mesh.position
@@ -7048,7 +7048,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     platformLaunch.takeoverLogged = true;
     m.mesh.userData.platformDeparturePhase = "MIDCOURSE TAKEOVER";
     log(
-      `${m.kind} MIDCOURSE GUIDANCE TAKEOVER / ${platformLaunch.reservation.platform.definition.name}`,
+      `${m.threatType} MIDCOURSE GUIDANCE TAKEOVER / ${platformLaunch.reservation.platform.definition.name}`,
     );
   }
   if (
@@ -7075,20 +7075,20 @@ function updateIncomingMissile(m: Missile, dt: number) {
         Math.abs(track.quality - platformLaunch.lastDatalinkQuality) >= 0.12
       )
         log(
-          `${m.kind} PLATFORM DATALINK UPDATE / ${platform.definition.name} / TQ ${Math.round(track.quality * 100)}% / UNC ${(track.uncertainty / 10).toFixed(1)} km`,
+          `${m.threatType} PLATFORM DATALINK UPDATE / ${platform.definition.name} / TQ ${Math.round(track.quality * 100)}% / UNC ${(track.uncertainty / 10).toFixed(1)} km`,
         );
       platformLaunch.datalinkValid = true;
       platformLaunch.lastDatalinkQuality = track.quality;
     } else if (platformLaunch.datalinkValid) {
       platformLaunch.datalinkValid = false;
       log(
-        `${m.kind} PLATFORM DATALINK LOST / ${platform.definition.name} / INERTIAL COAST`,
+        `${m.threatType} PLATFORM DATALINK LOST / ${platform.definition.name} / INERTIAL COAST`,
       );
     }
     platformLaunch.nextDatalink = elapsed + slot.datalinkUpdateInterval;
   }
   const range = m.mesh.position.distanceTo(defender.position),
-    profile = incomingProfiles[m.kind],
+    profile = incomingProfiles[m.threatType],
     guidanceRange =
       platformLaunch && !platformLaunch.terminalSeekerAcquired
         ? m.mesh.position.distanceTo(platformLaunch.commandPoint)
@@ -7128,11 +7128,11 @@ function updateIncomingMissile(m: Missile, dt: number) {
   if (m.phase === "terminal" && !m.mesh.userData.seekerOn) {
     m.mesh.userData.seekerOn = true;
     log(
-      `${m.kind} ACTIVE SEEKER SEARCH / NAV ${(guidanceRange / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+      `${m.threatType} ACTIVE SEEKER SEARCH / NAV ${(guidanceRange / WORLD_UNITS_PER_KM).toFixed(1)} km`,
     );
     if (m.mesh.userData.terminalAttackMode !== "standard")
       log(
-        `${m.kind} TERMINAL PROFILE / ${String(m.mesh.userData.terminalAttackMode).toUpperCase()}`,
+        `${m.threatType} TERMINAL PROFILE / ${String(m.mesh.userData.terminalAttackMode).toUpperCase()}`,
       );
   }
   if (
@@ -7154,7 +7154,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
       platformLaunch.terminalSeekerAcquired = true;
       m.mesh.userData.platformGuidanceMode = "ACTIVE HOMING";
       log(
-        `${m.kind} ACTIVE SEEKER TARGET ACQUIRED / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km / OFF-BORESIGHT ${THREE.MathUtils.radToDeg(offBoresight).toFixed(1)} DEG`,
+        `${m.threatType} ACTIVE SEEKER TARGET ACQUIRED / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km / OFF-BORESIGHT ${THREE.MathUtils.radToDeg(offBoresight).toFixed(1)} DEG`,
       );
     }
   }
@@ -7262,7 +7262,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     evaluated.add(shipChaff.serial);
     if (!capturedNow)
       log(
-        `${m.kind} CHAFF REJECT / PK ${Math.round(deceptionPk * 100)}% / ROLL ${Math.round(captureRoll * 100)}%`,
+        `${m.threatType} CHAFF REJECT / PK ${Math.round(deceptionPk * 100)}% / ROLL ${Math.round(captureRoll * 100)}%`,
       );
   }
   if (burnThrough) {
@@ -7270,14 +7270,14 @@ function updateIncomingMissile(m: Missile, dt: number) {
     if (shipEcmEnabled && !m.mesh.userData.shipEcmBurnThrough) {
       m.mesh.userData.shipEcmBurnThrough = true;
       log(
-        `${m.kind} SHIP ECM BURN-THROUGH / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
+        `${m.threatType} SHIP ECM BURN-THROUGH / ${(range / WORLD_UNITS_PER_KM).toFixed(1)} km`,
       );
     }
   }
   if (deceived && shipChaff && !lockedDecoy) {
     m.mesh.userData.shipDecoyCloud = shipChaff;
     log(
-      `${m.kind} LOCK TRANSFER / SRBOC CHAFF / PK ${Math.round(deceptionPk * 100)}%`,
+      `${m.threatType} LOCK TRANSFER / SRBOC CHAFF / PK ${Math.round(deceptionPk * 100)}%`,
     );
   }
   m.mesh.userData.shipDecoy = deceived;
@@ -7293,7 +7293,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
       : shipEcmStrength;
   if (homeOnJamActive && !m.mesh.userData.hojLogged) {
     m.mesh.userData.hojLogged = true;
-    log(`${m.kind} HOME-ON-JAM / AN/SLQ-32 EMITTER BEARING`);
+    log(`${m.threatType} HOME-ON-JAM / AN/SLQ-32 EMITTER BEARING`);
   }
   m.mesh.userData.ewState = deceived
     ? "CHAFF LOCK"
@@ -7441,7 +7441,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     m.mesh.userData.shockCone.visible =
       profile.trajectory === "high-altitude" && m.phase === "terminal";
   if (missiles.indexOf(m) + 1 === selectedTargetId) {
-    canvas.dataset.selectedThreatKind = m.kind;
+    canvas.dataset.selectedThreatKind = m.threatType;
     canvas.dataset.selectedThreatPhase = m.phase;
     canvas.dataset.selectedThreatAltitude = m.mesh.position.y.toFixed(3);
     canvas.dataset.selectedThreatRange = range.toFixed(2);
@@ -7493,7 +7493,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     m.phase = "destroyed";
     m.mesh.visible = false;
     log(
-      `${m.kind} SOFT KILL / SRBOC DECOY / CPA ${(closestShipRange / WORLD_UNITS_PER_KM).toFixed(2)} km`,
+      `${m.threatType} SOFT KILL / SRBOC DECOY / CPA ${(closestShipRange / WORLD_UNITS_PER_KM).toFixed(2)} km`,
     );
     return;
   }
@@ -7514,7 +7514,7 @@ function updateIncomingMissile(m: Missile, dt: number) {
     applySubsystemDamage(m, profile.damage);
     destroyMissileVisual(m, "impact");
     log(
-      `${m.kind} IMPACT / ${profile.damage}% DAMAGE / SAM ${Number.isFinite(nearestSam) ? (nearestSam / WORLD_UNITS_PER_KM).toFixed(1) + " km" : "NONE"} / HULL ${hullIntegrity}%`,
+      `${m.threatType} IMPACT / ${profile.damage}% DAMAGE / SAM ${Number.isFinite(nearestSam) ? (nearestSam / WORLD_UNITS_PER_KM).toFixed(1) + " km" : "NONE"} / HULL ${hullIntegrity}%`,
     );
     updateShipStatus();
     if (hullIntegrity <= 0) {
@@ -7589,7 +7589,7 @@ function updateTargetMarker() {
   );
   targetMarker.classList.toggle("offscreen", offscreen);
   targetMarker.classList.toggle("right-edge", x > innerWidth - 180);
-  targetMarkerLabel.textContent = `T${String(track.id).padStart(2, "0")} ${track.classification === "classified" ? selected.kind : track.classification.toUpperCase()} / ${tti}s / ±${(track.uncertainty / 1000).toFixed(1)}km`;
+  targetMarkerLabel.textContent = `T${String(track.id).padStart(2, "0")} ${track.classification === "classified" ? selected.threatType : track.classification.toUpperCase()} / ${tti}s / ±${(track.uncertainty / 1000).toFixed(1)}km`;
 }
 function tick(now: number) {
   const realDt = Math.min((now - last) / 1000, 0.1);
@@ -7909,6 +7909,9 @@ function tick(now: number) {
   );
   canvas.dataset.airDefenseMissingEntityRefs = String(
     [...airDefenseTargets.values()].filter((target) => !target.entity).length,
+  );
+  canvas.dataset.airDefenseAmbiguousKindFields = String(
+    allDefenseTargets().filter((target) => "kind" in target).length,
   );
   canvas.dataset.shipSamShots = String(airDefenseSamLaunches.length);
   canvas.dataset.airDefenseLaunchers = airDefenseSamLaunches
