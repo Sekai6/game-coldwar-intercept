@@ -365,10 +365,45 @@ export class AirCombatSystem {
     for (const a of this.aircraft) {
       this.updateFormationState(a);
       this.updateAircraft(a, time, dt, context);
+      this.updateFlightVisuals(a, time);
       this.updateDamageVisuals(a, time);
     }
     this.updateHardpointReleases(time);
     for (const m of this.missiles) this.updateMissile(m, time, dt, context);
+  }
+
+  private updateFlightVisuals(aircraft: AirPlatformInstance, time: number) {
+    const speedRatio = clamp(
+        aircraft.velocity.length() / aircraft.definition.flight.maxSpeed,
+        0,
+        1,
+      ),
+      engineHealth =
+        ((aircraft.subsystemHealth.get("left-engine") ?? 0) +
+          (aircraft.subsystemHealth.get("right-engine") ?? 0)) /
+        200,
+      exhausts = aircraft.model.userData.exhausts as THREE.Mesh[] | undefined,
+      contrails = aircraft.model.userData.contrails as THREE.Mesh[] | undefined;
+    exhausts?.forEach((exhaust, index) => {
+      const pulse = 1 + Math.sin(time * 17 + index * 1.7) * 0.08,
+        length = (0.45 + speedRatio * 1.65) * engineHealth * pulse;
+      exhaust.visible = aircraft.alive && engineHealth > 0.05;
+      exhaust.scale.set(0.75 + speedRatio * 0.45, length, 0.75 + speedRatio * 0.45);
+      (exhaust.material as THREE.MeshBasicMaterial).opacity =
+        0.22 + speedRatio * 0.5;
+    });
+    const maneuverVapor =
+      aircraft.position.y > 14 &&
+      (speedRatio > 0.82 || Math.abs(aircraft.bank) > 0.72);
+    contrails?.forEach((trail, index) => {
+      trail.visible = maneuverVapor && aircraft.alive;
+      const length = 1.5 + speedRatio * 3.5 + Math.abs(aircraft.bank) * 0.8;
+      trail.scale.set(0.8 + Math.abs(aircraft.bank) * 0.3, length, 0.8);
+      trail.position.z = aircraft.definition.flight.maxSpeed * 0.25 + length * 0.5;
+      (trail.material as THREE.MeshBasicMaterial).opacity = trail.visible
+        ? 0.045 + speedRatio * 0.11 + Math.sin(time * 5 + index) * 0.012
+        : 0;
+    });
   }
 
   private updateDamageVisuals(aircraft: AirPlatformInstance, time: number) {
@@ -774,18 +809,29 @@ export class AirCombatSystem {
     }
   }
   private spawnDecoy(a: AirPlatformInstance, type: "chaff" | "flare") {
-    const mesh = new THREE.Mesh(
-      type === "flare"
-        ? new THREE.SphereGeometry(0.28, 8, 6)
-        : new THREE.IcosahedronGeometry(0.6, 1),
-      new THREE.MeshBasicMaterial({
-        color: type === "flare" ? 0xffb05d : 0xb8e8e4,
-        transparent: true,
-        opacity: 0.8,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    );
+    const mesh = new THREE.Group();
+    const particles = type === "flare" ? 7 : 10;
+    for (let index = 0; index < particles; index++) {
+      const particle = new THREE.Mesh(
+        type === "flare"
+          ? new THREE.SphereGeometry(0.1 + (index % 3) * 0.025, 6, 4)
+          : new THREE.BoxGeometry(0.2, 0.018, 0.06),
+        new THREE.MeshBasicMaterial({
+          color: type === "flare" ? (index % 2 ? 0xffd37a : 0xff6b2f) : 0xcce4df,
+          transparent: true,
+          opacity: 0.82,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      particle.position.set(
+        (roll(this.serial + index * 3) - 0.5) * 1.3,
+        (roll(this.serial + index * 3 + 1) - 0.5) * 0.8,
+        (roll(this.serial + index * 3 + 2) - 0.5) * 1.5,
+      );
+      particle.rotation.set(index * 0.7, index * 1.1, index * 0.4);
+      mesh.add(particle);
+    }
     mesh.position
       .copy(a.position)
       .add(new THREE.Vector3((roll(this.serial) - 0.5) * 1.4, -0.4, 1));
@@ -1643,9 +1689,11 @@ export class AirCombatSystem {
       d.position.addScaledVector(d.velocity, dt);
       d.velocity.multiplyScalar(Math.max(0, 1 - dt * 0.12));
       d.velocity.y -= dt * 0.05;
-      const mesh = d.model as THREE.Mesh,
-        mat = mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = Math.max(0, 0.85 * (1 - d.age / d.life));
+      const opacity = Math.max(0, 0.85 * (1 - d.age / d.life));
+      d.model.traverse((object) => {
+        if (object instanceof THREE.Mesh)
+          (object.material as THREE.MeshBasicMaterial).opacity = opacity;
+      });
       d.model.scale.setScalar(
         1 + d.age * (d.decoyType === "chaff" ? 0.32 : 0.06),
       );
