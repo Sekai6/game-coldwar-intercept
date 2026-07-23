@@ -96,6 +96,8 @@ Joint ship/air defense tracks now use stable entity-source references. Aircraft 
 
 The shipboard interception chain now consumes the minimal `DefenseTarget` contract. A legacy `Missile` extends that contract with its own history, path, launch timing, and attitude state; aircraft and air-launched weapon defense records carry none of those fabricated fields. The joint verifier asserts both zero registration in `missiles[]` and zero legacy missile-runtime fields on air targets.
 
+`DefenseTarget` now retains the real `CombatEntity` reference, from which shipboard systems obtain stable identity, side, category, position, velocity, signatures, and alive state. The former `externalAirEntityId`, `externalAirCategory`, `externalAirMissileId`, and `externalDisplayName` side-channel fields are removed; `AirShipDefenseContact` adds only ship-defense display and threat-template data.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.

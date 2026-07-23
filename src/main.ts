@@ -451,7 +451,7 @@ function defenseTargetForSource(sourceId: number | string) {
 
 function defenseSourceForTarget(target: DefenseTarget) {
   return (
-    target.externalAirEntityId ??
+    target.entity?.id ??
     missiles.findIndex((candidate) => candidate === target) + 1
   );
 }
@@ -473,8 +473,8 @@ function allDefenseTargets() {
 function synchronizeAirDefenseTargets() {
   const activeIds = new Set<string>();
   for (const contact of airCombat.shipDefenseContacts("blue-surface-ship")) {
-    activeIds.add(contact.id);
-    let target = airDefenseTargets.get(contact.id);
+    activeIds.add(contact.entity.id);
+    let target = airDefenseTargets.get(contact.entity.id);
     if (!target) {
       const selection = new THREE.Mesh(
         new THREE.RingGeometry(2.4, 3, 24),
@@ -492,32 +492,33 @@ function synchronizeAirDefenseTargets() {
       contact.model.userData.selection = selection;
       target = {
         mesh: contact.model,
-        velocity: contact.velocity,
+        get velocity() {
+          return contact.entity.velocity;
+        },
         phase: "inbound",
         kind: contact.template,
-        rcs: contact.radarCrossSection,
-        externalAirMissileId: contact.category === "missile" ? contact.id : undefined,
-        externalAirEntityId: contact.id,
-        externalAirCategory: contact.category,
-        externalDisplayName: contact.name,
+        get rcs() {
+          return contact.entity.radarCrossSection;
+        },
+        entity: contact.entity,
+        displayName: contact.name,
       };
-      airDefenseTargets.set(contact.id, target);
-      log(`AIR THREAT REGISTERED / ${contact.name} / ${contact.category.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`);
+      airDefenseTargets.set(contact.entity.id, target);
+      log(`AIR THREAT REGISTERED / ${contact.name} / ${contact.entity.kind.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`);
     }
     target.phase = contact.phase;
-    target.rcs = contact.radarCrossSection;
   }
   for (const [id, target] of airDefenseTargets) {
     if (activeIds.has(id) || target.phase === "destroyed") continue;
     target.phase = "destroyed";
-    if (target.externalAirCategory === "missile") target.mesh.visible = false;
+    if (target.entity?.kind === "missile") target.mesh.visible = false;
   }
 }
 
 function resolveAirDefenseHit(target: DefenseTarget, damage: number) {
-  const id = target.externalAirEntityId;
+  const id = target.entity?.id;
   if (!id) return true;
-  if (target.externalAirCategory === "aircraft") {
+  if (target.entity?.kind === "aircraft") {
     const result = airCombat.applyShipSamDamage(
       id,
       damage,
@@ -581,7 +582,7 @@ let chaffSerial = 0;
 const WORLD_UNITS_PER_KM = 10,
   RADAR_PIXELS_PER_WORLD_UNIT = 0.14;
 function defensiveShotRequirement(missile: DefenseTarget, _quality: number) {
-  if (missile.externalAirCategory === "aircraft") {
+  if (missile.entity?.kind === "aircraft") {
     const state = engagements.get(missile);
     if (!state) return 1;
     if (state.pending > 0 || elapsed - state.lastResolution < 1.5) return 0;
@@ -647,8 +648,8 @@ function missileThreatScore(missile: DefenseTarget, quality: number) {
         ? 35
         : 0) +
     incomingProfiles[missile.kind].threatPriority +
-    (missile.externalAirCategory === "missile" ? 85 : 0) -
-    (missile.externalAirCategory === "aircraft" ? 35 : 0) +
+    (missile.entity?.kind === "missile" ? 85 : 0) -
+    (missile.entity?.kind === "aircraft" ? 35 : 0) +
     quality * 12
   );
 }
@@ -4785,7 +4786,7 @@ function updateCiws() {
   const candidates = allDefenseTargets()
     .filter(
       (m) =>
-        m.externalAirCategory !== "aircraft" &&
+        m.entity?.kind !== "aircraft" &&
         m.phase !== "destroyed" &&
         m.mesh.position.distanceTo(defender.position) < 15,
     )
@@ -4815,7 +4816,7 @@ function updateCiws() {
   if (!target) {
     const nearby = allDefenseTargets().filter(
         (m) =>
-          m.externalAirCategory !== "aircraft" &&
+          m.entity?.kind !== "aircraft" &&
           m.phase !== "destroyed" &&
           m.mesh.position.distanceTo(defender.position) < 15,
       ),
@@ -6664,7 +6665,7 @@ function updateCombat(dt: number) {
         );
         if (destroyed) {
           i.target.phase = "destroyed";
-          if (i.target.externalAirCategory !== "aircraft") {
+          if (i.target.entity?.kind !== "aircraft") {
             i.target.mesh.visible = false;
             destroyMissileVisual(i.target, "intercept");
           }
@@ -6831,7 +6832,7 @@ function initializePlatformWaveArrivalPlan(missile: Missile) {
 }
 
 function updateIncomingMissile(m: Missile, dt: number) {
-  if (m.externalAirEntityId) return;
+  if (m.entity) return;
   if (m.phase === "destroyed") {
     m.mesh.userData.seekerLine.visible = false;
     m.mesh.userData.seekerFov.visible = false;
@@ -7876,35 +7877,38 @@ function tick(now: number) {
   canvas.dataset.airEcmDetections = String(air.ecmDetections);
   canvas.dataset.ksrMaximumSpeed = air.ksrMaximumSpeed.toFixed(2);
   const airDefenseTracks = [...combatPicture.tracks.values()].filter(
-      (track) => defenseTargetForSource(track.sourceId)?.externalAirMissileId,
+      (track) => defenseTargetForSource(track.sourceId)?.entity?.kind === "missile",
     ).length,
     airDefenseAircraftTracks = [...combatPicture.tracks.values()].filter(
       (track) =>
-        defenseTargetForSource(track.sourceId)?.externalAirCategory === "aircraft",
+        defenseTargetForSource(track.sourceId)?.entity?.kind === "aircraft",
     ).length,
     airDefenseMissileTracks = [...combatPicture.tracks.values()].filter(
       (track) =>
-        defenseTargetForSource(track.sourceId)?.externalAirCategory === "missile",
+        defenseTargetForSource(track.sourceId)?.entity?.kind === "missile",
     ).length,
     airDefenseSamLaunches = interceptors.filter(
-      (interceptor) => interceptor.target.externalAirEntityId,
+      (interceptor) => interceptor.target.entity,
     );
   canvas.dataset.shipAirMissileTracks = String(airDefenseTracks);
   canvas.dataset.shipAirAircraftTracks = String(airDefenseAircraftTracks);
   canvas.dataset.shipAirWeaponTracks = String(airDefenseMissileTracks);
   canvas.dataset.shipAirMissileKills = String(airDefenseHardKills.size);
   canvas.dataset.airDefenseLegacyRegistrations = String(
-    missiles.filter((target) => target.externalAirEntityId).length,
+    missiles.filter((target) => target.entity).length,
   );
   canvas.dataset.airDefenseLegacyFields = String(
     [...airDefenseTargets.values()].reduce(
       (count, target) =>
         count +
-        ["age", "history", "path", "speedFactor", "launchAt", "aimOffset", "bank"].filter(
+        ["age", "history", "path", "speedFactor", "launchAt", "aimOffset", "bank", "externalAirEntityId", "externalAirCategory", "externalAirMissileId", "externalDisplayName"].filter(
           (field) => field in target,
         ).length,
       0,
     ),
+  );
+  canvas.dataset.airDefenseMissingEntityRefs = String(
+    [...airDefenseTargets.values()].filter((target) => !target.entity).length,
   );
   canvas.dataset.shipSamShots = String(airDefenseSamLaunches.length);
   canvas.dataset.airDefenseLaunchers = airDefenseSamLaunches
@@ -7914,10 +7918,10 @@ function tick(now: number) {
     )
     .join("|");
   canvas.dataset.airDefenseTargetCategories = airDefenseSamLaunches
-    .map((interceptor) => interceptor.target.externalAirCategory)
+    .map((interceptor) => interceptor.target.entity?.kind)
     .join("|");
   canvas.dataset.airDefenseTargetNames = airDefenseSamLaunches
-    .map((interceptor) => interceptor.target.externalDisplayName)
+    .map((interceptor) => interceptor.target.displayName)
     .join("|");
   const latestAar = aarSnapshots[aarSnapshots.length - 1];
   canvas.dataset.aarAircraftCount = String(latestAar?.aircraft.length ?? 0);

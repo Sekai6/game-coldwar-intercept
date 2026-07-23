@@ -95,12 +95,9 @@ export interface AirPlatformDefinition {
 }
 
 export interface AirShipDefenseContact {
-  id: string;
+  entity: CombatEntity;
   name: string;
-  category: "aircraft" | "missile";
   model: THREE.Group;
-  velocity: THREE.Vector3;
-  radarCrossSection: number;
   template: EnemyType;
   phase: "inbound" | "boost" | "midcourse" | "terminal";
 }

@@ -39,6 +39,8 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 舰载拦截链进一步改为面向最小 `DefenseTarget` 契约。传统 `Missile` 只是在此基础上附加自身的飞行历史、路径、发射时序和姿态状态；飞机与空射武器的舰载防空目标记录不再携带这些伪造字段。联合验证会同时断言空中目标未进入 `missiles[]`，且没有遗留导弹运行时字段。
 
+`DefenseTarget` 现在直接保存真实 `CombatEntity` 引用，舰载系统从该实体读取稳定 ID、阵营、类别、位置、速度、特征和存活状态。原有 `externalAirEntityId`、`externalAirCategory`、`externalAirMissileId`、`externalDisplayName` 旁路字段已删除；`AirShipDefenseContact` 只补充舰载防空需要的显示名称和威胁模板。
+
 联合任务结算会等待仍在执行战斗任务的飞机和在飞空中武器。反舰载机释放任务武器后进入脱离，敌机与敌方武器清空后 CAP 才进入返航。AAR 快照记录飞机三维位置、任务/状态、结构健康、空中武器以及实体箔条/热焰弹，不再在海战子系统清空时截断空战记录。
 
 机载雷达现在实际计算 RCS 四次方根、雷达地平线、传感器精度、系统健康、ECM 降距/降质和烧穿距离。飞机的导弹防御由短时告警航迹触发；未被 RWR/MAWS/近距目视条件发现的武器不会提前触发规避或干扰弹。`npm run verify:air-sensors` 串行验证 ECM、烧穿和告警包线。
