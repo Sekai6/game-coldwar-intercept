@@ -107,7 +107,7 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
         const localCamera = cloud.worldToLocal(cameraPosition.clone());
         cloudMaterials[index].uniforms.cameraLocal.value.copy(localCamera);
         const boxDistance = Math.max(Math.abs(localCamera.x), Math.abs(localCamera.y), Math.abs(localCamera.z));
-        cloudMaterials[index].uniforms.proximityFade.value = THREE.MathUtils.smoothstep(boxDistance, 1.12, 1.7);
+        cloudMaterials[index].uniforms.proximityFade.value = THREE.MathUtils.smoothstep(boxDistance, 1.35, 2.35);
       });
     },
     dispose: () => {

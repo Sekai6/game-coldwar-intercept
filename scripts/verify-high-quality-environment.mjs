@@ -35,7 +35,7 @@ try {
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.sunAltitudeDeg < 27 || result.sunAltitudeDeg > 29 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT" || result.highQualityOcean !== "true" || result.oceanBackend !== "webgl-hq-gerstner" || result.aoMode !== "GTAO_DENOISED" || result.indirectLighting !== "PMREM_MULTI_BOUNCE" || result.godRays !== "RADIAL_COLOR_OCCLUSION_28" || result.colorGrade !== "CINEMATIC_OCEAN") process.exitCode = 1;
+  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.sunAltitudeDeg < 27 || result.sunAltitudeDeg > 29 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT" || result.highQualityOcean !== "true" || result.oceanBackend !== "webgl-hq-gerstner" || result.aoMode !== "GTAO_DENOISED" || result.indirectLighting !== "PMREM_MULTI_BOUNCE" || result.godRays !== "RADIAL_COLOR_OCCLUSION_28" || result.colorGrade !== "CINEMATIC_OCEAN_LUT_16") process.exitCode = 1;
 } finally {
   await browser.close();
 }

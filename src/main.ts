@@ -7630,7 +7630,7 @@ function tick(now: number) {
   canvas.dataset.environmentAoMode = gtaoPass.enabled ? "GTAO_DENOISED" : ssaoPass.enabled ? "SSAO" : "OFF";
   canvas.dataset.environmentIndirectLighting = scene.environment === bouncedLightEnvironment ? "PMREM_MULTI_BOUNCE" : "OFF";
   canvas.dataset.environmentGodRays = cinematicAtmospherePass.enabled ? "RADIAL_COLOR_OCCLUSION_28" : "OFF";
-  canvas.dataset.environmentColorGrade = cinematicAtmospherePass.enabled ? "CINEMATIC_OCEAN" : "OFF";
+  canvas.dataset.environmentColorGrade = cinematicAtmospherePass.enabled ? "CINEMATIC_OCEAN_LUT_16" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
@@ -7907,7 +7907,7 @@ function tick(now: number) {
   const sunVisible = sunScreen.z > -1 && sunScreen.z < 1 &&
     sunScreen.x > -1.25 && sunScreen.x < 1.25 && sunScreen.y > -1.25 && sunScreen.y < 1.25;
   cinematicAtmospherePass.uniforms.godRayStrength.value =
-    highQualityEnvironmentEnabled && sunVisible ? 1.9 : 0;
+    highQualityEnvironmentEnabled && sunVisible ? 0.72 : 0;
   canvas.dataset.environmentSunScreen = `${sunScreen.x.toFixed(3)},${sunScreen.y.toFixed(3)},${sunScreen.z.toFixed(3)}`;
   canvas.dataset.environmentGodRayStrength = cinematicAtmospherePass.uniforms.godRayStrength.value.toFixed(2);
   canvas.dataset.environmentSunVisible = String(sunVisible);
@@ -7982,7 +7982,7 @@ addEventListener("pointerup", () => (dragging = false));
 addEventListener("pointermove", (e) => {
   if (!dragging) return;
   az -= (e.clientX - px) * 0.006;
-  el = Math.max(0.15, Math.min(1.2, el + (e.clientY - py) * 0.005));
+  el = Math.max(-0.52, Math.min(1.2, el + (e.clientY - py) * 0.005));
   px = e.clientX;
   py = e.clientY;
 });
