@@ -19,10 +19,13 @@ try {
     clouds: Number(canvas.dataset.environmentCloudCount ?? 0),
     fogVolumes: Number(canvas.dataset.environmentFogVolumeCount ?? 0),
     aircraft: Number(canvas.dataset.aircraftTotal ?? 0),
+    sunIntensity: Number(canvas.dataset.environmentSunIntensity ?? 0),
+    exposure: Number(canvas.dataset.environmentExposure ?? 0),
+    shadowMode: canvas.dataset.environmentShadowMode ?? "",
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4) process.exitCode = 1;
+  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT") process.exitCode = 1;
 } finally {
   await browser.close();
 }
