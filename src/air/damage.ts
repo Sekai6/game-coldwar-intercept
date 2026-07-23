@@ -11,6 +11,34 @@ export type AircraftDamageSystem =
   | "flight-control"
   | "weapons";
 
+export function stepAircraftLossOfControl(input: {
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
+  roll: number;
+  dt: number;
+  seaLevel?: number;
+}) {
+  const seaLevel = input.seaLevel ?? 0.2;
+  const velocity = {
+    x: input.velocity.x,
+    y: input.velocity.y - 0.18 * input.dt,
+    z: input.velocity.z,
+  };
+  const position = {
+    x: input.position.x + velocity.x * input.dt,
+    y: input.position.y + velocity.y * input.dt,
+    z: input.position.z + velocity.z * input.dt,
+  };
+  const crashed = position.y <= seaLevel;
+  if (crashed) position.y = seaLevel;
+  return {
+    position,
+    velocity: crashed ? { x: 0, y: 0, z: 0 } : velocity,
+    roll: input.roll + input.dt * 0.7,
+    crashed,
+  };
+}
+
 export function resolveAircraftHit(input: {
   localHit: { x: number; y: number; z: number };
   modelLength: number;
