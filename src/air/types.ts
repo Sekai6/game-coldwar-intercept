@@ -15,8 +15,11 @@ export type AirMissionOrder =
   "cap" | "intercept" | "escort" | "anti-ship" | "egress" | "return";
 export type AirGuidance =
   "active-radar" | "semi-active-radar" | "infrared" | "anti-ship-radar";
-export type AirPlatformId = "F-14A" | "TU-16K" | "A-6E";
-export type AirWeaponId = "AIM-54A" | "AIM-7F" | "AIM-9L" | "KSR-5" | "AGM-84A";
+export type AirPlatformId = "F-14A" | "TU-16K" | "A-6E" | "MIG-29A";
+export type AirWeaponId =
+  | "AIM-54A" | "AIM-7F" | "AIM-9L"
+  | "R-27R" | "R-73"
+  | "KSR-5" | "AGM-84A";
 export type AirSubsystem =
   | "structure"
   | "left-engine"

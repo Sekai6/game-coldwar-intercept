@@ -86,3 +86,41 @@ export function createA6Model() {
   const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.8, 1.7), metal); fin.position.set(0, 0.95, 3.1); g.add(fin);
   return finishAircraft(g, 8.8, [new THREE.Vector3(-0.9, 0, 2.55), new THREE.Vector3(0.9, 0, 2.55)]);
 }
+
+export function createMig29Model() {
+  const g = new THREE.Group(), metal = skin(0x89958f), radome = skin(0x69736f);
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.62, 5.8, 8, 16), metal);
+  body.rotation.x = Math.PI / 2;
+  body.scale.set(1, 0.9, 1);
+  g.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.58, 2.25, 16), radome);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -4.15;
+  g.add(nose);
+  for (const side of [-1, 1]) {
+    const lerx = new THREE.Mesh(wingShape(0.42, 0.52, 2.2), metal);
+    lerx.rotation.x = Math.PI / 2;
+    lerx.rotation.z = side < 0 ? Math.PI : 0;
+    lerx.position.set(side * 0.42, 0.02, -1.85);
+    g.add(lerx);
+    const wing = new THREE.Mesh(wingShape(0.85, 0.68, 3.15), metal);
+    wing.rotation.x = Math.PI / 2;
+    wing.rotation.z = side < 0 ? Math.PI : 0;
+    wing.position.set(side * 0.68, 0, -0.35);
+    g.add(wing);
+    const nacelle = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.72, 4.15), metal);
+    nacelle.position.set(side * 0.88, -0.18, 1.05);
+    g.add(nacelle);
+    const intake = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.48, 0.9), dark);
+    intake.position.set(side * 0.88, -0.3, -1.05);
+    g.add(intake);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.55, 1.45), metal);
+    tail.position.set(side * 0.82, 0.85, 2.55);
+    tail.rotation.z = side * -0.18;
+    g.add(tail);
+  }
+  return finishAircraft(g, 8.65, [
+    new THREE.Vector3(-0.88, -0.12, 3.25),
+    new THREE.Vector3(0.88, -0.12, 3.25),
+  ]);
+}

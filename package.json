@@ -35,6 +35,8 @@
     "verify:air-damage-geometry": "tsc src/air/damage.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-damage-geometry.mjs",
     "verify:air-resources": "tsc src/air/launch-management.ts src/air/countermeasure-program.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-resources.mjs",
     "verify:air-scenarios": "node scripts/verify-air-scenarios.mjs",
+    "verify:mig29-catalog": "tsc src/air/models.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-mig29-catalog.mjs",
+    "verify:mig29-combat": "node scripts/verify-mig29-combat.mjs",
     "verify:air-ooda": "tsc src/air/ooda.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-ooda.mjs",
     "verify:air-tracks": "tsc src/air/track-store.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-tracks.mjs",
     "verify:air-missile-runtime": "tsc src/air/missile-runtime.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-missile-runtime.mjs",

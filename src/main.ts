@@ -2337,7 +2337,7 @@ function numberInput(id: string) {
 const airScenarioField = document.createElement("label");
 airScenarioField.className = "sandbox-toggle";
 airScenarioField.innerHTML =
-  '<input id="sbAirCombat" type="checkbox" checked> JOINT AIR OPERATIONS / F-14A + TU-16K + A-6E';
+  '<input id="sbAirCombat" type="checkbox" checked> JOINT AIR OPERATIONS / F-14A + MIG-29A + TU-16K + A-6E';
 sandbox.insertBefore(airScenarioField, sandbox.querySelector("#sbStart"));
 const airScenarioInput = airScenarioField.querySelector(
   "input",

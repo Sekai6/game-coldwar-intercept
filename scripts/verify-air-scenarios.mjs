@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 const browser = await chromium.launch({
   headless: true,
   executablePath: process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  args: ["--use-angle=swiftshader", "--renderer-process-limit=2"],
+  args: ["--use-angle=swiftshader", "--renderer-process-limit=1"],
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
@@ -11,7 +11,7 @@ page.on("console", message => { if (message.type() === "error") errors.push(mess
 page.on("pageerror", error => errors.push(error.message));
 const results = {};
 try {
-  for (const [preset, expected] of [["joint", 6], ["intercept", 4], ["strike", 2]]) {
+  for (const [preset, expected] of [["joint", 6], ["intercept", 4], ["strike", 2], ["fighter", 4]]) {
     await page.goto(process.env.APP_URL ?? "http://127.0.0.1:5173/", { waitUntil: "domcontentloaded", timeout: 15_000 });
     await page.locator("#sbAirPreset").selectOption(preset);
     await page.locator("#sbAirCombat").check();
@@ -21,8 +21,9 @@ try {
       total: Number(c.dataset.aircraftTotal ?? 0),
       missions: c.dataset.airMissionStates ?? "",
       escorts: c.dataset.airEscortAssignments ?? "",
+      launches: c.dataset.airWeaponLaunchLog ?? "",
     }));
   }
   console.log(JSON.stringify({ results, errors }, null, 2));
-  if (errors.length || results.joint.total !== 6 || !results.joint.missions.includes("escort") || !results.joint.escorts.includes("blue-A-6E") || results.intercept.total !== 4 || !results.intercept.missions.includes("intercept") || results.strike.total !== 2 || !results.strike.missions.includes("anti-ship")) process.exitCode = 1;
+  if (errors.length || results.joint.total !== 6 || !results.joint.missions.includes("escort") || !results.joint.escorts.includes("blue-A-6E") || results.intercept.total !== 4 || !results.intercept.missions.includes("intercept") || results.strike.total !== 2 || !results.strike.missions.includes("anti-ship") || results.fighter.total !== 4 || !results.fighter.missions.includes("red-MIG-29A") || !results.fighter.missions.includes("intercept")) process.exitCode = 1;
 } finally { await browser.close(); }

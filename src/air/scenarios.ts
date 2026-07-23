@@ -31,7 +31,7 @@ function pair(input: {
   }));
 }
 
-export type AirScenarioPresetId = "joint" | "intercept" | "strike";
+export type AirScenarioPresetId = "joint" | "intercept" | "strike" | "fighter";
 
 function jointAirScenarioSpawns(): AirSpawn[] {
   return [
@@ -91,6 +91,27 @@ function strikeScenarioSpawns(): AirSpawn[] {
   });
 }
 
+function fighterScenarioSpawns(): AirSpawn[] {
+  return [
+    ...pair({
+      platformId: "F-14A",
+      side: "blue",
+      formationId: "CAP-FIGHTER-1",
+      position: new THREE.Vector3(-150, 72, -225),
+      heading: new THREE.Vector3(0.95, 0, -0.1),
+      wingmanMission: "intercept",
+    }),
+    ...pair({
+      platformId: "MIG-29A",
+      side: "red",
+      formationId: "FULCRUM-1",
+      position: new THREE.Vector3(65, 68, -230),
+      heading: new THREE.Vector3(-0.95, 0, 0.08),
+      wingmanMission: "intercept",
+    }),
+  ];
+}
+
 export const AIR_SCENARIO_PRESETS: Readonly<Record<AirScenarioPresetId, {
   label: string;
   description: string;
@@ -99,6 +120,7 @@ export const AIR_SCENARIO_PRESETS: Readonly<Record<AirScenarioPresetId, {
   joint: { label: "JOINT", description: "F-14A CAP + escort / Tu-16K raid / A-6E strike", createSpawns: jointAirScenarioSpawns },
   intercept: { label: "INTERCEPT", description: "F-14A intercept / Tu-16K raid", createSpawns: interceptScenarioSpawns },
   strike: { label: "STRIKE", description: "A-6E anti-ship strike", createSpawns: strikeScenarioSpawns },
+  fighter: { label: "FIGHTER", description: "F-14A CAP / MiG-29A intercept", createSpawns: fighterScenarioSpawns },
 };
 
 export function airScenarioSpawns(id: AirScenarioPresetId): AirSpawn[] {
