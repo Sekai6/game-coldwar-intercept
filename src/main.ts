@@ -99,6 +99,8 @@ import {
 import {
   moveAngle,
   moveToward,
+  applyVlsDamageIsolation,
+  reserveLauncherResource,
   resetMk10LauncherRuntime,
   resetVlsRuntime,
   setMk10Elevation,
@@ -1177,168 +1179,39 @@ function changeVlsCellAmmo(cell: VlsCellState, amount: number) {
   if (cell.loadout === "SM-2MR") changeAmmo("SM-2MR", amount);
   else if (cell.loadout === "SM-2ER") changeAmmo("SM-2ER", amount);
 }
-function disableVlsCell(cell: VlsCellState) {
-  if (
-    cell.phase === "disabled" ||
-    cell.phase === "spent" ||
-    cell.phase === "launching" ||
-    (cell.phase === "closing" && cell.closeTo === "spent")
-  )
-    return false;
-  const bank = vlsBanks[cell.bank],
-    roundLoaded = cell.loadout !== "OTHER";
-  if (cell.phase === "ready") changeVlsCellAmmo(cell, -1);
-  else if (cell.phase === "closing" && cell.closeTo === "ready")
-    changeVlsCellAmmo(cell, -1);
-  if (cell.pending) {
-    cancelAuthorizedLaunch(cell.pending);
-    cell.pending = null;
-  }
-  if (roundLoaded) bank.trappedRounds++;
-  if (cell.phase === "opening" || cell.phase === "closing") {
-    cell.closeTo = "disabled";
-    cell.phase = "closing";
-    cell.phaseSince = elapsed;
-  } else cell.phase = "disabled";
-  return true;
-}
 function applyVlsBankDamage(bankName: VlsCellState["bank"], health: number) {
   if (activeShip.launcher.kind !== "mk41") return;
-  const cells = vlsCells.filter((cell) => cell.bank === bankName),
-    bank = vlsBanks[bankName],
-    current = cells.filter(
-      (cell) =>
-        cell.phase === "disabled" ||
-        (cell.phase === "closing" && cell.closeTo === "disabled"),
-    ).length,
-    target = desiredDisabledCells(cells.length, health, activeShip.launcher);
-  if (target <= current) return;
-  if (bank.damageCenters.length === 0 || health > 0.05) {
-    const candidates = cells.filter(
-      (cell) => cell.phase !== "spent" && cell.phase !== "launching",
-    );
-    if (candidates.length)
-      bank.damageCenters.push(
-        candidates[
-          (bank.damageCenters.length * 23 + (bankName === "FWD" ? 7 : 31)) %
-            candidates.length
-        ].index,
-      );
-  }
-  let disabled = current;
-  while (disabled < target) {
-    const candidate = cells
-      .filter(
-        (cell) =>
-          cell.phase !== "disabled" &&
-          cell.phase !== "spent" &&
-          cell.phase !== "launching" &&
-          !(cell.phase === "closing" && cell.closeTo === "spent"),
-      )
-      .sort(
-        (a, b) =>
-          Math.min(
-            ...bank.damageCenters.map((center) =>
-              vlsCellDistance(a.index, center),
-            ),
-          ) -
-            Math.min(
-              ...bank.damageCenters.map((center) =>
-                vlsCellDistance(b.index, center),
-              ),
-            ) || a.index - b.index,
-      )[0];
-    if (!candidate || !disableVlsCell(candidate)) break;
-    disabled++;
-  }
-  log(
-    `MK 41 ${bankName} DAMAGE ISOLATION / ${disabled} CELLS DISABLED / ${bank.trappedRounds} ROUNDS TRAPPED`,
-  );
+  applyVlsDamageIsolation({
+    config: activeShip.launcher,
+    cells: vlsCells,
+    banks: vlsBanks,
+    bank: bankName,
+    health,
+    elapsed,
+    desiredDisabled: desiredDisabledCells,
+    cellDistance: vlsCellDistance,
+    removeAmmo: (cell) => changeVlsCellAmmo(cell, -1),
+    cancel: cancelAuthorizedLaunch,
+    log,
+  });
 }
 function reserveInterceptorLauncher(target: DefenseTarget, weapon: WeaponType) {
-  const launcherConfig = activeShip.launcher;
-  if (!launcherConfig.compatibleWeapons.includes(weapon)) {
-    log(
-      `LAUNCH INHIBIT / ${weapon} NOT ${launcherConfig.displayName} COMPATIBLE`,
-    );
-    return false;
-  }
-  if (launcherConfig.kind === "mk41") {
-    const desiredBank: VlsCellState["bank"] = launcherCycle % 2 ? "AFT" : "FWD",
-      activeCells = vlsCells.filter(
-        (cell) => cell.phase === "opening" || cell.phase === "launching",
-      );
-    const eligible = (bank: VlsCellState["bank"]) =>
-      vlsCells
-        .filter(
-          (cell) =>
-            cell.bank === bank &&
-            cell.loadout === weapon &&
-            cell.phase === "ready" &&
-            subsystemHealth(
-              bank === "FWD" ? "forwardLauncher" : "aftLauncher",
-            ) > 0.05 &&
-            activeCells
-              .filter((active) => active.bank === bank)
-              .every(
-                (active) => vlsCellDistance(active.index, cell.index) > 1,
-              ) &&
-            (elapsed - vlsBanks[bank].lastLaunchAt >=
-              launcherConfig.exhaustClearance ||
-              vlsCellDistance(vlsBanks[bank].lastCellIndex, cell.index) > 1),
-        )
-        .sort(
-          (a, b) =>
-            vlsCellDistance(b.index, vlsBanks[bank].lastCellIndex) -
-            vlsCellDistance(a.index, vlsBanks[bank].lastCellIndex),
-        );
-    const preferred =
-      eligible(desiredBank)[0] ??
-      eligible(desiredBank === "FWD" ? "AFT" : "FWD")[0];
-    if (!preferred) {
-      const loadedReady = vlsCells.some(
-        (cell) => cell.loadout === weapon && cell.phase === "ready",
-      );
-      log(
-        loadedReady
-          ? "LAUNCH INHIBIT / MK 41 DECK SAFETY SEPARATION"
-          : `LAUNCH INHIBIT / MK 41 NO READY ${weapon} CELL`,
-      );
-      return false;
-    }
-    launcherCycle++;
-    preferred.pending = { target, weapon };
-    preferred.closeTo = "ready";
-    preferred.phase = "opening";
-    preferred.phaseSince = elapsed;
-    log(
-      `MK 41 ${preferred.bank} CELL ${String(preferred.index + 1).padStart(2, "0")} / ${preferred.loadout} TASK / TRACK ${defenseSourceForTarget(target)} / HATCH OPENING`,
-    );
-    return true;
-  }
-  const available = mk10Launchers.filter(
-      (state) => state.phase === "ready" && launcherHealth(state) > 0.05,
-    ),
-    preferred = launcherCycle % mk10Launchers.length,
-    launcher = available.includes(mk10Launchers[preferred])
-      ? mk10Launchers[preferred]
-      : available[0];
-  if (!launcher) {
-    log(
-      `LAUNCH INHIBIT / ${launcherConfig.displayName} UNAVAILABLE OR CYCLING`,
-    );
-    return false;
-  }
-  launcherCycle = (mk10Launchers.indexOf(launcher) + 1) % mk10Launchers.length;
-  launcher.pending = { target, weapon };
-  launcher.reloadRail = -1;
-  launcher.phase = "slewing";
-  launcher.phaseSince = elapsed;
-  const trackId = defenseSourceForTarget(target);
-  log(
-    `${launcherConfig.displayName} ${launcher.name} TASK / TRACK ${trackId} / SLEWING / HEALTH ${Math.round(launcherHealth(launcher) * 100)}%`,
-  );
-  return true;
+  const result = reserveLauncherResource({
+    config: activeShip.launcher,
+    mk10Launchers,
+    vlsCells,
+    vlsBanks,
+    request: { target, weapon },
+    elapsed,
+    cycle: launcherCycle,
+    health: (bank) =>
+      subsystemHealth(bank === "FWD" ? "forwardLauncher" : "aftLauncher"),
+    targetId: defenseSourceForTarget(target),
+    cellDistance: vlsCellDistance,
+    log,
+  });
+  launcherCycle = result.cycle;
+  return result.accepted;
 }
 function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
   const targetId = defenseSourceForTarget(target);

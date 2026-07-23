@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import {
+  applyVlsDamageIsolation,
+  reserveLauncherResource,
   resetVlsRuntime,
   updateVlsRuntime,
 } from "../dist-test/ship-defense/launcher-runtime.js";
@@ -49,6 +51,74 @@ const config = {
   loadingPermutation: 1,
   gridSize: 8,
 };
+cell.phase = "ready";
+cell.pending = null;
+const reserve = (overrides = {}) =>
+  reserveLauncherResource({
+    config,
+    mk10Launchers: [],
+    vlsCells: [cell],
+    vlsBanks: banks,
+    request: { target, weapon: "SM-2MR" },
+    elapsed: 0,
+    cycle: 0,
+    health: () => 1,
+    targetId: "test-target",
+    cellDistance: (left, right) => Math.abs(left - right),
+    log: () => {},
+    ...overrides,
+  });
+const reservation = reserve();
+assert(
+  reservation.accepted &&
+    reservation.cell === cell &&
+    cell.pending?.target === target &&
+    cell.phase === "opening",
+  "Mk 41 reservation did not assign a physical cell",
+);
+cell.pending = null;
+cell.phase = "ready";
+const incompatible = reserve({
+  request: { target, weapon: "RIM-67" },
+});
+assert(!incompatible.accepted && !cell.pending, "incompatible weapon was reserved");
+cell.phase = "opening";
+const separatedCell = { ...cell, index: 4, phase: "ready", pending: null };
+const safetyBlocked = reserve({ vlsCells: [cell, separatedCell] });
+assert(!safetyBlocked.accepted, "adjacent active Mk 41 cells bypassed deck safety");
+const damageCells = Array.from({ length: 4 }, (_, index) => ({
+  ...cell,
+  lid: new THREE.Group(),
+  origin: new THREE.Group(),
+  index,
+  phase: "ready",
+  closeTo: "ready",
+  pending: null,
+}));
+let removedRounds = 0;
+const isolated = applyVlsDamageIsolation({
+  config,
+  cells: damageCells,
+  banks,
+  bank: "FWD",
+  health: 0.4,
+  elapsed: 0,
+  desiredDisabled: () => 2,
+  cellDistance: (left, right) => Math.abs(left - right),
+  removeAmmo: () => removedRounds++,
+  cancel: () => {},
+  log: () => {},
+});
+assert(
+  isolated === 2 &&
+    removedRounds === 2 &&
+    damageCells.filter((candidate) => candidate.phase === "disabled").length === 2 &&
+    banks.FWD.trappedRounds === 2,
+  "Mk 41 damage isolation did not disable and trap the selected cells",
+);
+resetVlsRuntime([cell], banks);
+cell.phase = "opening";
+cell.pending = { target, weapon: "SM-2MR" };
 let launches = 0;
 let returned = 0;
 let cancelled = 0;

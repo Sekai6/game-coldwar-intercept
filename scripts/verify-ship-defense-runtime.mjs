@@ -18,6 +18,7 @@ import {
 import {
   moveAngle,
   moveToward,
+  reserveLauncherResource,
   resetMk10LauncherRuntime,
   setMk10Elevation,
   updateMk10LauncherRuntime,
@@ -200,6 +201,38 @@ const config = {
   elevationRateDeg: 180,
   reloadSeconds: 1,
 };
+const aftLauncher = {
+  ...mk10,
+  name: "AFT",
+  phase: "ready",
+  pending: null,
+};
+mk10.pending = null;
+mk10.phase = "ready";
+const reservedMk10 = reserveLauncherResource({
+  config,
+  mk10Launchers: [mk10, aftLauncher],
+  vlsCells: [],
+  vlsBanks: { FWD: {}, AFT: {} },
+  request: { target: missile, weapon: "RIM-67" },
+  elapsed: 0,
+  cycle: 1,
+  health: () => 1,
+  targetId: "air-weapon-1",
+  cellDistance: () => Infinity,
+  log: () => {},
+});
+assert(
+  reservedMk10.accepted &&
+    reservedMk10.launcher === aftLauncher &&
+    aftLauncher.phase === "slewing" &&
+    reservedMk10.cycle === 0,
+  "Mk 10 reservation did not honor launcher alternation",
+);
+aftLauncher.pending = null;
+aftLauncher.phase = "ready";
+mk10.pending = { target: missile, weapon: "RIM-67" };
+mk10.phase = "slewing";
 let launches = 0;
 let returned = 0;
 const runMk10 = (elapsed, health = 1, track = new THREE.Vector3(100, 10, 0)) =>

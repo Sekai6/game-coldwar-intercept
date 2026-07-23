@@ -210,6 +210,210 @@ export function resetMk10LauncherRuntime(launchers: readonly Mk10LauncherState[]
 }
 
 type Mk41Config = Extract<LauncherConfig, { kind: "mk41" }>;
+
+export type LauncherReservationDependencies = {
+  config: LauncherConfig;
+  mk10Launchers: readonly Mk10LauncherState[];
+  vlsCells: readonly VlsCellState[];
+  vlsBanks: Record<"FWD" | "AFT", VlsBankState>;
+  request: LauncherRequest;
+  elapsed: number;
+  cycle: number;
+  health: (bank: "FWD" | "AFT") => number;
+  targetId: string | number;
+  cellDistance: (left: number, right: number) => number;
+  log: (message: string) => void;
+};
+
+export type LauncherReservationResult = {
+  accepted: boolean;
+  cycle: number;
+  launcher?: Mk10LauncherState;
+  cell?: VlsCellState;
+};
+
+export function reserveLauncherResource(
+  deps: LauncherReservationDependencies,
+): LauncherReservationResult {
+  const { config, request } = deps;
+  if (!config.compatibleWeapons.includes(request.weapon)) {
+    deps.log(`LAUNCH INHIBIT / ${request.weapon} NOT ${config.displayName} COMPATIBLE`);
+    return { accepted: false, cycle: deps.cycle };
+  }
+  if (config.kind === "mk41") {
+    const desiredBank: VlsCellState["bank"] = deps.cycle % 2 ? "AFT" : "FWD";
+    const activeCells = deps.vlsCells.filter(
+      (cell) => cell.phase === "opening" || cell.phase === "launching",
+    );
+    const eligible = (bank: VlsCellState["bank"]) =>
+      deps.vlsCells
+        .filter(
+          (cell) =>
+            cell.bank === bank &&
+            cell.loadout === request.weapon &&
+            cell.phase === "ready" &&
+            deps.health(bank) > 0.05 &&
+            activeCells
+              .filter((active) => active.bank === bank)
+              .every((active) => deps.cellDistance(active.index, cell.index) > 1) &&
+            (deps.elapsed - deps.vlsBanks[bank].lastLaunchAt >= config.exhaustClearance ||
+              deps.cellDistance(deps.vlsBanks[bank].lastCellIndex, cell.index) > 1),
+        )
+        .sort(
+          (left, right) =>
+            deps.cellDistance(right.index, deps.vlsBanks[bank].lastCellIndex) -
+              deps.cellDistance(left.index, deps.vlsBanks[bank].lastCellIndex) ||
+            left.index - right.index,
+        );
+    const cell =
+      eligible(desiredBank)[0] ??
+      eligible(desiredBank === "FWD" ? "AFT" : "FWD")[0];
+    if (!cell) {
+      const loadedReady = deps.vlsCells.some(
+        (candidate) =>
+          candidate.loadout === request.weapon && candidate.phase === "ready",
+      );
+      deps.log(
+        loadedReady
+          ? "LAUNCH INHIBIT / MK 41 DECK SAFETY SEPARATION"
+          : `LAUNCH INHIBIT / MK 41 NO READY ${request.weapon} CELL`,
+      );
+      return { accepted: false, cycle: deps.cycle };
+    }
+    cell.pending = request;
+    cell.closeTo = "ready";
+    cell.phase = "opening";
+    cell.phaseSince = deps.elapsed;
+    deps.log(
+      `MK 41 ${cell.bank} CELL ${String(cell.index + 1).padStart(2, "0")} / ${cell.loadout} TASK / TRACK ${deps.targetId} / HATCH OPENING`,
+    );
+    return { accepted: true, cycle: deps.cycle + 1, cell };
+  }
+  const available = deps.mk10Launchers.filter(
+    (launcher) => launcher.phase === "ready" && deps.health(launcher.name === "AFT" ? "AFT" : "FWD") > 0.05,
+  );
+  const preferred = deps.cycle % Math.max(1, deps.mk10Launchers.length);
+  const launcher = available.includes(deps.mk10Launchers[preferred])
+    ? deps.mk10Launchers[preferred]
+    : available[0];
+  if (!launcher) {
+    deps.log(`LAUNCH INHIBIT / ${config.displayName} UNAVAILABLE OR CYCLING`);
+    return { accepted: false, cycle: deps.cycle };
+  }
+  launcher.pending = request;
+  launcher.reloadRail = -1;
+  launcher.phase = "slewing";
+  launcher.phaseSince = deps.elapsed;
+  deps.log(
+    `${config.displayName} ${launcher.name} TASK / TRACK ${deps.targetId} / SLEWING / HEALTH ${Math.round(deps.health(launcher.name === "AFT" ? "AFT" : "FWD") * 100)}%`,
+  );
+  return {
+    accepted: true,
+    cycle: (deps.mk10Launchers.indexOf(launcher) + 1) % deps.mk10Launchers.length,
+    launcher,
+  };
+}
+
+export type VlsDamageDependencies = {
+  config: Mk41Config;
+  cells: readonly VlsCellState[];
+  banks: Record<"FWD" | "AFT", VlsBankState>;
+  bank: VlsCellState["bank"];
+  health: number;
+  elapsed: number;
+  desiredDisabled: (cellCount: number, health: number, config: Mk41Config) => number;
+  cellDistance: (left: number, right: number) => number;
+  removeAmmo: (cell: VlsCellState) => void;
+  cancel: (request: LauncherRequest) => void;
+  log: (message: string) => void;
+};
+
+export function disableVlsCell(
+  cell: VlsCellState,
+  bank: VlsBankState,
+  deps: Pick<VlsDamageDependencies, "elapsed" | "removeAmmo" | "cancel">,
+): boolean {
+  if (
+    cell.phase === "disabled" ||
+    cell.phase === "spent" ||
+    cell.phase === "launching" ||
+    (cell.phase === "closing" && cell.closeTo === "spent")
+  )
+    return false;
+  const loaded = cell.loadout !== "OTHER";
+  if (
+    cell.phase === "ready" ||
+    (cell.phase === "closing" && cell.closeTo === "ready")
+  )
+    deps.removeAmmo(cell);
+  if (cell.pending) {
+    deps.cancel(cell.pending);
+    cell.pending = null;
+  }
+  if (loaded) bank.trappedRounds++;
+  if (cell.phase === "opening" || cell.phase === "closing") {
+    cell.closeTo = "disabled";
+    cell.phase = "closing";
+    cell.phaseSince = deps.elapsed;
+  } else cell.phase = "disabled";
+  return true;
+}
+
+export function applyVlsDamageIsolation(deps: VlsDamageDependencies): number {
+  const cells = deps.cells.filter((cell) => cell.bank === deps.bank);
+  const bank = deps.banks[deps.bank];
+  const current = cells.filter(
+    (cell) =>
+      cell.phase === "disabled" ||
+      (cell.phase === "closing" && cell.closeTo === "disabled"),
+  ).length;
+  const target = deps.desiredDisabled(cells.length, deps.health, deps.config);
+  if (target <= current) return current;
+  if (bank.damageCenters.length === 0 || deps.health > 0.05) {
+    const candidates = cells.filter(
+      (cell) => cell.phase !== "spent" && cell.phase !== "launching",
+    );
+    if (candidates.length)
+      bank.damageCenters.push(
+        candidates[
+          (bank.damageCenters.length * 23 + (deps.bank === "FWD" ? 7 : 31)) %
+            candidates.length
+        ].index,
+      );
+  }
+  let disabled = current;
+  while (disabled < target) {
+    const candidate = cells
+      .filter(
+        (cell) =>
+          cell.phase !== "disabled" &&
+          cell.phase !== "spent" &&
+          cell.phase !== "launching" &&
+          !(cell.phase === "closing" && cell.closeTo === "spent"),
+      )
+      .sort(
+        (left, right) =>
+          Math.min(
+            ...bank.damageCenters.map((center) =>
+              deps.cellDistance(left.index, center),
+            ),
+          ) -
+            Math.min(
+              ...bank.damageCenters.map((center) =>
+                deps.cellDistance(right.index, center),
+              ),
+            ) ||
+          left.index - right.index,
+      )[0];
+    if (!candidate || !disableVlsCell(candidate, bank, deps)) break;
+    disabled++;
+  }
+  deps.log(
+    `MK 41 ${deps.bank} DAMAGE ISOLATION / ${disabled} CELLS DISABLED / ${bank.trappedRounds} ROUNDS TRAPPED`,
+  );
+  return disabled;
+}
+
 export type VlsRuntimeSnapshot = {
   readyMr: number;
   readyEr: number;
