@@ -3006,7 +3006,10 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     airCombat.reset(
       context.blueShip,
       context.redShip,
-      airScenarioSpawns(presetId),
+      airScenarioSpawns(
+        presetId,
+        new URLSearchParams(location.search).get("shortAirValidation") === "1",
+      ),
     );
     airCombat.countermeasuresEnabled =
       new URLSearchParams(location.search).get("airCountermeasures") !== "off";
@@ -7594,6 +7597,12 @@ function tick(now: number) {
   canvas.dataset.airMissionStates = airCombat.aircraft
     .map((aircraft) => `${aircraft.id}:${aircraft.mission}`)
     .join(",");
+  canvas.dataset.aircraftShipRangesKm = airCombat.aircraft
+    .map(
+      (aircraft) =>
+        `${aircraft.id}:${(aircraft.position.distanceTo(defender.position) / WORLD_UNITS_PER_KM).toFixed(1)}`,
+    )
+    .join("|");
   canvas.dataset.airThrustStates = airCombat.aircraft
     .map(
       (aircraft) =>

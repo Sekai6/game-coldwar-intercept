@@ -10,7 +10,8 @@ const errors = [];
 page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
 page.on("pageerror", error => errors.push(error.message));
 try {
-  await page.goto(process.env.APP_URL ?? "http://127.0.0.1:5173/", { waitUntil: "domcontentloaded", timeout: 15_000 });
+  const baseUrl = process.env.APP_URL ?? "http://127.0.0.1:5173/";
+  await page.goto(`${baseUrl}${baseUrl.includes("?") ? "&" : "?"}shortAirValidation=1`, { waitUntil: "domcontentloaded", timeout: 15_000 });
   await page.locator("#sbAirCombat").check();
   await page.locator("#sbStart").click();
   await page.getByRole("button", { name: "TIME: 1X" }).click();

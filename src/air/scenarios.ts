@@ -39,8 +39,8 @@ function jointAirScenarioSpawns(): AirSpawn[] {
       platformId: "F-14A",
       side: "blue",
       formationId: "CAP-1",
-      position: new THREE.Vector3(-170, 72, -220),
-      heading: new THREE.Vector3(1, 0, -0.12),
+      position: new THREE.Vector3(-170, 72, -500),
+      heading: new THREE.Vector3(0.25, 0, -1),
       wingmanMission: "escort",
       protectedFormationId: "STRIKE-1",
     }),
@@ -48,7 +48,7 @@ function jointAirScenarioSpawns(): AirSpawn[] {
       platformId: "TU-16K",
       side: "red",
       formationId: "RAID-1",
-      position: new THREE.Vector3(80, 92, -250),
+      position: new THREE.Vector3(80, 92, -1050),
       heading: new THREE.Vector3(-0.15, -0.01, 1),
     }),
     ...pair({
@@ -67,15 +67,15 @@ function interceptScenarioSpawns(): AirSpawn[] {
       platformId: "F-14A",
       side: "blue",
       formationId: "INTERCEPT-1",
-      position: new THREE.Vector3(-150, 70, -210),
-      heading: new THREE.Vector3(0.9, 0, -0.2),
+      position: new THREE.Vector3(-150, 70, -500),
+      heading: new THREE.Vector3(0.2, 0, -1),
       wingmanMission: "intercept",
     }),
     ...pair({
       platformId: "TU-16K",
       side: "red",
       formationId: "RAID-1",
-      position: new THREE.Vector3(70, 88, -245),
+      position: new THREE.Vector3(70, 88, -1050),
       heading: new THREE.Vector3(-0.12, -0.01, 1),
     }),
   ];
@@ -123,6 +123,12 @@ export const AIR_SCENARIO_PRESETS: Readonly<Record<AirScenarioPresetId, {
   fighter: { label: "FIGHTER", description: "F-14A CAP / MiG-29A intercept", createSpawns: fighterScenarioSpawns },
 };
 
-export function airScenarioSpawns(id: AirScenarioPresetId): AirSpawn[] {
-  return AIR_SCENARIO_PRESETS[id].createSpawns();
+export function airScenarioSpawns(id: AirScenarioPresetId, shortValidation = false): AirSpawn[] {
+  const spawns = AIR_SCENARIO_PRESETS[id].createSpawns();
+  if (!shortValidation || (id !== "joint" && id !== "intercept")) return spawns;
+  for (const spawn of spawns) {
+    if (spawn.definition.id === "TU-16K") spawn.position.z += 800;
+    if (spawn.definition.id === "F-14A") spawn.position.z += 280;
+  }
+  return spawns;
 }

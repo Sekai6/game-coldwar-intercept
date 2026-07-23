@@ -22,8 +22,10 @@ try {
       missions: c.dataset.airMissionStates ?? "",
       escorts: c.dataset.airEscortAssignments ?? "",
       launches: c.dataset.airWeaponLaunchLog ?? "",
+      shipRanges: c.dataset.aircraftShipRangesKm ?? "",
     }));
   }
   console.log(JSON.stringify({ results, errors }, null, 2));
-  if (errors.length || results.joint.total !== 6 || !results.joint.missions.includes("escort") || !results.joint.escorts.includes("blue-A-6E") || results.intercept.total !== 4 || !results.intercept.missions.includes("intercept") || results.strike.total !== 2 || !results.strike.missions.includes("anti-ship") || results.fighter.total !== 4 || !results.fighter.missions.includes("red-MIG-29A") || !results.fighter.missions.includes("intercept")) process.exitCode = 1;
+  const jointTu16Ranges = results.joint.shipRanges.split("|").filter(value => value.includes("TU-16K")).map(value => Number(value.split(":").at(-1)));
+  if (errors.length || results.joint.total !== 6 || jointTu16Ranges.length !== 2 || jointTu16Ranges.some(range => range < 100) || !results.joint.missions.includes("escort") || !results.joint.escorts.includes("blue-A-6E") || results.intercept.total !== 4 || !results.intercept.missions.includes("intercept") || results.strike.total !== 2 || !results.strike.missions.includes("anti-ship") || results.fighter.total !== 4 || !results.fighter.missions.includes("red-MIG-29A") || !results.fighter.missions.includes("intercept")) process.exitCode = 1;
 } finally { await browser.close(); }
