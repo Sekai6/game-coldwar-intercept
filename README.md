@@ -23,6 +23,8 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 箔条与热焰弹按 `CountermeasureProgram.interval` 逐枚抛射，库存也在每个实体实际离机时扣减。飞行动力学核心位于 `src/air/flight-dynamics.ts`，统一计算速度相关过载能力、飞控健康、最大滚转率、俯仰/迎角限制、失速以及与油门和爬升相关的燃油流量。对应门槛为 `verify:air-countermeasures` 与 `verify:air-dynamics`。
 
+双机编队使用长机水平航向计算三维槽位，并通过 `joined / separated / rejoining` 迟滞状态避免边界抖动；失散僚机会优先重新集合。飞机毁伤处置由 `src/air/damage.ts` 统一判断继续任务、受损返航或失控任务击毁，避免每个命中路径自行删除飞机。`verify:air-formation-damage` 覆盖槽位、失散/重集合和关键系统毁伤门槛。
+
 联合任务结算会等待仍在执行战斗任务的飞机和在飞空中武器。反舰载机释放任务武器后进入脱离，敌机与敌方武器清空后 CAP 才进入返航。AAR 快照记录飞机三维位置、任务/状态、结构健康、空中武器以及实体箔条/热焰弹，不再在海战子系统清空时截断空战记录。
 
 机载雷达现在实际计算 RCS 四次方根、雷达地平线、传感器精度、系统健康、ECM 降距/降质和烧穿距离。飞机的导弹防御由短时告警航迹触发；未被 RWR/MAWS/近距目视条件发现的武器不会提前触发规避或干扰弹。`npm run verify:air-sensors` 串行验证 ECM、烧穿和告警包线。

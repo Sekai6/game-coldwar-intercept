@@ -7879,6 +7879,12 @@ function tick(now: number) {
   canvas.dataset.airMissionStates = airCombat.aircraft
     .map((aircraft) => `${aircraft.id}:${aircraft.mission}`)
     .join(",");
+  canvas.dataset.airFormationStates = airCombat.aircraft
+    .map(
+      (aircraft) =>
+        `${aircraft.id}:${aircraft.formationStatus}:${Number.isFinite(aircraft.formationError) ? aircraft.formationError.toFixed(1) : "lost"}`,
+    )
+    .join(",");
   canvas.dataset.airShipHits = String(airShipHits);
   canvas.dataset.airShipDamage = airShipDamage.toFixed(1);
   canvas.dataset.airWeaponLaunchLog = airCombat.events

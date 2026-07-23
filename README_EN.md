@@ -80,6 +80,8 @@ Air-to-air seeker decisions are centralized in `src/air/guidance.ts`. Phoenix re
 
 Chaff and flares are ejected one physical object at a time using `CountermeasureProgram.interval`, with inventory deducted on each actual release. `src/air/flight-dynamics.ts` now owns speed-dependent load authority, flight-control degradation, roll-rate limits, pitch/AOA limits, stall state, and throttle/climb-dependent fuel flow. `verify:air-countermeasures` and `verify:air-dynamics` cover these paths.
 
+Two-aircraft formations derive their three-dimensional slot from the leader's horizontal heading and use hysteretic `joined / separated / rejoining` states; a separated wingman prioritizes rejoin geometry. `src/air/damage.ts` centralizes continue, damaged-return, and loss-of-control mission-kill decisions so individual hit paths cannot simply delete an aircraft. `verify:air-formation-damage` covers slot geometry, break/rejoin transitions, and critical-system thresholds.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.

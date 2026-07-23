@@ -1,6 +1,7 @@
 import type * as THREE from "three";
 import type { CombatEntity, CombatSide } from "../combat-entity";
 import type { EnemyType } from "../threats/catalog";
+import type { FormationStatus } from "./formation";
 
 export type AirMissionOrder = "cap" | "intercept" | "escort" | "anti-ship" | "egress" | "return";
 export type AirGuidance = "active-radar" | "semi-active-radar" | "infrared" | "anti-ship-radar";
@@ -139,6 +140,8 @@ export interface AirPlatformInstance extends CombatEntity {
     nextReleaseAt: number;
     interval: number;
   }[];
+  formationStatus: FormationStatus;
+  formationError: number;
 }
 
 export interface AirHardpointInstance {
