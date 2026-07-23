@@ -33,6 +33,8 @@ export function updateAntiShipGuidance(input: {
   targetPosition: THREE.Vector3;
   targetVelocity: THREE.Vector3;
   dt: number;
+  seekerCaptureProbability?: number;
+  seekerSample?: number;
 }) {
   const { state, config } = input;
   state.age += input.dt;
@@ -52,7 +54,9 @@ export function updateAntiShipGuidance(input: {
       .clone()
       .normalize()
       .angleTo(input.targetPosition.clone().sub(input.position).normalize());
-    if (offBoresight <= THREE.MathUtils.degToRad(config.seekerFovDeg / 2)) {
+    const captureProbability = THREE.MathUtils.clamp(input.seekerCaptureProbability ?? 1, 0, 1);
+    const sample = input.seekerSample ?? 0;
+    if (offBoresight <= THREE.MathUtils.degToRad(config.seekerFovDeg / 2) && sample < captureProbability) {
       state.seekerAcquired = true;
       acquiredNow = true;
     }
@@ -97,6 +101,7 @@ export function updateAntiShipGuidance(input: {
     desiredAltitude,
     commandRange,
     targetRange,
+    captureProbability: input.seekerCaptureProbability ?? 1,
     acquiredNow,
   };
 }
