@@ -1,15 +1,11 @@
-import { consumeFuel, stepFlightDynamics } from "../dist-test/flight-dynamics.js";
+import { stepFlightDynamics } from "../dist-test/air/flight-dynamics.js";
 
-const envelope={cruiseSpeed:5.1,maxSpeed:11.5,stallSpeed:2.1,acceleration:1.1,drag:.018,maxLoadFactor:7.5,maxRollRateDeg:120,maxPitchRateDeg:28,maxAngleOfAttackDeg:17};
-const healthy=stepFlightDynamics({speed:5.1,currentBank:0,desiredBank:90,flightPathAngleDeg:0,desiredFlightPathAngleDeg:40,flightControlHealth:1,engineHealth:1,defending:true,dt:.1,envelope});
-const damaged=stepFlightDynamics({speed:5.1,currentBank:0,desiredBank:90,flightPathAngleDeg:0,desiredFlightPathAngleDeg:40,flightControlHealth:.35,engineHealth:.5,defending:true,dt:.1,envelope});
-const lowSpeed=stepFlightDynamics({speed:1.8,currentBank:0,desiredBank:90,flightPathAngleDeg:10,desiredFlightPathAngleDeg:40,flightControlHealth:1,engineHealth:1,defending:false,dt:.1,envelope});
-const cruise=stepFlightDynamics({speed:5.1,currentBank:0,desiredBank:0,flightPathAngleDeg:0,desiredFlightPathAngleDeg:0,flightControlHealth:1,engineHealth:1,defending:false,dt:1,envelope});
-const combat=stepFlightDynamics({speed:5.1,currentBank:0,desiredBank:90,flightPathAngleDeg:20,desiredFlightPathAngleDeg:40,flightControlHealth:1,engineHealth:1,defending:true,dt:1,envelope});
-let steppedFuel=100;
-for(let step=0;step<10;step++){const frame=stepFlightDynamics({speed:5.1,currentBank:0,desiredBank:0,flightPathAngleDeg:0,desiredFlightPathAngleDeg:0,flightControlHealth:1,engineHealth:1,defending:false,dt:.1,envelope});steppedFuel=consumeFuel(steppedFuel,frame.fuelBurn);}
-const singleStepFuel=consumeFuel(100,cruise.fuelBurn);
-const exhaustedFuel=consumeFuel(.2,1);
-const result={healthy,damaged,lowSpeed,cruiseFuel:cruise.fuelBurn,combatFuel:combat.fuelBurn,steppedFuel,singleStepFuel,exhaustedFuel};
+const thrust={militarySpeedFactor:1.4,militaryAccelerationFactor:1,militaryFuelMultiplier:1.6,militaryInfraredMultiplier:1.3,afterburnerAvailable:true,afterburnerSpeedFactor:2.2,afterburnerAccelerationFactor:1.8,afterburnerFuelMultiplier:4.8,afterburnerInfraredMultiplier:2.8,afterburnerSeconds:120};
+const envelope={cruiseSpeed:5,maxSpeed:11,stallSpeed:2,acceleration:1,drag:.018,maxLoadFactor:8,maxRollRateDeg:120,maxPitchRateDeg:28,thrust};
+const step=(thrustMode, afterburnerRemaining=120)=>stepFlightDynamics({speed:5,currentBank:0,desiredBank:0,flightPathAngleDeg:0,desiredFlightPathAngleDeg:0,flightControlHealth:1,engineHealth:1,thrustMode,afterburnerRemaining,dt:1,envelope});
+const idle=step("idle"), cruise=step("cruise"), military=step("military"), afterburner=step("afterburner"), exhausted=step("afterburner",0);
+const result={idle,cruise,military,afterburner,exhausted};
 console.log(JSON.stringify(result,null,2));
-if(Math.abs(healthy.bank)>12.001||Math.abs(damaged.bank)>=Math.abs(healthy.bank)||Math.abs(healthy.pitchDelta)>2.801||!lowSpeed.stalled||damaged.maximumTurnRateDeg>=healthy.maximumTurnRateDeg||combat.fuelBurn<=cruise.fuelBurn||Math.abs(steppedFuel-singleStepFuel)>.0001||exhaustedFuel!==0)process.exitCode=1;
+if (!(idle.speed<cruise.speed && cruise.speed<military.speed && military.speed<afterburner.speed) ||
+  !(idle.fuelBurn<cruise.fuelBurn && cruise.fuelBurn<military.fuelBurn && military.fuelBurn<afterburner.fuelBurn) ||
+  afterburner.afterburnerUsed!==1 || exhausted.thrustMode!=="military" || exhausted.afterburnerUsed!==0) process.exitCode=1;

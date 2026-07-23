@@ -3,6 +3,7 @@ import {
   missionShouldReturn,
   noContactMissionDirection,
   selectMissionTrack,
+  selectThrustMode,
 } from "../dist-test/air/ooda.js";
 
 const vector = (x, y, z) => ({ x, y, z });
@@ -142,6 +143,13 @@ const result = {
     contactLostSeconds: 30,
     hasAirborneWeapon: true,
   }),
+  thrust: {
+    patrol: selectThrustMode({mission:"cap",state:"formation",fuelRatio:.8,afterburnerAvailable:true,afterburnerRemaining:100,missileTti:null,targetRange:null,weaponMaxRange:400,speedRatio:.6,climbDemand:0}),
+    intercept: selectThrustMode({mission:"intercept",state:"engaging",fuelRatio:.8,afterburnerAvailable:true,afterburnerRemaining:100,missileTti:null,targetRange:500,weaponMaxRange:400,speedRatio:.6,climbDemand:.2}),
+    threat: selectThrustMode({mission:"return",state:"defending",fuelRatio:.1,afterburnerAvailable:true,afterburnerRemaining:10,missileTti:8,targetRange:null,weaponMaxRange:0,speedRatio:.5,climbDemand:0}),
+    bomber: selectThrustMode({mission:"anti-ship",state:"engaging",fuelRatio:.8,afterburnerAvailable:false,afterburnerRemaining:0,missileTti:null,targetRange:500,weaponMaxRange:400,speedRatio:.5,climbDemand:.3}),
+    returnMode: selectThrustMode({mission:"return",state:"egress",fuelRatio:.8,afterburnerAvailable:true,afterburnerRemaining:100,missileTti:null,targetRange:null,weaponMaxRange:0,speedRatio:.8,climbDemand:0}),
+  },
 };
 console.log(JSON.stringify(result, null, 2));
 if (
@@ -160,6 +168,8 @@ if (
   result.returnDenied ||
   result.returnBeforeContact ||
   result.returnDuringGrace ||
-  result.returnWithWeapon
+  result.returnWithWeapon || result.thrust.patrol!=="cruise" ||
+  result.thrust.intercept!=="afterburner" || result.thrust.threat!=="afterburner" ||
+  result.thrust.bomber!=="military" || result.thrust.returnMode!=="cruise"
 )
   process.exitCode = 1;

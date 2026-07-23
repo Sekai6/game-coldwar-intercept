@@ -1,3 +1,5 @@
+import type { AirThrustDefinition, AirThrustMode } from "./types";
+
 export interface FlightEnvelope {
   cruiseSpeed: number;
   maxSpeed: number;
@@ -8,6 +10,7 @@ export interface FlightEnvelope {
   maxRollRateDeg: number;
   maxPitchRateDeg: number;
   maxAngleOfAttackDeg?: number;
+  thrust: AirThrustDefinition;
 }
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -25,7 +28,8 @@ export function stepFlightDynamics(input: {
   desiredFlightPathAngleDeg: number;
   flightControlHealth: number;
   engineHealth: number;
-  defending: boolean;
+  thrustMode: AirThrustMode;
+  afterburnerRemaining: number;
   dt: number;
   envelope: FlightEnvelope;
 }) {
@@ -56,9 +60,22 @@ export function stepFlightDynamics(input: {
     -pitchLimit,
     pitchLimit,
   );
-  const targetSpeed =
-    (input.defending ? input.envelope.maxSpeed : input.envelope.cruiseSpeed) *
-    engineHealth;
+  const requestedMode = input.thrustMode;
+  const thrustMode = requestedMode === "afterburner" &&
+      (!input.envelope.thrust.afterburnerAvailable || input.afterburnerRemaining <= 0)
+    ? "military"
+    : requestedMode;
+  const mode = input.envelope.thrust;
+  const speedFactor = thrustMode === "idle" ? 0.72 : thrustMode === "cruise" ? 1 :
+    thrustMode === "military" ? mode.militarySpeedFactor : mode.afterburnerSpeedFactor;
+  const accelerationFactor = thrustMode === "idle" ? 0.12 : thrustMode === "cruise" ? 0.72 :
+    thrustMode === "military" ? mode.militaryAccelerationFactor : mode.afterburnerAccelerationFactor;
+  const fuelMultiplier = thrustMode === "idle" ? 0.28 : thrustMode === "cruise" ? 1 :
+    thrustMode === "military" ? mode.militaryFuelMultiplier : mode.afterburnerFuelMultiplier;
+  const targetSpeed = Math.min(
+    input.envelope.maxSpeed,
+    input.envelope.cruiseSpeed * speedFactor,
+  ) * engineHealth;
   const throttle = clamp(
     (targetSpeed - input.speed) /
       Math.max(0.1, input.envelope.maxSpeed - input.envelope.stallSpeed) + 0.55,
@@ -68,7 +85,7 @@ export function stepFlightDynamics(input: {
   const acceleration = clamp(
     targetSpeed - input.speed,
     -input.envelope.drag * input.speed * input.speed,
-    input.envelope.acceleration * engineHealth * throttle,
+    input.envelope.acceleration * accelerationFactor * engineHealth * throttle,
   );
   const climbCost = Math.max(0, input.flightPathAngleDeg / 45) * 0.45;
   const speed = clamp(
@@ -77,7 +94,8 @@ export function stepFlightDynamics(input: {
     input.envelope.maxSpeed,
   );
   const stalled = speed < input.envelope.stallSpeed;
-  const fuelBurn = input.dt *
+  const fuelBurn = input.dt * fuelMultiplier *
     (0.58 + throttle * 0.62 + Math.max(0, input.flightPathAngleDeg / 45) * 0.2);
-  return { availableLoadFactor, maximumTurnRateDeg, bank, pitchDelta, speed, throttle, fuelBurn, stalled };
+  const afterburnerUsed = thrustMode === "afterburner" ? input.dt : 0;
+  return { availableLoadFactor, maximumTurnRateDeg, bank, pitchDelta, speed, throttle, fuelBurn, stalled, thrustMode, afterburnerUsed };
 }

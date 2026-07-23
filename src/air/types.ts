@@ -13,6 +13,19 @@ import type { FormationStatus } from "./formation";
 
 export type AirMissionOrder =
   "cap" | "intercept" | "escort" | "anti-ship" | "egress" | "return";
+export type AirThrustMode = "idle" | "cruise" | "military" | "afterburner";
+export interface AirThrustDefinition {
+  militarySpeedFactor: number;
+  militaryAccelerationFactor: number;
+  militaryFuelMultiplier: number;
+  militaryInfraredMultiplier: number;
+  afterburnerAvailable: boolean;
+  afterburnerSpeedFactor: number;
+  afterburnerAccelerationFactor: number;
+  afterburnerFuelMultiplier: number;
+  afterburnerInfraredMultiplier: number;
+  afterburnerSeconds: number;
+}
 export type AirGuidance =
   "active-radar" | "semi-active-radar" | "infrared" | "anti-ship-radar";
 export type AirPlatformId = "F-14A" | "TU-16K" | "A-6E" | "MIG-29A";
@@ -96,6 +109,7 @@ export interface AirPlatformDefinition {
     maxPitchRateDeg: number;
     maxAngleOfAttackDeg?: number;
     fuelSeconds: number;
+    thrust: AirThrustDefinition;
   };
   sensor: AirSensorDefinition;
   ecm: { strength: number; burnThroughRange: number };
@@ -145,6 +159,8 @@ export interface AirPlatformInstance extends TargetableEntity {
   protectedId: string | null;
   mission: AirMissionOrder;
   fuel: number;
+  thrustMode: AirThrustMode;
+  afterburnerRemaining: number;
   heading: THREE.Vector3;
   desiredDirection: THREE.Vector3;
   bank: number;

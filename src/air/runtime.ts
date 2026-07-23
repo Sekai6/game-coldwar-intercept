@@ -24,6 +24,7 @@ import {
   defensiveManeuverFromWarning,
   missionShouldReturn,
   noContactMissionDirection,
+  selectThrustMode,
   selectMissionTrack,
 } from "./ooda";
 import { advanceAirTracks, createAirMeasurement } from "./track-store";
@@ -149,6 +150,8 @@ function instantiate(
     protectedId: null,
     mission: spawn.mission ?? spawn.definition.mission,
     fuel: spawn.definition.flight.fuelSeconds,
+    thrustMode: "cruise",
+    afterburnerRemaining: spawn.definition.flight.thrust.afterburnerSeconds,
     heading: spawn.heading.clone().normalize(),
     desiredDirection: spawn.heading.clone().normalize(),
     bank: 0,
@@ -384,13 +387,21 @@ export class AirCombatSystem {
         200,
       exhausts = aircraft.model.userData.exhausts as THREE.Mesh[] | undefined,
       contrails = aircraft.model.userData.contrails as THREE.Mesh[] | undefined;
+    const modeVisual = aircraft.thrustMode === "afterburner"
+      ? { width: 1.35, length: 2.8, opacity: 0.88, color: 0x80bfff }
+      : aircraft.thrustMode === "military"
+        ? { width: 1.05, length: 1.45, opacity: 0.58, color: 0xffa34f }
+        : aircraft.thrustMode === "cruise"
+          ? { width: 0.78, length: 0.72, opacity: 0.3, color: 0xff7a32 }
+          : { width: 0.5, length: 0.18, opacity: 0.08, color: 0xff5a24 };
     exhausts?.forEach((exhaust, index) => {
       const pulse = 1 + Math.sin(time * 17 + index * 1.7) * 0.08,
-        length = (0.45 + speedRatio * 1.65) * engineHealth * pulse;
+        length = modeVisual.length * (0.85 + speedRatio * 0.3) * engineHealth * pulse;
       exhaust.visible = aircraft.alive && engineHealth > 0.05;
-      exhaust.scale.set(0.75 + speedRatio * 0.45, length, 0.75 + speedRatio * 0.45);
-      (exhaust.material as THREE.MeshBasicMaterial).opacity =
-        0.22 + speedRatio * 0.5;
+      exhaust.scale.set(modeVisual.width, length, modeVisual.width);
+      const material = exhaust.material as THREE.MeshBasicMaterial;
+      material.opacity = modeVisual.opacity;
+      material.color.setHex(modeVisual.color);
     });
     const maneuverVapor =
       aircraft.position.y > 14 &&
@@ -1028,6 +1039,26 @@ export class AirCombatSystem {
         }
       }
     }
+    const targetTrack = a.targetId ? a.tracks.get(a.targetId) : undefined,
+      targetRange = targetTrack ? targetTrack.position.distanceTo(a.position) : null,
+      weaponMaxRange = Math.max(0, ...[...a.ammo.entries()]
+        .filter(([, count]) => count > 0)
+        .map(([id]) => AIR_WEAPONS[id].maxRange)),
+      missileTti = incoming ? incoming.warning.position.distanceTo(a.position) /
+        Math.max(1, incoming.warning.velocity.length()) : null,
+      climbDemand = a.desiredDirection.y - a.heading.y;
+    a.thrustMode = selectThrustMode({
+      mission: a.mission,
+      state: a.state,
+      fuelRatio: a.fuel / Math.max(1, a.definition.flight.fuelSeconds),
+      afterburnerAvailable: a.definition.flight.thrust.afterburnerAvailable,
+      afterburnerRemaining: a.afterburnerRemaining,
+      missileTti,
+      targetRange,
+      weaponMaxRange,
+      speedRatio: a.velocity.length() / a.definition.flight.maxSpeed,
+      climbDemand,
+    });
     const fc = (a.subsystemHealth.get("flight-control") ?? 0) / 100,
       eng =
         ((a.subsystemHealth.get("left-engine") ?? 0) +
@@ -1055,7 +1086,8 @@ export class AirCombatSystem {
         ),
         flightControlHealth: fc,
         engineHealth: eng,
-        defending: a.state === "defending",
+        thrustMode: a.thrustMode,
+        afterburnerRemaining: a.afterburnerRemaining,
         dt,
         envelope: flight,
       });
@@ -1082,6 +1114,14 @@ export class AirCombatSystem {
       a.state = "defending";
     }
     a.fuel = consumeFuel(a.fuel, flightStep.fuelBurn);
+    a.thrustMode = flightStep.thrustMode;
+    a.afterburnerRemaining = Math.max(0, a.afterburnerRemaining - flightStep.afterburnerUsed);
+    const thrustIr = a.thrustMode === "afterburner"
+      ? flight.thrust.afterburnerInfraredMultiplier
+      : a.thrustMode === "military"
+        ? flight.thrust.militaryInfraredMultiplier
+        : a.thrustMode === "idle" ? 0.45 : 1;
+    a.infraredSignature = a.definition.infraredSignature * thrustIr;
     const newSpeed = flightStep.speed;
     a.velocity.copy(a.heading).multiplyScalar(newSpeed);
     a.position.addScaledVector(a.velocity, dt);

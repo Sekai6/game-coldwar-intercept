@@ -1,4 +1,4 @@
-import type { AirMissionOrder, AirTrack } from "./types";
+import type { AirMissionOrder, AirThrustMode, AirTrack } from "./types";
 import type { DefenseObservation } from "../defense/targeting.js";
 import { selectConsumerTarget } from "../defense/consumer.js";
 import type {
@@ -109,4 +109,34 @@ export function defensiveManeuverFromWarning(input: {
       z: (input.warningVelocity.x / horizontal) * input.side,
     },
   };
+}
+
+export function selectThrustMode(input: {
+  mission: AirMissionOrder;
+  state: "formation" | "engaging" | "defending" | "egress" | "disabled" | "crashed";
+  fuelRatio: number;
+  afterburnerAvailable: boolean;
+  afterburnerRemaining: number;
+  missileTti: number | null;
+  targetRange: number | null;
+  weaponMaxRange: number;
+  speedRatio: number;
+  climbDemand: number;
+}): AirThrustMode {
+  if (input.state === "disabled" || input.state === "crashed") return "idle";
+  const canUseAfterburner = input.afterburnerAvailable && input.afterburnerRemaining > 0;
+  const imminentThreat = input.missileTti !== null && input.missileTti < 18;
+  if (imminentThreat) return canUseAfterburner ? "afterburner" : "military";
+  if (input.mission === "return") return "cruise";
+  if (input.mission === "egress" || input.state === "egress")
+    return input.fuelRatio > 0.18 && canUseAfterburner ? "afterburner" : "military";
+  const outsideLaunchEnvelope = input.targetRange !== null &&
+    input.weaponMaxRange > 0 && input.targetRange > input.weaponMaxRange * 0.82;
+  const energyDeficit = input.speedRatio < 0.68 || input.climbDemand > 0.18;
+  if (input.state === "engaging" && (outsideLaunchEnvelope || energyDeficit)) {
+    if (canUseAfterburner && input.fuelRatio > 0.28) return "afterburner";
+    return "military";
+  }
+  if (input.state === "engaging" || input.state === "defending") return "military";
+  return "cruise";
 }
