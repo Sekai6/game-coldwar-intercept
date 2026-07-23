@@ -72,6 +72,21 @@ const snapshots = [
         shooterId: "fighter-1",
       },
     ],
+    missiles: [
+      {
+        id: 7,
+        threatType: "P-500",
+        phase: "inbound",
+        x: 30,
+        y: 1.2,
+        z: -30,
+        heading: Math.PI,
+        pitch: 0,
+        roll: 0,
+        speed: 880,
+        verticalSpeed: 0,
+      },
+    ],
   },
   {
     ...base,
@@ -112,6 +127,40 @@ const snapshots = [
         structure: 82,
       },
     ],
+    missiles: [
+      {
+        id: 7,
+        threatType: "P-500",
+        phase: "destroyed",
+        x: 29,
+        y: 1.2,
+        z: -29,
+        heading: Math.PI,
+        pitch: 0,
+        roll: 0,
+        speed: 0,
+        verticalSpeed: 0,
+      },
+    ],
+  },
+  {
+    ...base,
+    time: 0.5,
+    missiles: [
+      {
+        id: 7,
+        threatType: "P-500",
+        phase: "destroyed",
+        x: 29,
+        y: 1.2,
+        z: -29,
+        heading: Math.PI,
+        pitch: 0,
+        roll: 0,
+        speed: 0,
+        verticalSpeed: 0,
+      },
+    ],
   },
 ];
 const acmi = exportTacviewAcmi(
@@ -144,7 +193,24 @@ assert(acmi.includes("Speed=250.00,VerticalSpeed=12.00,Health=100.0,State=cap/en
 assert(acmi.includes("#0.25"), "second frame missing");
 assert(/#0\.25[\s\S]*-\d+/.test(acmi), "removed weapon was not deleted");
 assert(/0,Event=Destroyed\|\d+/.test(acmi), "structured destruction event missing");
+assert(/0,Event=HasFired\|\d+\|\d+/.test(acmi), "structured firing event missing");
+assert(
+  acmi.indexOf(`Name=AIM-54A Phoenix`) < acmi.indexOf(`0,Event=HasFired|${fighterId}|${weaponLine?.split(",")[0]}`),
+  "firing event preceded weapon object creation",
+);
+const threatLines = acmi.split("\n").filter((line) => line.includes("Name=P-500"));
+const threatId = threatLines[0]?.split(",")[0];
+assert(threatLines.length === 1, "destroyed threat was retained or recreated");
+assert(
+  acmi.split("\n").filter((line) => line === `0,Event=Destroyed|${threatId}`).length === 1,
+  "terminal threat did not produce exactly one destruction event",
+);
+const removedWeaponId = weaponLine?.split(",")[0];
+assert(
+  !acmi.includes(`0,Event=Destroyed|${removedWeaponId}`),
+  "ordinary weapon removal was falsely reported as destroyed",
+);
 assert(acmi.includes("0,Event=Message|AIM-54A LAUNCH"), "timeline event missing");
 const aircraftLines = acmi.split("\n").filter((line) => line.includes("Name=F-14A Tomcat"));
 assert(aircraftLines.length === 1, "stable aircraft was recreated instead of updated");
-console.log(JSON.stringify({ bytes: acmi.length, frames: 2, aircraftCreates: aircraftLines.length }, null, 2));
+console.log(JSON.stringify({ bytes: acmi.length, frames: 3, aircraftCreates: aircraftLines.length }, null, 2));

@@ -675,7 +675,7 @@ Shipboard and airborne defenders share one pipeline: `target-source registration
 
 The AAR panel includes `EXPORT TACVIEW`, which writes the quarter-second ship, aircraft, weapon, interceptor, and decoy timeline as Tacview ACMI 2.2 text. `AUTO-EXPORT TACVIEW ACMI AFTER ACTION` is opt-in and disabled by default. Export uses a virtual `31.2 N, 121.5 E` reference origin, with `1 world unit = 100 m` horizontally and `50 m` vertically; this preserves relative geometry without claiming a real mission location.
 
-Extended telemetry includes three-axis attitude, speed, vertical speed, platform health, mission/guidance state, disabled state, decoy allegiance, launch parent, and target. The exporter pre-scans every snapshot and converts game entity references into Tacview numeric object IDs; departing objects receive both a destruction event and deletion record.
+Extended telemetry includes heading and pitch derived from physical velocity, speed, vertical speed, platform health, mission/guidance state, disabled state, decoy allegiance, launch parent, and target. Render-model axis corrections never enter ACMI, preventing sideways or inverted missiles. The exporter pre-scans every snapshot and converts game entity references into Tacview numeric object IDs; legal weapon releases emit structured `HasFired` events. Only explicitly disabled or destroyed entities emit `Destroyed`; ordinary weapon termination, misses, and expired decoys are deleted without false kill events, while destroyed entities receive one terminal frame and cannot remain frozen in later snapshots.
 
 <a id="adding-ships-and-weapons"></a>
 ### Adding Ships and Weapons

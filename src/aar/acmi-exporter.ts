@@ -28,6 +28,10 @@ type AcmiObject = {
   target?: string | number;
 };
 
+function isTerminal(object: AcmiObject): boolean {
+  return object.disabled === true || object.state === "destroyed";
+}
+
 const WORLD_METERS = 100;
 const ALTITUDE_METERS = 50;
 
@@ -143,19 +147,22 @@ export function exportTacviewAcmi(
     `0,ReferenceLongitude=${longitude.toFixed(7)}`,
   ];
   let previous = new Set<string>();
+  const terminated = new Set<string>();
   let eventIndex = 0;
   for (const snapshot of snapshots) {
     lines.push(`#${snapshot.time.toFixed(2)}`);
-    const objects = frameObjects(snapshot, options.blueShipName);
+    const objects = frameObjects(snapshot, options.blueShipName).filter(
+      (object) => !terminated.has(object.key),
+    );
     const current = new Set(objects.map((object) => object.key));
     for (const key of previous)
       if (!current.has(key)) {
-        lines.push(`0,Event=Destroyed|${idFor(key)}`);
         lines.push(`-${idFor(key)}`);
       }
     for (const object of objects) {
       const id = idFor(object.key);
       const properties = [`T=${coordinates(object, latitude, longitude)}`];
+      let firedBy: number | undefined;
       if (object.speed !== undefined) properties.push(`Speed=${object.speed.toFixed(2)}`);
       if (object.verticalSpeed !== undefined)
         properties.push(`VerticalSpeed=${object.verticalSpeed.toFixed(2)}`);
@@ -170,8 +177,16 @@ export function exportTacviewAcmi(
         const parentKey = object.parent === undefined ? undefined : referenceKey(object.parent);
         if (targetKey) properties.push(`Target=${idFor(targetKey)}`);
         if (parentKey) properties.push(`Parent=${idFor(parentKey)}`);
+        if (parentKey && object.type.includes("Weapon")) firedBy = idFor(parentKey);
       }
       lines.push(`${id},${properties.join(",")}`);
+      if (firedBy !== undefined) lines.push(`0,Event=HasFired|${firedBy}|${id}`);
+      if (isTerminal(object)) {
+        lines.push(`0,Event=Destroyed|${id}`);
+        lines.push(`-${id}`);
+        terminated.add(object.key);
+        current.delete(object.key);
+      }
     }
     while (eventIndex < events.length && events[eventIndex].time <= snapshot.time + 0.001) {
       lines.push(`0,Event=Message|${clean(events[eventIndex].text)}`);

@@ -3223,16 +3223,14 @@ function captureAarSnapshot(force = false) {
   const kinematics = (
     position: THREE.Vector3,
     velocity: THREE.Vector3,
-    rotation?: THREE.Euler,
   ) => ({
     x: position.x,
     y: position.y,
     z: position.z,
     heading: headingFromVelocity(velocity),
-    pitch:
-      rotation?.x ??
-      Math.atan2(velocity.y, Math.hypot(velocity.x, velocity.z)),
-    roll: rotation?.z ?? 0,
+    pitch: Math.atan2(velocity.y, Math.hypot(velocity.x, velocity.z)),
+    // Render models carry asset-axis correction rotations which are not flight attitude.
+    roll: 0,
     speed: velocity.length() * 100,
     verticalSpeed: velocity.y * 50,
   });
@@ -3242,7 +3240,7 @@ function captureAarSnapshot(force = false) {
   const snapshot: AarSnapshot = {
     time: elapsed,
     ship: {
-      ...kinematics(defender.position, shipVelocity, defender.rotation),
+      ...kinematics(defender.position, shipVelocity),
       heading: defender.rotation.y,
       hull: hullIntegrity,
     },
@@ -3250,7 +3248,7 @@ function captureAarSnapshot(force = false) {
       .filter((m) => elapsed >= m.launchAt)
       .map((m, id) => ({
         id: id + 1,
-        ...kinematics(m.mesh.position, m.velocity, m.mesh.rotation),
+        ...kinematics(m.mesh.position, m.velocity),
         phase: m.phase,
         threatType: m.threatType,
       })),
@@ -3259,7 +3257,7 @@ function captureAarSnapshot(force = false) {
       .filter((x) => x.i.mesh.visible)
       .map((x) => ({
         id: x.id + 1,
-        ...kinematics(x.i.mesh.position, x.i.velocity, x.i.mesh.rotation),
+        ...kinematics(x.i.mesh.position, x.i.velocity),
         weapon: x.i.weapon,
         targetId: defenseSourceForTarget(x.i.target),
       })),
@@ -3270,11 +3268,7 @@ function captureAarSnapshot(force = false) {
     })),
     enemyPlatform: enemyPlatform
       ? {
-          ...kinematics(
-            enemyPlatform.model.position,
-            enemyPlatform.velocity,
-            enemyPlatform.model.rotation,
-          ),
+          ...kinematics(enemyPlatform.model.position, enemyPlatform.velocity),
           heading: enemyPlatform.model.rotation.y,
           hull: enemyPlatform.hullIntegrity,
           destroyed: enemyPlatform.destroyed,
@@ -3283,7 +3277,7 @@ function captureAarSnapshot(force = false) {
       : null,
     surfaceStrikes: surfaceStrikeMissiles.map((missile) => ({
       id: missile.id,
-      ...kinematics(missile.mesh.position, missile.velocity, missile.mesh.rotation),
+      ...kinematics(missile.mesh.position, missile.velocity),
       phase: missile.phase,
       targetId: "red-surface-ship",
     })),
@@ -3291,7 +3285,7 @@ function captureAarSnapshot(force = false) {
       id: aircraft.id,
       name: aircraft.definition.name,
       side: aircraft.side,
-      ...kinematics(aircraft.position, aircraft.velocity, aircraft.model.rotation),
+      ...kinematics(aircraft.position, aircraft.velocity),
       state: aircraft.state,
       mission: aircraft.mission,
       alive: aircraft.alive,
@@ -3301,7 +3295,7 @@ function captureAarSnapshot(force = false) {
       id: missile.id,
       name: missile.definition.name,
       side: missile.side,
-      ...kinematics(missile.position, missile.velocity, missile.model.rotation),
+      ...kinematics(missile.position, missile.velocity),
       phase: missile.phase,
       targetId: missile.targetId,
       shooterId: missile.shooterId,
@@ -3309,7 +3303,7 @@ function captureAarSnapshot(force = false) {
     airDecoys: airCombat.decoys.map((decoy) => ({
       id: decoy.id,
       type: decoy.decoyType,
-      ...kinematics(decoy.position, decoy.velocity, decoy.model.rotation),
+      ...kinematics(decoy.position, decoy.velocity),
       alive: decoy.alive,
       side: decoy.side,
     })),
