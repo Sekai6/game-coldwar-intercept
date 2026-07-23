@@ -102,6 +102,8 @@ Threat-profile identity is now consistently named `DefenseTarget.threatType` for
 
 Aircraft and air-launched missiles now implement the standard `TargetableEntity.applyDamage` contract. A shipboard SAM hit no longer selects separate aircraft-damage and missile-destruction APIs; it submits damage to the entity and reads the resulting `alive` state. Aircraft callbacks preserve subsystem damage, abort, and loss-of-control behavior, while weapon callbacks terminate and hide the physical weapon.
 
+Air-to-air and air-to-ship proximity/hit resolution now uses the same `TargetableEntity.applyDamage` contract. Weapon runtime owns only fuze geometry, its own termination, and event recording; it no longer edits hostile aircraft, missiles, or ships directly. Decoys remain non-damageable signal entities handled by seeker-capture logic. `verify:air-strike-defense` proves a physical ship hit passed through the standard damage entry point.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.

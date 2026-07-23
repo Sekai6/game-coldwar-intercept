@@ -21,8 +21,8 @@ try{
     console.error("Air-strike impact timeout",JSON.stringify({...diagnostic,errors},null,2));
     throw error;
   }
-  const damage=await page.locator("#scene").evaluate(c=>({hits:Number(c.dataset.airShipHits??0),damage:Number(c.dataset.airShipDamage??0),hull:Number(c.dataset.shipHull??100),damagedSystems:document.querySelectorAll(".subsystem-row.damaged,.subsystem-row.degraded,.subsystem-row.failed").length,phase:document.querySelector("#phase")?.textContent??""}));
+  const damage=await page.locator("#scene").evaluate(c=>({hits:Number(c.dataset.airShipHits??0),damage:Number(c.dataset.airShipDamage??0),standardApplications:Number(c.dataset.airStandardDamageApplications??0),hull:Number(c.dataset.shipHull??100),damagedSystems:document.querySelectorAll(".subsystem-row.damaged,.subsystem-row.degraded,.subsystem-row.failed").length,phase:document.querySelector("#phase")?.textContent??""}));
   await page.screenshot({path:"verification-air-missile-impact.png",fullPage:true});
   console.log(JSON.stringify({defense,damage,errors},null,2));
-  if(errors.length||defense.tracks<1||defense.kills<1||defense.samShots<1||defense.ksrSpeed>10.5||!/MK 10|MK 41/.test(defense.launchers)||damage.hits<1||damage.damage<40||damage.hull>=100||damage.damagedSystems<1)process.exitCode=1;
+  if(errors.length||defense.tracks<1||defense.kills<1||defense.samShots<1||defense.ksrSpeed>10.5||!/MK 10|MK 41/.test(defense.launchers)||damage.hits<1||damage.damage<40||damage.standardApplications<1||damage.hull>=100||damage.damagedSystems<1)process.exitCode=1;
 }finally{await browser.close();}

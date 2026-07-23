@@ -185,8 +185,8 @@ export interface AirDecoyInstance extends CombatEntity {
 }
 
 export interface AirScenarioContext {
-  blueShip: CombatEntity;
-  redShip: CombatEntity | null;
+  blueShip: TargetableEntity;
+  redShip: TargetableEntity | null;
   countermeasures?: (targetId: string) => {
     ecmEnabled: boolean;
     ecmStrength: number;

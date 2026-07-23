@@ -2762,8 +2762,8 @@ function airScenarioContext() {
       }
     : null;
   return {
-    blueShip: blueShip as CombatEntity,
-    redShip: redShip as CombatEntity | null,
+    blueShip,
+    redShip,
     countermeasures: (targetId: string) => {
       if (targetId !== blueShip.id) return null;
       return {
@@ -7865,6 +7865,9 @@ function tick(now: number) {
   canvas.dataset.airFlares = String(air.flares);
   canvas.dataset.airMissileWarnings = String(air.missileWarnings);
   canvas.dataset.airEcmDetections = String(air.ecmDetections);
+  canvas.dataset.airStandardDamageApplications = String(
+    air.standardDamageApplications,
+  );
   canvas.dataset.ksrMaximumSpeed = air.ksrMaximumSpeed.toFixed(2);
   const airDefenseTracks = [...combatPicture.tracks.values()].filter(
       (track) => defenseTargetForSource(track.sourceId)?.entity?.kind === "missile",
