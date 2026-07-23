@@ -3347,6 +3347,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   if (airCombat.enabled) {
     const context = airScenarioContext();
     airCombat.reset(context.blueShip, context.redShip);
+    airCombat.countermeasuresEnabled = new URLSearchParams(location.search).get("airCountermeasures") !== "off";
     log("JOINT AIR OPERATIONS / 2 x F-14A CAP / 2 x TU-16K RAID / 2 x A-6E STRIKE");
   }
   updateMaterialDiagnostics();

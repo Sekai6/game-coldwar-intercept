@@ -23,6 +23,7 @@
     "verify:platform-fire-control-degraded": "node scripts/verify-platform-fire-control-degraded.mjs",
     "verify:sam-efficiency": "node scripts/measure-sam-efficiency.mjs",
     "verify:joint-air": "node scripts/verify-joint-air.mjs",
+    "verify:air-intercept": "node scripts/verify-air-intercept.mjs",
     "verify:air-strike-defense": "node scripts/verify-air-strike-defense.mjs",
     "verify:air-hardpoints": "node scripts/verify-air-hardpoints.mjs",
     "verify:air-guidance": "tsc src/air/guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-guidance.mjs",

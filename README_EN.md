@@ -104,6 +104,8 @@ Aircraft and air-launched missiles now implement the standard `TargetableEntity.
 
 Air-to-air and air-to-ship proximity/hit resolution now uses the same `TargetableEntity.applyDamage` contract. Weapon runtime owns only fuze geometry, its own termination, and event recording; it no longer edits hostile aircraft, missiles, or ships directly. Decoys remain non-damageable signal entities handled by seeker-capture logic. The joint gate also requires an actual Phoenix active-seeker acquisition event; `verify:air-strike-defense` proves a physical ship hit passed through the standard damage entry point.
 
+`npm run verify:air-intercept` uses the generic `airCountermeasures=off` verification preset and requires Phoenix active-seeker acquisition followed by a physical hit on a Tu-16K. The default joint scenario keeps ECM and physical chaff enabled to verify contested acquisition and soft-kill competition.
+
 `AirCombatSystem.updateMissile()` is now a stage orchestrator instead of one compressed branch block. Release coast, target-loss continuation, midcourse datalink, decoy filtering, seeker capture, semi-active illumination, aim competition, kinematic integration, and fuze resolution have separate methods; anti-ship weapons remain on the shared dedicated anti-ship guidance path.
 
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
