@@ -77,7 +77,7 @@ import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
 import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
-import { recordLaunch, resolveShot } from "./ship-defense/engagement-runtime";
+import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
@@ -617,19 +617,11 @@ function settleEngagement(
     );
 }
 function missileThreatScore(missile: DefenseTarget, quality: number) {
-  const range = missile.mesh.position.distanceTo(defender.position),
-    tti = range / Math.max(1, missile.velocity.length());
-  return (
-    Math.max(0, 120 - tti) * 2 +
-    (missile.phase === "terminal"
-      ? 90
-      : missile.phase === "midcourse"
-        ? 35
-        : 0) +
-    incomingProfiles[missile.threatType].threatPriority +
-    (missile.entity?.kind === "missile" ? 85 : 0) -
-    (missile.entity?.kind === "aircraft" ? 35 : 0) +
-    quality * 12
+  return threatScore(
+    missile,
+    quality,
+    defender.position,
+    incomingProfiles[missile.threatType].threatPriority,
   );
 }
 function addMissile(
