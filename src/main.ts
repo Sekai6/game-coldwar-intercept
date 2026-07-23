@@ -7963,6 +7963,10 @@ function tick(now: number) {
     .filter((event) => event.kind === "hit" || event.kind === "kill")
     .map((event) => event.text)
     .join("|");
+  canvas.dataset.airDamageEventLog = airCombat.events
+    .filter((event) => event.kind === "damage")
+    .map((event) => event.text)
+    .join("|");
   canvas.dataset.airReleaseAuthorizationLog = airCombat.events
     .filter((event) => event.text.includes("RELEASE AUTHORIZED"))
     .map((event) => event.text)

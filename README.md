@@ -47,6 +47,8 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 空空和空舰导弹的近炸/命中也已迁移到同一个 `TargetableEntity.applyDamage`。武器运行时只负责引信几何、自身终止和事件记录，不再直接修改敌机、敌弹或舰船内部状态；诱饵仍是非毁伤型信号实体，由导引头捕获逻辑单独处理。联合验收还会检查 Phoenix 的主动头实际捕获事件；`verify:air-strike-defense` 会确认实际舰体命中经过标准毁伤入口。
 
+`npm run verify:aircraft-sam-damage` 使用拦截预设，要求真实 Mk 10/Mk 41 发射链命中 Tu-16K，并产生模型局部区域与子系统毁伤事件；这证明舰载防空对飞机不是仅排队或伪计数。
+
 `npm run verify:air-intercept` 使用通用的 `airCountermeasures=off` 验证预设，要求 Phoenix 完成主动头捕获并实体命中 Tu-16K；默认联合场景仍启用 ECM 与物理箔条，用于验证受干扰条件下的捕获和软杀竞争。
 
 KSR-5 与 AGM-84A 的末段主动搜索不再是确定性距离门槛：视场通过后仍会按目标 RCS、ECM 强度、烧穿距离和低空海杂波修正进行确定性概率抽样；未捕获时继续沿最后指令点飞行。

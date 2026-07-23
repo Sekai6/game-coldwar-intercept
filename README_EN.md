@@ -104,6 +104,8 @@ Aircraft and air-launched missiles now implement the standard `TargetableEntity.
 
 Air-to-air and air-to-ship proximity/hit resolution now uses the same `TargetableEntity.applyDamage` contract. Weapon runtime owns only fuze geometry, its own termination, and event recording; it no longer edits hostile aircraft, missiles, or ships directly. Decoys remain non-damageable signal entities handled by seeker-capture logic. The joint gate also requires an actual Phoenix active-seeker acquisition event; `verify:air-strike-defense` proves a physical ship hit passed through the standard damage entry point.
 
+`npm run verify:aircraft-sam-damage` uses the intercept preset and requires a physical Mk 10/Mk 41 shot to hit a Tu-16K and emit a model-local zone/subsystem damage event. Shipboard aircraft engagement is therefore proven beyond queue registration or diagnostic shot counts.
+
 `npm run verify:air-intercept` uses the generic `airCountermeasures=off` verification preset and requires Phoenix active-seeker acquisition followed by a physical hit on a Tu-16K. The default joint scenario keeps ECM and physical chaff enabled to verify contested acquisition and soft-kill competition.
 
 KSR-5 and AGM-84A terminal active search is no longer a deterministic range gate: after the field-of-view check, capture uses a deterministic probability sample from target RCS, ECM strength, burn-through state, and a low-terminal-altitude sea-clutter factor; an unsuccessful attempt continues toward the last command point.
