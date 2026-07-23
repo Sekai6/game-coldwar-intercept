@@ -1,23 +1,17 @@
 import type * as THREE from "three";
 import type { EnemyType } from "../threats/catalog";
+import type {
+  EngagementRecord,
+  EngagementSourceId,
+} from "../defense/engagement";
 
 export type EnemyPlatformId = string;
 export type PlatformManeuverMode =
-  | "patrol"
-  | "close"
-  | "standoff"
-  | "withdraw"
-  | "defensive-beam"
-  | "disabled";
+  "patrol" | "close" | "standoff" | "withdraw" | "defensive-beam" | "disabled";
 export type PlatformSensorRole =
-  | "air-search"
-  | "surface-search"
-  | "fire-control"
-  | "electronic-support";
+  "air-search" | "surface-search" | "fire-control" | "electronic-support";
 export type PlatformLauncherFamily =
-  | "inclined-canister"
-  | "vertical-cell"
-  | "trainable-rail";
+  "inclined-canister" | "vertical-cell" | "trainable-rail";
 
 export interface PlatformSensorSlot {
   id: string;
@@ -177,6 +171,7 @@ export interface EnemyPlatformInstance {
   hullIntegrity: number;
   subsystemHealth: Map<string, number>;
   incomingTracks: Map<number, PlatformIncomingTrack>;
+  defenseEngagements: Map<EngagementSourceId, EngagementRecord>;
   pointDefenseChannelReady: number[];
   pointDefenseEngagementsRemaining: number;
   pointDefenseDepletedLogged: boolean;
@@ -242,7 +237,6 @@ export interface PlatformIncomingTrack {
   threatScore: number;
   estimatedTimeToImpact: number;
   localTrackDensity: number;
-  engagements: number;
   nextEngagementReadyAt: number;
 }
 

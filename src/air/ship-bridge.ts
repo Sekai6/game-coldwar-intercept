@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { TargetableEntity } from "../combat-entity";
+import type { AirScenarioContext } from "./types";
 
 export type AirShipBridgeDependencies = {
   bluePosition: THREE.Vector3;
@@ -47,5 +48,26 @@ export function createAirShipBridge(deps: AirShipBridgeDependencies) {
   return {
     blueShip,
     redShip: deps.redShip,
+  };
+}
+
+export type AirScenarioBridgeSnapshot = AirShipBridgeDependencies & {
+  countermeasures?: AirScenarioContext["countermeasures"];
+  targets?: readonly TargetableEntity[];
+};
+
+export function createAirScenarioContext(
+  snapshot: () => AirScenarioBridgeSnapshot,
+): () => AirScenarioContext {
+  return () => {
+    const state = snapshot();
+    const bridge = createAirShipBridge(state);
+    return {
+      ...bridge,
+      targets:
+        state.targets ??
+        [bridge.blueShip, ...(bridge.redShip ? [bridge.redShip] : [])],
+      countermeasures: state.countermeasures,
+    };
   };
 }

@@ -61,7 +61,9 @@ function validateModelSlots(
   const pointDefenseMountIds = new Set<string>();
   for (const mount of slots.pointDefenseMounts) {
     if (pointDefenseMountIds.has(mount.id))
-      throw new Error(`${definition.id}: duplicate point-defense mount ${mount.id}`);
+      throw new Error(
+        `${definition.id}: duplicate point-defense mount ${mount.id}`,
+      );
     pointDefenseMountIds.add(mount.id);
     if (
       !Number.isFinite(mount.sectorCenter) ||
@@ -74,7 +76,9 @@ function validateModelSlots(
       mount.alignmentTolerance <= 0 ||
       mount.alignmentTolerance > mount.sectorHalfAngle
     )
-      throw new Error(`${definition.id}: invalid firing sector for ${mount.id}`);
+      throw new Error(
+        `${definition.id}: invalid firing sector for ${mount.id}`,
+      );
   }
   const systemIds = new Set([
     ...definition.sensorSlots.map((sensor) => sensor.id),
@@ -136,9 +140,7 @@ export function instantiateEnemyPlatform(
     weaponSlotNextRelease: new Map(
       definition.weaponSlots.map((slot) => [slot.id, 0]),
     ),
-    weaponTrackAge: new Map(
-      definition.weaponSlots.map((slot) => [slot.id, 0]),
-    ),
+    weaponTrackAge: new Map(definition.weaponSlots.map((slot) => [slot.id, 0])),
     weaponTrackReadyLogged: new Set(),
     hullIntegrity: definition.survivability.hull,
     subsystemHealth: new Map([
@@ -152,6 +154,7 @@ export function instantiateEnemyPlatform(
       ["damage-control", 100] as const,
     ]),
     incomingTracks: new Map(),
+    defenseEngagements: new Map(),
     pointDefenseChannelReady: Array.from(
       { length: definition.survivability.pointDefense.channels },
       () => 0,
@@ -353,10 +356,7 @@ function updatePlatformCasualties(
       casualty.nextTick += definition.tickInterval;
       const hullDamage =
         (casualty.fire + casualty.flooding) * definition.hullDamageFactor;
-      platform.hullIntegrity = Math.max(
-        0,
-        platform.hullIntegrity - hullDamage,
-      );
+      platform.hullIntegrity = Math.max(0, platform.hullIntegrity - hullDamage);
       if (platform.hullIntegrity <= 0) platform.destroyed = true;
       casualty.fire *= THREE.MathUtils.lerp(
         definition.uncontrolledFireFactor,
@@ -407,16 +407,17 @@ export function updateEnemyPlatform(
 ) {
   const damageEvents = updatePlatformCasualties(platform, elapsed);
   const previousManeuverMode = platform.maneuverMode;
-  const sensorHealth = platform.destroyed || !sensorsEnabled
-    ? 0
-    : platform.definition.sensorSlots.reduce(
-        (sum, sensor) => sum + (platform.subsystemHealth.get(sensor.id) ?? 100),
-        0,
-      ) / Math.max(1, platform.definition.sensorSlots.length * 100);
+  const sensorHealth =
+    platform.destroyed || !sensorsEnabled
+      ? 0
+      : platform.definition.sensorSlots.reduce(
+          (sum, sensor) =>
+            sum + (platform.subsystemHealth.get(sensor.id) ?? 100),
+          0,
+        ) / Math.max(1, platform.definition.sensorSlots.length * 100);
   for (const sensor of platform.slots.rotatingSensors)
     sensor.rotation.y += 0.007 * sensorHealth;
-  const propulsion =
-      (platform.subsystemHealth.get("propulsion") ?? 100) / 100,
+  const propulsion = (platform.subsystemHealth.get("propulsion") ?? 100) / 100,
     mobility = platform.definition.mobility;
   if (elapsed >= platform.nextManeuverDecision) {
     platform.nextManeuverDecision = elapsed + mobility.decisionInterval;
@@ -480,10 +481,7 @@ export function updateEnemyPlatform(
         if (trackRange > desiredRange + mobility.standoffTolerance) {
           platform.desiredHeading = headingFor(axis);
           platform.maneuverMode = "close";
-        } else if (
-          trackRange <
-          desiredRange - mobility.standoffTolerance
-        ) {
+        } else if (trackRange < desiredRange - mobility.standoffTolerance) {
           platform.desiredHeading = headingFor(axis.multiplyScalar(-1));
           platform.maneuverMode = "withdraw";
         } else {
@@ -506,11 +504,14 @@ export function updateEnemyPlatform(
     }
   }
   const maximumSpeed =
-      mobility.maxSpeedKnots * propulsion * Math.max(0.35, platform.hullIntegrity / 100),
+      mobility.maxSpeedKnots *
+      propulsion *
+      Math.max(0.35, platform.hullIntegrity / 100),
     commandedSpeed = platform.destroyed
       ? 0
       : Math.min(maximumSpeed, platform.commandedSpeedKnots),
-    speedStep = mobility.accelerationKnotsPerSecond * (0.2 + 0.8 * propulsion) * dt;
+    speedStep =
+      mobility.accelerationKnotsPerSecond * (0.2 + 0.8 * propulsion) * dt;
   platform.speedKnots += THREE.MathUtils.clamp(
     commandedSpeed - platform.speedKnots,
     -speedStep,
@@ -520,7 +521,9 @@ export function updateEnemyPlatform(
       Math.sin(platform.desiredHeading - platform.model.rotation.y),
       Math.cos(platform.desiredHeading - platform.model.rotation.y),
     ),
-    turnRate = THREE.MathUtils.degToRad(mobility.turnRateDeg) * (0.25 + 0.75 * propulsion);
+    turnRate =
+      THREE.MathUtils.degToRad(mobility.turnRateDeg) *
+      (0.25 + 0.75 * propulsion);
   platform.model.rotation.y += THREE.MathUtils.clamp(
     headingError,
     -turnRate * dt,
@@ -530,7 +533,9 @@ export function updateEnemyPlatform(
     new THREE.Vector3(0, 1, 0),
     platform.model.rotation.y,
   );
-  platform.velocity.copy(forward).multiplyScalar(platform.speedKnots * 0.005144);
+  platform.velocity
+    .copy(forward)
+    .multiplyScalar(platform.speedKnots * 0.005144);
   platform.model.position.addScaledVector(platform.velocity, dt);
   const range = platform.model.position.distanceTo(targetPosition);
   let sensorDetected = false,
@@ -543,9 +548,10 @@ export function updateEnemyPlatform(
       definition.maxRange *
       Math.pow(Math.max(0.05, targetRadarCrossSection / 10), 0.25);
     const ratio = range / Math.max(1, effectiveRange);
-    const health = platform.destroyed || !sensorsEnabled
-      ? 0
-      : (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
+    const health =
+      platform.destroyed || !sensorsEnabled
+        ? 0
+        : (platform.subsystemHealth.get(definition.id) ?? 100) / 100;
     const horizon = radarHorizonWorldUnits(
         definition.radarHeight,
         targetSignificantHeightMeters,
@@ -557,10 +563,7 @@ export function updateEnemyPlatform(
     const candidateQuality =
       ratio <= 1
         ? THREE.MathUtils.clamp(
-            (1 - ratio * ratio) *
-              definition.precision *
-              health *
-              horizonFactor,
+            (1 - ratio * ratio) * definition.precision * health * horizonFactor,
             0,
             1,
           )
@@ -641,9 +644,7 @@ export function updateEnemyPlatform(
       trueRange = platform.model.position.distanceTo(targetPosition),
       measuredRange =
         trueRange *
-        (1 +
-          (0.16 + (1 - esmHealth) * 0.2) *
-            Math.sin(elapsed * 0.23 + 1.7));
+        (1 + (0.16 + (1 - esmHealth) * 0.2) * Math.sin(elapsed * 0.23 + 1.7));
     track.position
       .copy(platform.model.position)
       .add(
@@ -654,11 +655,7 @@ export function updateEnemyPlatform(
         ).multiplyScalar(Math.max(1, measuredRange)),
       );
     track.velocity.copy(targetVelocity);
-    track.quality = THREE.MathUtils.clamp(
-      0.12 + esmHealth * 0.08,
-      0.12,
-      0.2,
-    );
+    track.quality = THREE.MathUtils.clamp(0.12 + esmHealth * 0.08, 0.12, 0.2);
     track.uncertainty = Math.max(
       70,
       trueRange * (0.24 + (1 - esmHealth) * 0.16),
@@ -705,8 +702,7 @@ export function updateEnemyPlatform(
     platform.weaponTrackAge.set(
       slot.id,
       sufficient
-        ? previousAge +
-          dt * THREE.MathUtils.lerp(0.35, 1, fireControlHealth)
+        ? previousAge + dt * THREE.MathUtils.lerp(0.35, 1, fireControlHealth)
         : holdingDirectTrack
           ? Math.max(0, previousAge - dt * 0.35)
           : 0,
@@ -737,6 +733,7 @@ export function disposeEnemyPlatform(platform: EnemyPlatformInstance) {
   platform.weaponTrackAge.clear();
   platform.weaponTrackReadyLogged.clear();
   platform.incomingTracks.clear();
+  platform.defenseEngagements.clear();
   platform.casualties.length = 0;
   platform.pointDefenseChannelReady.length = 0;
   platform.subsystemHealth.clear();

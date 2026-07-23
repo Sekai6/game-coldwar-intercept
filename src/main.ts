@@ -69,7 +69,10 @@ import {
   estimateSurfaceBattleDamage,
   planSurfaceSalvo,
 } from "./surface-doctrine";
-import { pointDefenseCapability } from "./platforms/defense";
+import {
+  platformDefenseTargetId,
+  pointDefenseCapability,
+} from "./platforms/defense";
 import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
 import {
@@ -77,7 +80,10 @@ import {
   airScenarioSpawns,
   type AirScenarioPresetId,
 } from "./air/scenarios";
-import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
+import {
+  createAirScenarioContext,
+  createShipTarget,
+} from "./air/ship-bridge";
 import {
   DEFAULT_SURFACE_CONFIG,
   initialSurfaceLoadout,
@@ -2745,7 +2751,7 @@ const airPresetInput = airPresetField.querySelector(
   "select",
 ) as HTMLSelectElement;
 
-function airScenarioContext() {
+const airScenarioContext = createAirScenarioContext(() => {
   const blueVelocity = new THREE.Vector3(
     Math.cos(defender.rotation.y) * shipSpeedKnots * 0.005144,
     0,
@@ -2769,7 +2775,7 @@ function airScenarioContext() {
         },
       })
     : null;
-  const bridge = createAirShipBridge({
+  return {
     bluePosition: defender.position,
     blueVelocity,
     blueRcs: activeShip.platform.radarRcs,
@@ -2801,12 +2807,8 @@ function airScenarioContext() {
       phaseEl.textContent =
         hullIntegrity > 0 ? "DAMAGE CONTROL" : "SHIP DISABLED";
     },
-  });
-  return {
-    ...bridge,
-    targets: [bridge.blueShip, ...(bridge.redShip ? [bridge.redShip] : [])],
     countermeasures: (targetId: string) => {
-      if (targetId !== bridge.blueShip.id) return null;
+      if (targetId !== "blue-surface-ship") return null;
       return {
         ecmEnabled: shipEcmEnabled,
         ecmStrength: DEFAULT_SURFACE_CONFIG.shipEcmStrength,
@@ -2818,7 +2820,7 @@ function airScenarioContext() {
       };
     },
   };
-}
+});
 function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
   platform.subsystemHealth.set(
     "point-defense",
@@ -5852,7 +5854,13 @@ function updateSurfaceCombat(
     )
     .join(",");
   canvas.dataset.platformIncomingTrackEngagements = incomingDefenseTracks
-    .map((incomingTrack) => incomingTrack?.engagements ?? 0)
+    .map((incomingTrack) =>
+      incomingTrack && enemyPlatform
+        ? (enemyPlatform.defenseEngagements.get(
+            platformDefenseTargetId(incomingTrack.missileId),
+          )?.shots ?? 0)
+        : 0,
+    )
     .join(",");
   canvas.dataset.platformIncomingTrackReengagement = incomingDefenseTracks
     .map((incomingTrack) =>

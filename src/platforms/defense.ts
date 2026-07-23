@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import type { EnemyPlatformInstance, PlatformIncomingTrack } from "./types";
+import { rankDefenseObservations } from "../defense/consumer.js";
+import type { DefenseObservation } from "../defense/targeting.js";
 
 function angleDifference(target: number, current: number) {
   return Math.atan2(Math.sin(target - current), Math.cos(target - current));
@@ -31,8 +33,7 @@ export function pointDefenseMountSolution(
         targetBearing,
         mount.sectorCenter,
         mount.sectorHalfAngle,
-      ) &&
-      (mountReady.get(mount.id) ?? 0) <= elapsed,
+      ) && (mountReady.get(mount.id) ?? 0) <= elapsed,
   );
   if (!candidates.length) return null;
   const oldestReadyAt = Math.min(
@@ -49,11 +50,17 @@ export function pointDefenseMountSolution(
   );
   const delta = localTarget.clone().sub(mount.traverse.position);
   const desiredTraverse = Math.atan2(-delta.z, delta.x);
-  let traverseError = angleDifference(desiredTraverse, mount.traverse.rotation.y);
+  let traverseError = angleDifference(
+    desiredTraverse,
+    mount.traverse.rotation.y,
+  );
   let aligned = Math.abs(traverseError) <= mount.alignmentTolerance;
   if (reserve) {
-    const lastAimUpdate = (platform.model.userData.pointDefenseMountAimUpdate ??=
-      new Map<string, number>()) as Map<string, number>;
+    const lastAimUpdate =
+      (platform.model.userData.pointDefenseMountAimUpdate ??= new Map<
+        string,
+        number
+      >()) as Map<string, number>;
     const previousUpdate = lastAimUpdate.get(mount.id) ?? elapsed;
     const aimDelta = Math.max(0, Math.min(0.25, elapsed - previousUpdate));
     lastAimUpdate.set(mount.id, elapsed);
@@ -91,9 +98,7 @@ export function pointDefenseCapability(platform: EnemyPlatformInstance) {
   return {
     health,
     effectiveChannels:
-      health <= 0.05
-        ? 0
-        : Math.max(1, Math.ceil(definition.channels * health)),
+      health <= 0.05 ? 0 : Math.max(1, Math.ceil(definition.channels * health)),
     reactionMultiplier: THREE.MathUtils.lerp(1.8, 1, health),
     cycleMultiplier: THREE.MathUtils.lerp(2, 1, health),
   };
@@ -130,26 +135,32 @@ export function assessPlatformIncomingTracks(
       .sub(platform.model.position)
       .setY(0);
     const range = relativePosition.length();
-    const relativeVelocity = track.velocity.clone().sub(platform.velocity).setY(0);
+    const relativeVelocity = track.velocity
+      .clone()
+      .sub(platform.velocity)
+      .setY(0);
     const closingSpeed =
       range > 0.01
         ? Math.max(0, -relativeVelocity.dot(relativePosition.normalize()))
         : relativeVelocity.length();
     const timeToImpact = closingSpeed > 0.05 ? range / closingSpeed : Infinity;
-    const localDensity = tracks.filter(
-      (other) =>
-        other !== track &&
-        trackIsValid(platform, other, elapsed) &&
-        other.position.distanceTo(track.position) <= 45,
-    ).length + 1;
+    const localDensity =
+      tracks.filter(
+        (other) =>
+          other !== track &&
+          trackIsValid(platform, other, elapsed) &&
+          other.position.distanceTo(track.position) <= 45,
+      ).length + 1;
     const ttiUrgency = Number.isFinite(timeToImpact)
       ? THREE.MathUtils.clamp(1 - timeToImpact / 24, 0, 1) * 70
       : 0;
     const rangeUrgency =
-      THREE.MathUtils.clamp(1 - range / Math.max(1, defense.sensorRange), 0, 1) *
-      45;
-    const closureUrgency =
-      THREE.MathUtils.clamp(closingSpeed / 6.4, 0, 1) * 18;
+      THREE.MathUtils.clamp(
+        1 - range / Math.max(1, defense.sensorRange),
+        0,
+        1,
+      ) * 45;
+    const closureUrgency = THREE.MathUtils.clamp(closingSpeed / 6.4, 0, 1) * 18;
     track.estimatedTimeToImpact = timeToImpact;
     track.localTrackDensity = localDensity;
     track.threatScore =
@@ -167,17 +178,49 @@ export function assessPlatformIncomingTracks(
   );
 }
 
+export function platformDefenseTargetId(missileId: number) {
+  return `surface-strike-${missileId}`;
+}
+
+export function platformTrackObservation(
+  track: PlatformIncomingTrack,
+): DefenseObservation {
+  return {
+    id: platformDefenseTargetId(track.missileId),
+    kind: "missile",
+    position: track.position,
+    velocity: track.velocity,
+    quality: track.quality,
+    updatedAt: track.lastUpdate,
+  };
+}
+
 export function pointDefensePriorityTracks(
   platform: EnemyPlatformInstance,
   elapsed: number,
 ) {
   const maximumEngagements =
     platform.definition.survivability.pointDefense.engagementsPerTarget;
-  return assessPlatformIncomingTracks(platform, elapsed).filter(
+  const eligible = assessPlatformIncomingTracks(platform, elapsed).filter(
     (track) =>
       track.threatScore > 0 &&
-      track.engagements < maximumEngagements &&
       elapsed >= track.fireControlReadyAt &&
       elapsed >= track.nextEngagementReadyAt,
   );
+  const tracksById = new Map(
+    eligible.map((track) => [platformDefenseTargetId(track.missileId), track]),
+  );
+  return rankDefenseObservations({
+    origin: platform.model.position,
+    observations: eligible.map(platformTrackObservation),
+    policy: { acceptedKinds: ["missile"] },
+    engagements: platform.defenseEngagements,
+    acceptEngagement: (_observation, engagement) =>
+      !engagement ||
+      (engagement.pending === 0 && engagement.shots < maximumEngagements),
+    scoreObservation: (observation) =>
+      tracksById.get(String(observation.id))?.threatScore ?? -Infinity,
+  })
+    .map((ranked) => tracksById.get(String(ranked.observation.id)))
+    .filter((track): track is PlatformIncomingTrack => !!track);
 }

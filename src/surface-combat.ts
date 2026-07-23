@@ -9,6 +9,7 @@ import {
   pointDefenseCapability,
   pointDefenseMountSolution,
   pointDefensePriorityTracks,
+  platformDefenseTargetId,
 } from "./platforms/defense";
 import { getThreatDefinition } from "./threats/catalog";
 import {
@@ -16,13 +17,13 @@ import {
   type ThreatParticleTrail,
 } from "./visual/threat-particles";
 import { radarCountermeasureContest } from "./radar-countermeasures";
+import {
+  commitEngagementAuthorization,
+  resolveEngagement,
+} from "./defense/engagement.js";
 
 export type SurfaceStrikePhase =
-  | "boost"
-  | "midcourse"
-  | "terminal"
-  | "penetrating"
-  | "destroyed";
+  "boost" | "midcourse" | "terminal" | "penetrating" | "destroyed";
 
 export type SurfaceStrikeMissile = {
   id: number;
@@ -50,7 +51,6 @@ export type SurfaceStrikeMissile = {
   history: THREE.Vector3[];
   closestTargetRange: number;
   closestCommandRange: number;
-  pointDefenseEngagements: number;
   lastDatalinkQuality: number;
   seekerAcquired: boolean;
   targetLostAt: number | null;
@@ -157,7 +157,10 @@ export type SurfaceStrikeEvent =
 
 function hardpointDirection(hardpoint: ModelWeaponHardpoint) {
   const quaternion = hardpoint.mount.getWorldQuaternion(new THREE.Quaternion());
-  return hardpoint.localDirection.clone().applyQuaternion(quaternion).normalize();
+  return hardpoint.localDirection
+    .clone()
+    .applyQuaternion(quaternion)
+    .normalize();
 }
 
 export function createSurfaceStrikeMissile(
@@ -218,7 +221,6 @@ export function createSurfaceStrikeMissile(
     history,
     closestTargetRange: Infinity,
     closestCommandRange: Infinity,
-    pointDefenseEngagements: 0,
     lastDatalinkQuality: -1,
     seekerAcquired: false,
     targetLostAt: null,
@@ -257,7 +259,6 @@ function updatePlatformIncomingTrack(
       threatScore: 0,
       estimatedTimeToImpact: Infinity,
       localTrackDensity: 0,
-      engagements: 0,
       nextEngagementReadyAt: -Infinity,
     } satisfies PlatformIncomingTrack;
     platform.incomingTracks.set(missile.id, track);
@@ -336,7 +337,8 @@ function updatePlatformIncomingTrack(
   } else if (!Number.isFinite(track.fireControlReadyAt)) {
     track.fireControlReadyAt =
       elapsed +
-      defense.reactionTime * pointDefenseCapability(platform).reactionMultiplier;
+      defense.reactionTime *
+        pointDefenseCapability(platform).reactionMultiplier;
   } else if (elapsed >= track.fireControlReadyAt && !track.readyLogged) {
     track.readyLogged = true;
     event = {
@@ -371,16 +373,13 @@ function damagePlatform(
   const platform = missile.target;
   platform.hullIntegrity = Math.max(0, platform.hullIntegrity - damage);
   const zone = platformDamageZone(missile, localImpact);
-  const systems = (zone?.systems ?? [...platform.subsystemHealth.keys()]).filter(
-    (system) => platform.subsystemHealth.has(system),
-  );
+  const systems = (
+    zone?.systems ?? [...platform.subsystemHealth.keys()]
+  ).filter((system) => platform.subsystemHealth.has(system));
   const index = Math.floor(deterministicRoll(missile, 8) * systems.length);
   const subsystem = systems[index] ?? "propulsion";
   const current = platform.subsystemHealth.get(subsystem) ?? 100;
-  platform.subsystemHealth.set(
-    subsystem,
-    Math.max(0, current - damage * 1.35),
-  );
+  platform.subsystemHealth.set(subsystem, Math.max(0, current - damage * 1.35));
   const halfBeam = Math.max(
     1,
     Number(platform.model.userData.hullBeam ?? 8) / 2,
@@ -438,6 +437,28 @@ function platformHullContact(
   return Math.abs(local.z) <= halfBeam * breadthFactor ? local : null;
 }
 
+function settlePlatformDefenseShot(
+  missile: SurfaceStrikeMissile,
+  result: "hit" | "miss" | "cancel",
+  elapsed: number,
+) {
+  return resolveEngagement(
+    missile.target.defenseEngagements,
+    platformDefenseTargetId(missile.id),
+    result,
+    elapsed,
+  );
+}
+
+function cancelPendingPlatformDefenseShot(
+  missile: SurfaceStrikeMissile,
+  elapsed: number,
+) {
+  if (!missile.pendingPointDefense) return;
+  settlePlatformDefenseShot(missile, "cancel", elapsed);
+  missile.pendingPointDefense = null;
+}
+
 export function updateSurfaceStrikeMissile(
   missile: SurfaceStrikeMissile,
   dt: number,
@@ -488,7 +509,8 @@ export function updateSurfaceStrikeMissile(
   const trueRange = missile.mesh.position.distanceTo(trueTargetPosition);
   const profile = getThreatDefinition("RGM-84 Harpoon").profile;
   const terminal = commandRange < profile.terminalAt;
-  missile.phase = missile.age < 1.35 ? "boost" : terminal ? "terminal" : "midcourse";
+  missile.phase =
+    missile.age < 1.35 ? "boost" : terminal ? "terminal" : "midcourse";
   if (terminal && missile.terminalEnteredAt === null)
     missile.terminalEnteredAt = elapsed;
   const platformTrack = updatePlatformIncomingTrack(
@@ -504,11 +526,7 @@ export function updateSurfaceStrikeMissile(
     return { kind: "seeker-search", missile } satisfies SurfaceStrikeEvent;
   }
 
-  if (
-    terminal &&
-    !missile.seekerAcquired &&
-    missile.targetLostAt === null
-  ) {
+  if (terminal && !missile.seekerAcquired && missile.targetLostAt === null) {
     const targetDirection = trueTargetPosition
         .clone()
         .sub(missile.mesh.position)
@@ -570,8 +588,14 @@ export function updateSurfaceStrikeMissile(
           burnThroughRange: softKill.burnThroughRange,
           homeOnJamThreshold: profile.homeOnJam?.minimumJammingStrength,
         }),
-        { ecmInterference, decoyCapture, homeOnJam, defeatProbability: pk } = contest;
+        {
+          ecmInterference,
+          decoyCapture,
+          homeOnJam,
+          defeatProbability: pk,
+        } = contest;
       if (deterministicRoll(missile, 1) < pk) {
+        cancelPendingPlatformDefenseShot(missile, elapsed);
         missile.phase = "destroyed";
         missile.mesh.visible = false;
         missile.path.visible = false;
@@ -612,6 +636,7 @@ export function updateSurfaceStrikeMissile(
     const shot = missile.pendingPointDefense;
     missile.pendingPointDefense = null;
     if (shot.willHit) {
+      settlePlatformDefenseShot(missile, "hit", elapsed);
       missile.phase = "destroyed";
       missile.mesh.visible = false;
       missile.path.visible = false;
@@ -621,6 +646,7 @@ export function updateSurfaceStrikeMissile(
         ...shot,
       } satisfies SurfaceStrikeEvent;
     }
+    settlePlatformDefenseShot(missile, "miss", elapsed);
     return {
       kind: "point-defense-miss",
       missile,
@@ -631,13 +657,13 @@ export function updateSurfaceStrikeMissile(
     (readyAt, index) =>
       index < capability.effectiveChannels && elapsed >= readyAt,
   );
-  const priorityTrack = pointDefensePriorityTracks(missile.target, elapsed).find(
+  const priorityTrack = pointDefensePriorityTracks(
+    missile.target,
+    elapsed,
+  ).find(
     (track) =>
-      pointDefenseMountSolution(
-        missile.target,
-        track.position,
-        elapsed,
-      ) !== null,
+      pointDefenseMountSolution(missile.target, track.position, elapsed) !==
+      null,
   );
   const pointDefenseEligible =
     !missile.target.destroyed &&
@@ -646,7 +672,6 @@ export function updateSurfaceStrikeMissile(
     elapsed >= platformTrack.track.fireControlReadyAt &&
     priorityTrack?.missileId === missile.id &&
     defenseTrackRange < pointDefense.range &&
-    missile.pointDefenseEngagements < pointDefense.engagementsPerTarget &&
     !missile.pendingPointDefense;
   if (
     pointDefenseEligible &&
@@ -682,22 +707,42 @@ export function updateSurfaceStrikeMissile(
       true,
     );
     if (!mountSolution || !mountSolution.aligned) return null;
-    missile.target.pointDefenseEngagementsRemaining--;
-    missile.pointDefenseEngagements++;
-    platformTrack.track.engagements++;
-    const health =
-      capability.health;
+    const health = capability.health;
     const pk = THREE.MathUtils.clamp(
       (pointDefense.basePk -
         Math.max(0, platformTrack.track.localTrackDensity - 1) *
           pointDefense.localSaturationPenalty) *
         health *
         THREE.MathUtils.lerp(0.62, 1, platformTrack.track.quality) *
-        THREE.MathUtils.clamp(1 - platformTrack.track.uncertainty / 32, 0.55, 1),
+        THREE.MathUtils.clamp(
+          1 - platformTrack.track.uncertainty / 32,
+          0.55,
+          1,
+        ),
       0.05,
       0.72,
     );
-    const engagement = missile.pointDefenseEngagements;
+    const timeOfFlight = Math.max(
+      pointDefense.minimumTimeOfFlight,
+      defenseTrackRange / Math.max(1, pointDefense.effectorSpeed),
+    );
+    const resolveAt = elapsed + timeOfFlight;
+    const authorization = commitEngagementAuthorization({
+      engagements: missile.target.defenseEngagements,
+      target: platformDefenseTargetId(missile.id),
+      authorize: () => {
+        missile.target.pointDefenseEngagementsRemaining--;
+        missile.target.pointDefenseChannelReady[availableChannel] = Math.max(
+          elapsed + pointDefense.interval * capability.cycleMultiplier,
+          resolveAt,
+        );
+        platformTrack.track.nextEngagementReadyAt =
+          resolveAt + pointDefense.reengagementDelay;
+        return true;
+      },
+    });
+    if (!authorization) return null;
+    const engagement = authorization.shots;
     const engagementData = {
       pk,
       threatScore: platformTrack.track.threatScore,
@@ -706,18 +751,6 @@ export function updateSurfaceStrikeMissile(
       engagement,
       maximumEngagements: pointDefense.engagementsPerTarget,
     };
-    const timeOfFlight = Math.max(
-      pointDefense.minimumTimeOfFlight,
-      defenseTrackRange / Math.max(1, pointDefense.effectorSpeed),
-    );
-    const resolveAt = elapsed + timeOfFlight;
-    missile.target.pointDefenseChannelReady[availableChannel] = Math.max(
-      elapsed +
-        pointDefense.interval * capability.cycleMultiplier,
-      resolveAt,
-    );
-    platformTrack.track.nextEngagementReadyAt =
-      resolveAt + pointDefense.reengagementDelay;
     missile.pendingPointDefense = {
       resolveAt,
       ...engagementData,
@@ -781,7 +814,9 @@ export function updateSurfaceStrikeMissile(
   const current = missile.velocity.clone().normalize();
   const angle = current.angleTo(aim);
   const maxTurn = THREE.MathUtils.degToRad(terminal ? 32 : 11.5) * dt;
-  const direction = current.lerp(aim, angle > 0 ? Math.min(1, maxTurn / angle) : 1).normalize();
+  const direction = current
+    .lerp(aim, angle > 0 ? Math.min(1, maxTurn / angle) : 1)
+    .normalize();
   const baseCruiseSpeed = 5.8;
   // Coordinate the routed cruise leg against the common terminal-entry clock.
   const remainingArrivalTime = missile.plannedArrivalAt - elapsed;
@@ -793,12 +828,12 @@ export function updateSurfaceStrikeMissile(
     baseCruiseSpeed * (1 + missile.maximumSpeedCompensation),
   );
   const targetSpeed =
-    missile.phase === "boost"
-      ? 6.1
-      : terminal
-        ? 6.4
-        : coordinatedCruiseSpeed;
-  const speed = THREE.MathUtils.lerp(missile.velocity.length(), targetSpeed, Math.min(1, dt * 1.1));
+    missile.phase === "boost" ? 6.1 : terminal ? 6.4 : coordinatedCruiseSpeed;
+  const speed = THREE.MathUtils.lerp(
+    missile.velocity.length(),
+    targetSpeed,
+    Math.min(1, dt * 1.1),
+  );
   missile.velocity.copy(direction.multiplyScalar(speed));
   missile.mesh.position.addScaledVector(missile.velocity, dt);
   missile.mesh.position.y = Math.max(
@@ -816,8 +851,7 @@ export function updateSurfaceStrikeMissile(
   );
 
   const particleTrail = missile.mesh.userData.particleTrail as
-    | ThreatParticleTrail
-    | undefined;
+    ThreatParticleTrail | undefined;
   if (particleTrail)
     updateThreatParticleTrail(
       particleTrail,
@@ -853,6 +887,7 @@ export function updateSurfaceStrikeMissile(
     ? platformHullContact(missile.target, missile.mesh.position)
     : null;
   if (missile.seekerAcquired && localImpact) {
+    cancelPendingPlatformDefenseShot(missile, elapsed);
     missile.phase = "penetrating";
     missile.mesh.visible = false;
     missile.path.visible = false;
@@ -879,6 +914,7 @@ export function updateSurfaceStrikeMissile(
     previousClosest < 13 &&
     postRange > previousClosest + 0.8
   ) {
+    cancelPendingPlatformDefenseShot(missile, elapsed);
     missile.phase = "destroyed";
     missile.mesh.visible = false;
     missile.path.visible = false;
@@ -901,6 +937,7 @@ export function updateSurfaceStrikeMissile(
           elapsed - missile.targetLostAt >
             (profile.targetLostCoastSeconds ?? 8) * 1.5))
   ) {
+    cancelPendingPlatformDefenseShot(missile, elapsed);
     missile.phase = "destroyed";
     missile.mesh.visible = false;
     missile.path.visible = false;
