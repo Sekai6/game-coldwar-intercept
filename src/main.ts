@@ -7943,6 +7943,14 @@ function tick(now: number) {
     .filter((event) => event.kind === "launch")
     .map((event) => event.text)
     .join("|");
+  canvas.dataset.airSeekerEventLog = airCombat.events
+    .filter((event) => event.kind === "detect" && event.text.includes("SEEKER ACQUIRED"))
+    .map((event) => event.text)
+    .join("|");
+  canvas.dataset.airWeaponHitLog = airCombat.events
+    .filter((event) => event.kind === "hit" || event.kind === "kill")
+    .map((event) => event.text)
+    .join("|");
   canvas.dataset.airReleaseAuthorizationLog = airCombat.events
     .filter((event) => event.text.includes("RELEASE AUTHORIZED"))
     .map((event) => event.text)
