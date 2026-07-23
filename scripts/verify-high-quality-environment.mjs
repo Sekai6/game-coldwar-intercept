@@ -22,7 +22,7 @@ try {
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.enabled !== "true" || result.clouds !== 12 || result.fogVolumes !== 18 || result.aircraft !== 4) process.exitCode = 1;
+  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4) process.exitCode = 1;
 } finally {
   await browser.close();
 }
