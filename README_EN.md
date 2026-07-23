@@ -633,8 +633,8 @@ game-codewar-intercept/
 │  │  └─ runtime.ts / guidance.ts / ooda.ts / flight-dynamics.ts
 │  ├─ ship-defense/
 │  │  ├─ defense-targets.ts   # Generic defense targets and source mapping
-│  │  ├─ engagement-runtime.ts # Engagement state and threat ranking
-│  │  ├─ launcher-runtime.ts  # Common launcher motion rules
+│  │  ├─ engagement-runtime.ts # Observation scoring, weapon plans, and illuminator allocation
+│  │  ├─ launcher-runtime.ts  # Physical reservation, damage isolation, and launcher lifecycles
 │  │  └─ defense-visuals.ts   # CIWS and defense visual events
 │  ├─ threats/
 │  │  ├─ catalog.ts           # Incoming-threat registry, derived type, and lookup

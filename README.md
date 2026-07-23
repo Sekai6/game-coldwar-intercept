@@ -544,8 +544,8 @@ game-codewar-intercept/
    │  └─ runtime.ts / guidance.ts / ooda.ts / flight-dynamics.ts
    ├─ ship-defense/
    │  ├─ defense-targets.ts      # 通用防空目标与来源映射
-   │  ├─ engagement-runtime.ts   # 交战状态与威胁排序
-   │  ├─ launcher-runtime.ts     # 发射架通用运动规则
+   │  ├─ engagement-runtime.ts   # 观察评分、武器计划与照射器资源分配
+   │  ├─ launcher-runtime.ts     # 物理发射器预留、损坏隔离与完整生命周期
    │  └─ defense-visuals.ts      # CIWS 等防空视觉事件
    ├─ models/
    │  ├─ long-beach.ts
@@ -572,7 +572,7 @@ game-codewar-intercept/
 - `main.ts` 负责把通用能力组合成一局战斗，不应包含舰名或平台 ID 特判。
 - `scenarios/` 只描述一局战斗的初始状态和可调规则，不实现武器行为。
 - `air/ship-bridge.ts` 是空中系统与水面舰运行时之间的唯一目标适配边界。
-- `ship-defense/` 管理目标映射、交战状态、发射架通用规则和防空视觉；实体发射仍必须经过舰载弹药与发射架状态机。
+- `ship-defense/` 管理目标映射、观察评分、武器与照射器计划、物理发射器资源、损坏隔离、完整发射生命周期和防空视觉；`main.ts` 只组装依赖与执行渲染。
 - 舰艇和飞机统一遵循 `目标来源注册 -> 传感器航迹 -> DefenseConsumer 评分 -> 资源授权 -> EngagementRecord -> 实体发射 -> 结算`。注册目标不等于探测成功，也不授予目标真值。
 - `DefenseTargetRegistry` 可以动态注册或注销新的领域来源，并拒绝重复来源名和重复目标 ID。舰载雷达、SAM、CIWS 与空中 OODA 不直接枚举某一种平台容器。
 - 防御舰的能力、库存、传感器、发射器和损伤区段由 `ShipDefinition` 声明。
