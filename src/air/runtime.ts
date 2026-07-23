@@ -36,7 +36,6 @@ import { updateAntiShipGuidance } from "../anti-ship-guidance";
 import { radarCountermeasureContest } from "../radar-countermeasures";
 import {
   commitEngagementAuthorization,
-  hasCommittedEngagement,
   resolveEngagement,
 } from "../defense/engagement.js";
 import { opposingSides } from "../defense/allegiance.js";
@@ -904,8 +903,7 @@ export class AirCombatSystem {
         a.nextOoda = time + 1;
         const track = this.missionTrackFor(a, context),
           ship = track ? this.targetById(track.targetId, context) : undefined;
-        if (ship && track && !hasCommittedEngagement(a.engagements, ship.id))
-          this.launch(a, ship, track, time);
+        if (ship && track) this.launch(a, ship, track, time);
       }
     } else if (
       a.mission !== "egress" &&
@@ -920,10 +918,7 @@ export class AirCombatSystem {
         const track = a.tracks.get(target.id)!;
         a.state = "engaging";
         a.desiredDirection.copy(track.position).sub(a.position).normalize();
-        if (
-          track.quality >= 0.22 &&
-          !hasCommittedEngagement(a.engagements, target.id)
-        )
+        if (track.quality >= 0.22)
           this.launch(a, target, track, time);
       } else {
         const leader = this.aircraft.find(
