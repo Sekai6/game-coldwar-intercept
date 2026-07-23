@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { EnemyType } from "../combat-types";
 import type { ShipDefinition } from "../ship-types";
+import { DEFAULT_THREAT_ID } from "../threats/catalog";
 
 export type InitialSurfaceThreat = {
   position: THREE.Vector3;
@@ -54,9 +55,9 @@ export function initialSurfaceLoadout(ship: ShipDefinition) {
 }
 
 export const DEFAULT_SURFACE_SCENARIO: readonly InitialSurfaceThreat[] = [
-  { position: new THREE.Vector3(-85, 18, -210), threatType: "P-500" as EnemyType },
-  { position: new THREE.Vector3(0, 28, -240), threatType: "P-500" as EnemyType },
-  { position: new THREE.Vector3(80, 14, -220), threatType: "P-500" as EnemyType },
+  { position: new THREE.Vector3(-85, 18, -210), threatType: DEFAULT_THREAT_ID },
+  { position: new THREE.Vector3(0, 28, -240), threatType: DEFAULT_THREAT_ID },
+  { position: new THREE.Vector3(80, 14, -220), threatType: DEFAULT_THREAT_ID },
 ];
 
 export function initialSurfaceThreats(): InitialSurfaceThreat[] {
