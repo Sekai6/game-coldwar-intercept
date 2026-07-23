@@ -73,6 +73,9 @@ import { pointDefenseCapability } from "./platforms/defense";
 import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
+import { createAirShipBridge } from "./air/ship-bridge";
+import { initialSurfaceThreats } from "./scenarios/surface-scenarios";
+import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -445,9 +448,7 @@ const airDefenseHardKills = new Set<string>();
 const engagements = new Map<DefenseTarget, EngagementState>();
 
 function defenseTargetForSource(sourceId: number | string) {
-  return typeof sourceId === "string"
-    ? airDefenseTargets.get(sourceId)
-    : missiles[sourceId - 1];
+  return targetForSource(sourceId, missiles, airDefenseTargets);
 }
 
 function defenseSourceForTarget(target: DefenseTarget) {
@@ -458,17 +459,11 @@ function defenseSourceForTarget(target: DefenseTarget) {
 }
 
 function defenseSourceSeed(sourceId: number | string) {
-  if (typeof sourceId === "number") return sourceId;
-  let hash = 2166136261;
-  for (const character of sourceId) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return sourceSeed(sourceId);
 }
 
 function allDefenseTargets() {
-  return [...missiles, ...airDefenseTargets.values()];
+  return allTargets(missiles, airDefenseTargets);
 }
 
 function synchronizeAirDefenseTargets() {
@@ -2500,9 +2495,8 @@ function ciwsTracer(target: THREE.Vector3, origin: THREE.Vector3) {
     (line.material as THREE.Material).dispose();
   }, 110);
 }
-addMissile(new THREE.Vector3(-85, 18, -210));
-addMissile(new THREE.Vector3(0, 28, -240));
-addMissile(new THREE.Vector3(80, 14, -220));
+for (const threat of initialSurfaceThreats())
+  addMissile(threat.position, threat.threatType);
 let running = true,
   elapsed = 0,
   simAccumulator = 0,
@@ -2718,38 +2712,11 @@ sandbox.insertBefore(airPresetField, sandbox.querySelector("#sbStart"));
 const airPresetInput = airPresetField.querySelector("select") as HTMLSelectElement;
 
 function airScenarioContext() {
-  const blueShip: TargetableEntity = {
-    id: "blue-surface-ship",
-    side: "blue",
-    kind: "ship",
-    position: defender.position,
-    velocity: new THREE.Vector3(
+  const blueVelocity = new THREE.Vector3(
       Math.cos(defender.rotation.y) * shipSpeedKnots * 0.005144,
       0,
       -Math.sin(defender.rotation.y) * shipSpeedKnots * 0.005144,
-    ),
-    radarCrossSection: activeShip.platform.radarRcs,
-    infraredSignature: 0.8,
-    alive: hullIntegrity > 0,
-    applyDamage: (damage, hitPoint) => {
-      hullIntegrity = Math.max(0, hullIntegrity - damage);
-      airShipHits++;
-      airShipDamage += damage;
-      leakers++;
-      createExplosion(hitPoint.clone());
-      flashCombat("impact");
-      const localImpact = defender.worldToLocal(hitPoint.clone()),
-        zone = activeShip.damageModel.zones.find(
-          (candidate) => localImpact.x > candidate.minX,
-        ) ?? activeShip.damageModel.zones[activeShip.damageModel.zones.length - 1],
-        primary = zone.systems[airShipHits % zone.systems.length];
-      damageSubsystem(primary, damage * 0.62, false, Math.atan2(-localImpact.z, localImpact.x));
-      log(
-        `AIR-LAUNCHED MISSILE IMPACT / ${damage.toFixed(0)}% DAMAGE / ${subsystems[primary].label} PRIMARY / HULL ${hullIntegrity.toFixed(0)}%`,
-      );
-      phaseEl.textContent = hullIntegrity > 0 ? "DAMAGE CONTROL" : "SHIP DISABLED";
-    },
-  };
+    );
   const redShip: TargetableEntity | null = enemyPlatform
     ? {
         id: "red-surface-ship",
@@ -2767,11 +2734,35 @@ function airScenarioContext() {
         },
       }
     : null;
-  return {
-    blueShip,
+  const bridge = createAirShipBridge({
+    bluePosition: defender.position,
+    blueVelocity,
+    blueRcs: activeShip.platform.radarRcs,
+    blueAlive: hullIntegrity > 0,
     redShip,
+    applyBlueDamage: (damage, hitPoint) => {
+      hullIntegrity = Math.max(0, hullIntegrity - damage);
+      airShipHits++;
+      airShipDamage += damage;
+      leakers++;
+      createExplosion(hitPoint.clone());
+      flashCombat("impact");
+      const localImpact = defender.worldToLocal(hitPoint.clone()),
+        zone = activeShip.damageModel.zones.find(
+          (candidate) => localImpact.x > candidate.minX,
+        ) ?? activeShip.damageModel.zones[activeShip.damageModel.zones.length - 1],
+        primary = zone.systems[airShipHits % zone.systems.length];
+      damageSubsystem(primary, damage * 0.62, false, Math.atan2(-localImpact.z, localImpact.x));
+      log(
+        `AIR-LAUNCHED MISSILE IMPACT / ${damage.toFixed(0)}% DAMAGE / ${subsystems[primary].label} PRIMARY / HULL ${hullIntegrity.toFixed(0)}%`,
+      );
+      phaseEl.textContent = hullIntegrity > 0 ? "DAMAGE CONTROL" : "SHIP DISABLED";
+    },
+  });
+  return {
+    ...bridge,
     countermeasures: (targetId: string) => {
-      if (targetId !== blueShip.id) return null;
+      if (targetId !== bridge.blueShip.id) return null;
       return {
         ecmEnabled: shipEcmEnabled,
         ecmStrength: 0.62,
