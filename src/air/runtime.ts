@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { CombatEntity, TargetableEntity } from "../combat-entity";
-import { AIR_PLATFORM_BY_ID, AIR_WEAPONS } from "./catalog";
+import { AIR_WEAPONS } from "./catalog";
 import { airRadarFactors, missileWarningProbability } from "./sensors";
 import { infraredSeekerCaptureProbability, radarSeekerCaptureProbability, semiActiveIlluminationValid } from "./guidance";
 import { stepFlightDynamics } from "./flight-dynamics";
@@ -83,19 +83,13 @@ export class AirCombatSystem {
   readonly group=new THREE.Group(); readonly aircraft:AirPlatformInstance[]=[]; readonly missiles:AirMissileInstance[]=[]; readonly decoys:AirDecoyInstance[]=[]; readonly events:AirCombatEvent[]=[];
   enabled=true; countermeasuresEnabled=true; private serial=0; private lastEventIndex=0; private currentTime=0; private standardDamageApplications=0;
   constructor(private scene:THREE.Scene){this.group.name="air-combat";scene.add(this.group);}
-  reset(blueShip:CombatEntity, redShip:CombatEntity|null){ this.disposeObjects(); this.serial=0; this.standardDamageApplications=0;
-    const spawns:AirSpawn[]=[
-      ...this.pair("F-14A","blue","CAP-1",new THREE.Vector3(-170,72,-220),new THREE.Vector3(1,0,-.12),"escort","STRIKE-1"),
-      ...this.pair("TU-16K","red","RAID-1",new THREE.Vector3(80,92,-250),new THREE.Vector3(-.15,-.01,1)),
-      ...this.pair("A-6E","blue","STRIKE-1",new THREE.Vector3(-60,18,-220),new THREE.Vector3(.15,0,-1)),
-    ];
+  reset(blueShip:CombatEntity, redShip:CombatEntity|null,spawns:readonly AirSpawn[]){ this.disposeObjects(); this.serial=0; this.standardDamageApplications=0;
     const protectedFormations=new Map<string,string>();
     for(const spawn of spawns){const p=instantiate(spawn,++this.serial,(id,damage,point)=>{const target=this.aircraft.find(candidate=>candidate.id===id&&candidate.alive);if(target)this.applyAircraftDamage(target,damage,point,this.currentTime);});if(spawn.protectedFormationId)protectedFormations.set(p.id,spawn.protectedFormationId);this.aircraft.push(p);this.group.add(p.model);}
     for(const p of this.aircraft){ if(p.formationIndex>0){const leader=this.aircraft.find(x=>x.formationId===p.formationId&&x.formationIndex===0);p.leaderId=leader?.id??null;} }
     for(const [escortId,protectedFormationId] of protectedFormations){const escort=this.aircraft.find(aircraft=>aircraft.id===escortId),protectedLeader=this.aircraft.find(aircraft=>aircraft.formationId===protectedFormationId&&aircraft.formationIndex===0);if(escort&&protectedLeader){escort.protectedId=protectedLeader.id;escort.leaderId=protectedLeader.id;}}
     this.group.userData.context={blueShip,redShip};
   }
-  private pair(id:"F-14A"|"TU-16K"|"A-6E",side:"blue"|"red",formationId:string,position:THREE.Vector3,heading:THREE.Vector3,wingmanMission?:AirSpawn["mission"],protectedFormationId?:string):AirSpawn[]{const d=AIR_PLATFORM_BY_ID[id];return [0,1].map(i=>({definition:d,side,formationId,position:position.clone().add(new THREE.Vector3((i?1:-1)*12,i*2, i?9:-4)),heading,formationIndex:i,mission:i===1?wingmanMission:undefined,protectedFormationId:i===1?protectedFormationId:undefined}));}
   private disposeObjects(){for(const o of [...this.aircraft.map(x=>x.model),...this.missiles.map(x=>x.model),...this.decoys.map(x=>x.model)]){this.group.remove(o);o.traverse(c=>{if(c instanceof THREE.Mesh){c.geometry.dispose();const m=c.material;if(Array.isArray(m))m.forEach(x=>x.dispose());else m.dispose();}});}this.aircraft.length=this.missiles.length=this.decoys.length=this.events.length=0;this.lastEventIndex=0;}
   dispose(){this.disposeObjects();this.scene.remove(this.group);}
   private emit(time:number,kind:AirCombatEvent["kind"],text:string){this.events.push({time,kind,text});}

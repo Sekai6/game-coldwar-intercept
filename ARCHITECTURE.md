@@ -9,6 +9,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/air/types.ts`: aircraft, mission, observed-track, weapon, countermeasure, and damage contracts.
 - `src/air/catalog.ts`: game-scaled F-14A, Tu-16K, A-6E, AIM-54A, AIM-7F, AIM-9L, KSR-5, and AGM-84A capability data.
 - `src/air/models.ts`: reusable procedural aircraft geometry and stable animation anchors.
+- `src/air/scenarios.ts`: scenario-owned aircraft formations, spawn geometry, mission overrides, and protected-formation relationships.
 - `src/air/runtime.ts`: formation flight, point-mass energy limits, airborne OODA, uncertain radar tracks, guidance, countermeasures, and aircraft/air-weapon damage. It exposes incoming anti-ship missiles but does not own or spawn shipboard weapons.
 - `src/main.ts` registers hostile aircraft and air-launched anti-ship missiles as externally driven defensive contacts. Both enter the existing `CombatPicture`, fire-control, engagement, magazine, Mk 10/Mk 41 animation, interceptor-guidance, and hit-resolution path. Missiles resolve as hard kills; aircraft receive subsystem damage and may survive, lose control, or crash. Contact behavior is selected by catalog-owned defense templates, never an aircraft/weapon ID branch in `main.ts`.
 - `src/ship-catalog.ts`: ship registration and per-class capability metadata.
@@ -56,7 +57,8 @@ The simulation is organized around capabilities rather than ship-name checks.
 
 ## Adding an air platform
 
-1. Add one `AirPlatformDefinition` to `air/catalog.ts`; mission behavior is selected by capabilities and `AirMissionOrder`, never an aircraft-ID check in `main.ts`.
+1. Add one `AirPlatformDefinition` to `air/catalog.ts`; mission behavior is selected by capabilities and `AirMissionOrder`, never an aircraft-ID check in `main.ts` or `AirCombatSystem`.
+   Compose formations in `air/scenarios.ts` and pass the resulting `AirSpawn[]` into `AirCombatSystem.reset()`. Core runtime must not own platform IDs, coordinates, or scenario-specific escort assignments.
 2. Supply a procedural model whose forward axis is `-Z`. Optional moving parts are exposed through generic `userData` animation anchors.
 3. Declare every weapon in the loadout and `AIR_WEAPONS`. Target class, range, guidance, seeker, turn limit, damage, and countermeasure resistance remain weapon data.
 4. Aircraft consume only `AirTrack` estimates until a terminal seeker acquires. Defensive maneuver and countermeasure decisions may use detected incoming weapons, not hidden enemy truth.
