@@ -22,6 +22,8 @@ export function selectMissionTrack(input: {
   tracks: readonly AirTrack[];
   origin: { x: number; y: number; z: number };
   engagements?: ReadonlyMap<EngagementSourceId, EngagementRecord>;
+  time?: number;
+  reassessDelay?: number;
 }) {
   const desiredClassification =
     input.mission === "anti-ship" ? "ship" : "aircraft";
@@ -35,7 +37,11 @@ export function selectMissionTrack(input: {
     observations,
     policy,
     engagements: input.engagements ?? new Map(),
-    acceptEngagement: (_observation, engagement) => !engagement?.shots,
+    acceptEngagement: (_observation, engagement) =>
+      !engagement ||
+      (engagement.pending === 0 &&
+        (input.time ?? Infinity) - engagement.lastResolution >=
+          (input.reassessDelay ?? 2)),
   });
   return selected
     ? input.tracks.find((track) => track.targetId === selected.id)
@@ -47,12 +53,16 @@ export function missionShouldReturn(input: {
   hasEngaged: boolean;
   observedHostileAircraft: number;
   observedThreats: number;
+  contactLostSeconds: number;
+  hasAirborneWeapon: boolean;
 }) {
   return (
     (input.mission === "cap" || input.mission === "intercept") &&
     input.hasEngaged &&
     input.observedHostileAircraft === 0 &&
-    input.observedThreats === 0
+    input.observedThreats === 0 &&
+    input.contactLostSeconds >= 20 &&
+    !input.hasAirborneWeapon
   );
 }
 

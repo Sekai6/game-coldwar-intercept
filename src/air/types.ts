@@ -154,6 +154,7 @@ export interface AirPlatformInstance extends TargetableEntity {
   nextOoda: number;
   nextScan: number;
   nextCountermeasure: number;
+  noContactSince: number | null;
   chaff: number;
   flares: number;
   state:
@@ -233,6 +234,7 @@ export type AirCombatEvent = {
     | "hit"
     | "damage"
     | "kill"
+    | "guidance"
     | "maneuver";
   text: string;
 };

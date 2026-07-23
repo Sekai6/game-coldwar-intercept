@@ -168,6 +168,7 @@ function instantiate(
     nextOoda: 0,
     nextScan: 0,
     nextCountermeasure: 0,
+    noContactSince: null,
     chaff: spawn.definition.countermeasures.chaff,
     flares: spawn.definition.countermeasures.flares,
     state: "formation",
@@ -814,7 +815,11 @@ export class AirCombatSystem {
     this.decoys.push(d);
     this.group.add(mesh);
   }
-  private missionTrackFor(a: AirPlatformInstance, context: AirScenarioContext) {
+  private missionTrackFor(
+    a: AirPlatformInstance,
+    context: AirScenarioContext,
+    time = this.currentTime,
+  ) {
     const protectedEntity = a.protectedId
       ? this.targetById(a.protectedId, context)
       : undefined;
@@ -823,6 +828,8 @@ export class AirCombatSystem {
       tracks: [...a.tracks.values()],
       origin: protectedEntity?.position ?? a.position,
       engagements: a.engagements,
+      time,
+      reassessDelay: 2,
     });
   }
   private updateAircraft(
@@ -865,12 +872,20 @@ export class AirCombatSystem {
       observedThreats =
         observedTracks.filter((track) => track.classification === "unknown")
           .length + a.missileWarnings.size;
+    if (observedHostileAircraft > 0 || observedThreats > 0)
+      a.noContactSince = null;
+    else a.noContactSince ??= time;
+    const hasAirborneWeapon = this.missiles.some(
+      (missile) => missile.alive && missile.shooterId === a.id,
+    );
     if (
       missionShouldReturn({
         mission: a.mission,
         hasEngaged: a.engagements.size > 0,
         observedHostileAircraft,
         observedThreats,
+        contactLostSeconds: time - (a.noContactSince ?? time),
+        hasAirborneWeapon,
       })
     ) {
       a.mission = "return";
@@ -894,6 +909,25 @@ export class AirCombatSystem {
         defense.direction.y,
         defense.direction.z,
       );
+      const illuminatingMissile = this.missiles.find(
+        (missile) =>
+          missile.alive &&
+          missile.shooterId === a.id &&
+          missile.definition.guidance === "semi-active-radar",
+      );
+      const illuminationTrack = illuminatingMissile
+        ? a.tracks.get(illuminatingMissile.targetId)
+        : undefined;
+      if (illuminationTrack) {
+        const illuminationDirection = illuminationTrack.position
+          .clone()
+          .sub(a.position)
+          .normalize();
+        a.desiredDirection
+          .multiplyScalar(0.35)
+          .addScaledVector(illuminationDirection, 0.65)
+          .normalize();
+      }
       if (
         this.countermeasuresEnabled &&
         defense.timeToImpact < a.definition.countermeasures.program.triggerTti
@@ -1246,7 +1280,7 @@ export class AirCombatSystem {
     )
       return true;
     this.terminateMissile(missile);
-    this.emit(time, "maneuver", `${missile.definition.name} LOST ILLUMINATION`);
+    this.emit(time, "guidance", `${missile.definition.name} LOST ILLUMINATION`);
     return false;
   }
   private missileAimPoint(

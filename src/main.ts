@@ -7608,7 +7608,8 @@ function tick(now: number) {
   canvas.dataset.airSeekerEventLog = airCombat.events
     .filter(
       (event) =>
-        event.kind === "detect" && event.text.includes("SEEKER ACQUIRED"),
+        (event.kind === "detect" && event.text.includes("SEEKER ACQUIRED")) ||
+        event.kind === "guidance",
     )
     .map((event) => event.text)
     .join("|");

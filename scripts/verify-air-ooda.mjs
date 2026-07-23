@@ -50,6 +50,25 @@ const capAfterCommit = selectMissionTrack({
       { shots: 1, pending: 1, misses: 0, lastResolution: -Infinity },
     ],
   ]),
+  time: 10,
+});
+const capAfterMissDelay = selectMissionTrack({
+  mission: "cap",
+  tracks: [tracks[1]],
+  origin: vector(0, 20, 0),
+  engagements: new Map([
+    ["near-air", { shots: 1, pending: 0, misses: 1, lastResolution: 7 }],
+  ]),
+  time: 10,
+});
+const capDuringAssessment = selectMissionTrack({
+  mission: "cap",
+  tracks: [tracks[1]],
+  origin: vector(0, 20, 0),
+  engagements: new Map([
+    ["near-air", { shots: 1, pending: 0, misses: 1, lastResolution: 9 }],
+  ]),
+  time: 10,
 });
 const strike = selectMissionTrack({
   mission: "anti-ship",
@@ -70,6 +89,8 @@ const strikeNoContact = noContactMissionDirection({
 const result = {
   cap: cap?.targetId,
   capAfterCommit: capAfterCommit?.targetId,
+  capAfterMissDelay: capAfterMissDelay?.targetId,
+  capDuringAssessment: capDuringAssessment?.targetId,
   strike: strike?.targetId,
   defense,
   strikeNoContact,
@@ -78,30 +99,56 @@ const result = {
     hasEngaged: true,
     observedHostileAircraft: 0,
     observedThreats: 0,
+    contactLostSeconds: 20,
+    hasAirborneWeapon: false,
   }),
   interceptReturn: missionShouldReturn({
     mission: "intercept",
     hasEngaged: true,
     observedHostileAircraft: 0,
     observedThreats: 0,
+    contactLostSeconds: 20,
+    hasAirborneWeapon: false,
   }),
   returnDenied: missionShouldReturn({
     mission: "cap",
     hasEngaged: true,
     observedHostileAircraft: 0,
     observedThreats: 1,
+    contactLostSeconds: 30,
+    hasAirborneWeapon: false,
   }),
   returnBeforeContact: missionShouldReturn({
     mission: "cap",
     hasEngaged: false,
     observedHostileAircraft: 0,
     observedThreats: 0,
+    contactLostSeconds: 30,
+    hasAirborneWeapon: false,
+  }),
+  returnDuringGrace: missionShouldReturn({
+    mission: "cap",
+    hasEngaged: true,
+    observedHostileAircraft: 0,
+    observedThreats: 0,
+    contactLostSeconds: 19.9,
+    hasAirborneWeapon: false,
+  }),
+  returnWithWeapon: missionShouldReturn({
+    mission: "intercept",
+    hasEngaged: true,
+    observedHostileAircraft: 0,
+    observedThreats: 0,
+    contactLostSeconds: 30,
+    hasAirborneWeapon: true,
   }),
 };
 console.log(JSON.stringify(result, null, 2));
 if (
   result.cap !== "near-air" ||
   result.capAfterCommit !== "far-air" ||
+  result.capAfterMissDelay !== "near-air" ||
+  result.capDuringAssessment !== undefined ||
   result.strike !== "ship" ||
   Math.abs(defense.timeToImpact - 5) > 0.001 ||
   Math.abs(defense.direction.z + 1) > 0.001 ||
@@ -111,6 +158,8 @@ if (
   !result.returnClear ||
   !result.interceptReturn ||
   result.returnDenied ||
-  result.returnBeforeContact
+  result.returnBeforeContact ||
+  result.returnDuringGrace ||
+  result.returnWithWeapon
 )
   process.exitCode = 1;
