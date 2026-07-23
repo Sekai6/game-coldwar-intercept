@@ -76,7 +76,7 @@ import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } fro
 import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
 import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
-import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
+import { moveAngle, moveToward, setMk10Elevation } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
@@ -1285,12 +1285,6 @@ function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
   );
   return true;
 }
-function setLauncherElevation(launcher: Mk10LauncherState, elevation: number) {
-  launcher.elevation = elevation;
-  (launcher.model.userData.arms as THREE.Group[]).forEach(
-    (arm) => (arm.rotation.z = elevation),
-  );
-}
 function updateMk10Launchers(dt: number) {
   if (activeShip.launcher.kind !== "mk10") return;
   const config = activeShip.launcher,
@@ -1355,7 +1349,7 @@ function updateMk10Launchers(dt: number) {
         desiredAzimuth,
         azimuthRate * dt,
       );
-      setLauncherElevation(
+      setMk10Elevation(
         launcher,
         moveToward(launcher.elevation, desiredElevation, elevationRate * dt),
       );
@@ -1405,7 +1399,7 @@ function updateMk10Launchers(dt: number) {
         azimuthRate * dt,
       );
       launcher.model.rotation.y = launcher.azimuth;
-      setLauncherElevation(
+      setMk10Elevation(
         launcher,
         moveToward(launcher.elevation, 0, elevationRate * dt),
       );
@@ -1416,7 +1410,7 @@ function updateMk10Launchers(dt: number) {
       ) {
         launcher.azimuth = launcher.stowAzimuth;
         launcher.model.rotation.y = launcher.stowAzimuth;
-        setLauncherElevation(launcher, 0);
+        setMk10Elevation(launcher, 0);
         launcher.phaseSince = elapsed;
         if (launcher.reloadRail < 0) {
           launcher.phase = "ready";
