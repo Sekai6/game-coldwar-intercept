@@ -13,6 +13,14 @@ export type SurfaceScenarioConfig = {
   radarEnabled: boolean;
   autoFire: boolean;
   shipEcmEnabled: boolean;
+  maxSamChannels: number;
+  maxIlluminators: number;
+  doctrine: "SINGLE" | "DOUBLE" | "SSLS";
+  chaffEnabled: boolean;
+  ecmEnabled: boolean;
+  platformDecoysEnabled: boolean;
+  srbocEnabled: boolean;
+  srbocRounds: number;
 };
 
 export const DEFAULT_SURFACE_CONFIG: SurfaceScenarioConfig = {
@@ -21,6 +29,14 @@ export const DEFAULT_SURFACE_CONFIG: SurfaceScenarioConfig = {
   radarEnabled: true,
   autoFire: true,
   shipEcmEnabled: true,
+  maxSamChannels: 3,
+  maxIlluminators: 2,
+  doctrine: "SSLS",
+  chaffEnabled: true,
+  ecmEnabled: true,
+  platformDecoysEnabled: true,
+  srbocEnabled: true,
+  srbocRounds: 12,
 };
 
 export function initialSurfaceLoadout(ship: ShipDefinition) {
