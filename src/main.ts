@@ -469,7 +469,8 @@ function allDefenseTargets() {
 
 function synchronizeAirDefenseTargets() {
   const activeIds = new Set<string>();
-  for (const contact of airCombat.shipDefenseContacts("blue-surface-ship")) {
+  const defenderEntity = airScenarioContext().blueShip;
+  for (const contact of airCombat.shipDefenseContacts(defenderEntity)) {
     activeIds.add(contact.entity.id);
     let target = airDefenseTargets.get(contact.entity.id);
     if (!target) {

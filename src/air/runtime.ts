@@ -39,6 +39,7 @@ import {
   recordEngagement,
   resolveEngagement,
 } from "../defense/engagement.js";
+import { opposingSides } from "../defense/allegiance.js";
 import type {
   AirCombatEvent,
   AirDecoyInstance,
@@ -419,10 +420,10 @@ export class AirCombatSystem {
     }
   }
 
-  shipDefenseContacts(targetId: string): AirShipDefenseContact[] {
+  shipDefenseContacts(defender: TargetableEntity): AirShipDefenseContact[] {
     return [
       ...this.aircraft
-        .filter((a) => a.alive && a.side === "red")
+        .filter((a) => a.alive && opposingSides(defender, a))
         .map((a) => ({
           entity: a,
           name: a.definition.name,
@@ -435,8 +436,8 @@ export class AirCombatSystem {
           (m) =>
             m.alive &&
             m.phase !== "destroyed" &&
-            m.side === "red" &&
-            m.targetId === targetId &&
+            opposingSides(defender, m) &&
+            m.targetId === defender.id &&
             m.definition.targets.includes("ship"),
         )
         .map((m) => ({
@@ -459,7 +460,7 @@ export class AirCombatSystem {
     a.nextScan = time + a.definition.sensor.updateInterval;
     const radarHealth = (a.subsystemHealth.get("radar") ?? 0) / 100;
     for (const target of this.entities(context)) {
-      if (target.side === a.side || target.id === a.id || !target.alive)
+      if (!opposingSides(a, target) || target.id === a.id || !target.alive)
         continue;
       const offset = target.position.clone().sub(a.position),
         range = offset.length(),
@@ -633,7 +634,7 @@ export class AirCombatSystem {
   }
   private incomingFor(a: AirPlatformInstance, time: number) {
     for (const m of this.missiles.filter(
-      (m) => m.alive && m.side !== a.side && m.targetId === a.id,
+      (m) => m.alive && opposingSides(a, m) && m.targetId === a.id,
     )) {
       const range = m.position.distanceTo(a.position),
         active =

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { opposingSides } from "../dist-test/defense/allegiance.js";
 import {
   adaptTargetableEntity,
   allTargets,
@@ -20,6 +21,9 @@ import {
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
+
+assert(opposingSides({ side: "blue" }, { side: "red" }), "opposing sides were not hostile");
+assert(!opposingSides({ side: "red" }, { side: "red" }), "same side was treated as hostile");
 
 const mesh = new THREE.Group();
 mesh.position.set(100, 0, 0);
