@@ -88,6 +88,8 @@ Launch-resource policy has moved out of `air/runtime.ts` into `src/air/launch-ma
 
 Mission-level OODA policy lives in `src/air/ooda.ts`: CAP and anti-ship selection consume only track classification and estimated position, defensive beaming and TTI consume only missile-warning tracks, and CAP return checks both hostile aircraft and hostile weapons still in flight. `verify:air-ooda` and `verify:air-resources` are now first-class npm scripts, and `package.json` has been expanded into maintainable multiline JSON.
 
+Track lifecycle now lives in `src/air/track-store.ts`. Estimated position, quality, and uncertainty propagate/age on every physics tick, while a radar scan only writes a fresh noisy measurement; a newly measured track is no longer incorrectly advanced by one full scan interval. Weak contacts plus missiles/decoys remain `unknown`, and stale or low-quality tracks expire through one shared policy. `verify:air-tracks` covers measurement, continuous propagation, classification, and expiry.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.
