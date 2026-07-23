@@ -10,6 +10,19 @@ export function seekerFieldOfViewEligible(input: {
   );
 }
 
+export function seekerMeasurementPoint(input: {
+  targetPosition: { x: number; y: number; z: number };
+  uncertainty: number;
+  noise: readonly [number, number, number];
+}) {
+  const uncertainty = Math.max(0, input.uncertainty);
+  return {
+    x: input.targetPosition.x + (input.noise[0] - 0.5) * uncertainty * 2,
+    y: input.targetPosition.y + (input.noise[1] - 0.5) * uncertainty * 0.7,
+    z: input.targetPosition.z + (input.noise[2] - 0.5) * uncertainty * 2,
+  };
+}
+
 export function radarSeekerCaptureProbability(input: {
   range: number;
   seekerRange: number;

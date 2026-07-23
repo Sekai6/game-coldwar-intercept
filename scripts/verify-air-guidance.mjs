@@ -1,6 +1,7 @@
 import {
   infraredSeekerCaptureProbability,
   radarSeekerCaptureProbability,
+  seekerMeasurementPoint,
   semiActiveIlluminationValid,
 } from "../dist-test/guidance.js";
 
@@ -86,11 +87,15 @@ const sidewinderOffAxis = infraredSeekerCaptureProbability({
   rearAspect: 1,
   targetAltitude: 20,
 });
+const exactMeasurement = seekerMeasurementPoint({ targetPosition:{x:10,y:5,z:-20}, uncertainty:0, noise:[.1,.9,.4] });
+const noisyMeasurement = seekerMeasurementPoint({ targetPosition:{x:10,y:5,z:-20}, uncertainty:4, noise:[.75,.25,.1] });
+const repeatedMeasurement = seekerMeasurementPoint({ targetPosition:{x:10,y:5,z:-20}, uncertainty:4, noise:[.75,.25,.1] });
 
 const result = {
   phoenix: { midcourse: phoenixMidcourse, terminal: phoenixTerminal, burnThrough: phoenixBurnThrough },
   sparrow: { illuminated: sparrowIlluminated, stale: sparrowStale },
   sidewinder: { rear: sidewinderRear, front: sidewinderFront, flare: sidewinderFlare, offAxis: sidewinderOffAxis },
+  measurement: { exactMeasurement, noisyMeasurement, repeatedMeasurement },
 };
 console.log(JSON.stringify(result, null, 2));
 if (
@@ -101,5 +106,8 @@ if (
   sparrowStale ||
   sidewinderRear <= sidewinderFront ||
   sidewinderFlare >= sidewinderRear ||
-  sidewinderOffAxis !== 0
+  sidewinderOffAxis !== 0 ||
+  exactMeasurement.x !== 10 || exactMeasurement.y !== 5 || exactMeasurement.z !== -20 ||
+  noisyMeasurement.x === 10 || noisyMeasurement.z === -20 ||
+  JSON.stringify(noisyMeasurement) !== JSON.stringify(repeatedMeasurement)
 ) process.exitCode = 1;
