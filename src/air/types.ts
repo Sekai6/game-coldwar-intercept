@@ -1,5 +1,5 @@
 import type * as THREE from "three";
-import type { CombatEntity, CombatSide } from "../combat-entity";
+import type { CombatEntity, CombatSide, TargetableEntity } from "../combat-entity";
 import type { EnemyType } from "../threats/catalog";
 import type { FormationStatus } from "./formation";
 
@@ -95,7 +95,7 @@ export interface AirPlatformDefinition {
 }
 
 export interface AirShipDefenseContact {
-  entity: CombatEntity;
+  entity: TargetableEntity;
   name: string;
   model: THREE.Group;
   template: EnemyType;
@@ -112,7 +112,7 @@ export interface AirTrack {
   classification: "unknown" | "aircraft" | "ship";
 }
 
-export interface AirPlatformInstance extends CombatEntity {
+export interface AirPlatformInstance extends TargetableEntity {
   kind: "aircraft";
   definition: AirPlatformDefinition;
   model: THREE.Group;
@@ -158,7 +158,7 @@ export interface AirHardpointInstance {
   trackQuality: number;
 }
 
-export interface AirMissileInstance extends CombatEntity {
+export interface AirMissileInstance extends TargetableEntity {
   kind: "missile";
   definition: AirWeaponDefinition;
   model: THREE.Group;

@@ -516,20 +516,10 @@ function synchronizeAirDefenseTargets() {
 }
 
 function resolveAirDefenseHit(target: DefenseTarget, damage: number) {
-  const id = target.entity?.id;
-  if (!id) return true;
-  if (target.entity?.kind === "aircraft") {
-    const result = airCombat.applyShipSamDamage(
-      id,
-      damage,
-      target.mesh.position.clone(),
-      elapsed,
-    );
-    if (result === "destroyed") airDefenseHardKills.add(id);
-    return result === "destroyed";
-  }
-  if (airCombat.destroyMissile(id)) airDefenseHardKills.add(id);
-  return true;
+  if (!target.entity) return true;
+  target.entity.applyDamage(damage, target.mesh.position.clone());
+  if (!target.entity.alive) airDefenseHardKills.add(target.entity.id);
+  return !target.entity.alive;
 }
 const illuminators: IlluminatorState[] = [
   { id: 1, azimuth: 0, target: null, lastTargetId: 0 },
@@ -7909,6 +7899,11 @@ function tick(now: number) {
   );
   canvas.dataset.airDefenseMissingEntityRefs = String(
     [...airDefenseTargets.values()].filter((target) => !target.entity).length,
+  );
+  canvas.dataset.airDefenseNonTargetableEntities = String(
+    [...airDefenseTargets.values()].filter(
+      (target) => typeof target.entity?.applyDamage !== "function",
+    ).length,
   );
   canvas.dataset.airDefenseAmbiguousKindFields = String(
     allDefenseTargets().filter((target) => "kind" in target).length,

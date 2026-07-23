@@ -100,6 +100,8 @@ The shipboard interception chain now consumes the minimal `DefenseTarget` contra
 
 Threat-profile identity is now consistently named `DefenseTarget.threatType` for game-scaled P-500, KSR-5, Harpoon, and similar catalog lookups. `CombatEntity.kind` is reserved for the `ship/aircraft/missile/decoy` entity category. Ship guidance, CIWS, HUD, and AAR are migrated, and the joint verifier rejects any reintroduced ambiguous defense-target `.kind` profile field.
 
+Aircraft and air-launched missiles now implement the standard `TargetableEntity.applyDamage` contract. A shipboard SAM hit no longer selects separate aircraft-damage and missile-destruction APIs; it submits damage to the entity and reads the resulting `alive` state. Aircraft callbacks preserve subsystem damage, abort, and loss-of-control behavior, while weapon callbacks terminate and hide the physical weapon.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.

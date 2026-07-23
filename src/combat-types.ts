@@ -1,5 +1,5 @@
 import type * as THREE from "three";
-import type { CombatEntity } from "./combat-entity";
+import type { TargetableEntity } from "./combat-entity";
 import type { EnemyType } from "./threats/catalog";
 import type { PlatformLaunchReservation } from "./platforms/types";
 
@@ -17,7 +17,7 @@ export type DefenseTarget = {
   phase: MissilePhase;
   threatType: EnemyType;
   rcs: number;
-  entity?: CombatEntity;
+  entity?: TargetableEntity;
   displayName?: string;
 };
 export type Missile = DefenseTarget & {
