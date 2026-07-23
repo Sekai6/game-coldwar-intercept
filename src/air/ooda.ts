@@ -1,8 +1,10 @@
 import type { AirMissionOrder, AirTrack } from "./types";
-import { selectDefenseObservation, type DefenseObservation } from "../defense/targeting.js";
+import type { DefenseObservation } from "../defense/targeting.js";
 import { selectConsumerTarget } from "../defense/consumer.js";
-import type { TargetableEntity } from "../combat-entity";
-import type { EngagementRecord } from "../defense/engagement";
+import type {
+  EngagementRecord,
+  EngagementSourceId,
+} from "../defense/engagement";
 
 export function airTrackObservation(track: AirTrack): DefenseObservation {
   return {
@@ -19,21 +21,22 @@ export function selectMissionTrack(input: {
   mission: AirMissionOrder;
   tracks: readonly AirTrack[];
   origin: { x: number; y: number; z: number };
-  consumer?: TargetableEntity;
-  engagements?: ReadonlyMap<string, EngagementRecord>;
+  engagements?: ReadonlyMap<EngagementSourceId, EngagementRecord>;
 }) {
-  const desiredClassification = input.mission === "anti-ship" ? "ship" : "aircraft";
+  const desiredClassification =
+    input.mission === "anti-ship" ? "ship" : "aircraft";
   const observations = input.tracks.map(airTrackObservation);
-  const policy = { acceptedKinds: [desiredClassification], distanceWeight: 1 } as const;
-  const selected = input.consumer
-    ? selectConsumerTarget({
-        entity: input.consumer,
-        scoringOrigin: input.origin,
-        observations,
-        policy,
-        engagements: input.engagements ?? new Map(),
-      })
-    : selectDefenseObservation(observations, input.origin, policy);
+  const policy = {
+    acceptedKinds: [desiredClassification],
+    distanceWeight: 1,
+  } as const;
+  const selected = selectConsumerTarget({
+    origin: input.origin,
+    observations,
+    policy,
+    engagements: input.engagements ?? new Map(),
+    acceptEngagement: (_observation, engagement) => !engagement?.shots,
+  });
   return selected
     ? input.tracks.find((track) => track.targetId === selected.id)
     : undefined;
@@ -85,10 +88,8 @@ export function defensiveManeuverFromWarning(input: {
       input.warningVelocity.z,
     ),
   );
-  const horizontal = Math.hypot(
-    input.warningVelocity.x,
-    input.warningVelocity.z,
-  ) || 1;
+  const horizontal =
+    Math.hypot(input.warningVelocity.x, input.warningVelocity.z) || 1;
   return {
     range,
     timeToImpact: range / speed,

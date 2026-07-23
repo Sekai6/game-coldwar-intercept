@@ -35,20 +35,3 @@ export function observationScore(
     distance * (policy.distanceWeight ?? 1)
   );
 }
-
-export function selectDefenseObservation(
-  observations: readonly DefenseObservation[],
-  origin: VectorObservation,
-  policy: DefenseTargetPolicy,
-): DefenseObservation | undefined {
-  let selected: DefenseObservation | undefined;
-  let selectedScore = -Infinity;
-  for (const observation of observations) {
-    const score = observationScore(observation, origin, policy);
-    if (score > selectedScore) {
-      selected = observation;
-      selectedScore = score;
-    }
-  }
-  return selected;
-}

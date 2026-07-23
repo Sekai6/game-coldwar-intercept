@@ -235,7 +235,8 @@ export class AirCombatSystem {
   private lastEventIndex = 0;
   private currentTime = 0;
   private standardDamageApplications = 0;
-  private readonly targetSources = new DefenseTargetRegistry<AirRuntimeTarget>();
+  private readonly targetSources =
+    new DefenseTargetRegistry<AirRuntimeTarget>();
   private externalTargets: readonly TargetableEntity[] = [];
   constructor(private scene: THREE.Scene) {
     this.targetSources.register(
@@ -822,7 +823,6 @@ export class AirCombatSystem {
       mission: a.mission,
       tracks: [...a.tracks.values()],
       origin: protectedEntity?.position ?? a.position,
-      consumer: a,
       engagements: a.engagements,
     });
   }

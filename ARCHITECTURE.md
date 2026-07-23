@@ -69,6 +69,8 @@ DefenseTargetSource registration
 
 Registration does not grant detection or fire-control quality. Sensors still create noisy tracks, and scoring consumes those observations rather than target transforms. Authorization is committed only after a real launcher, VLS cell, or aircraft hardpoint reserves the shot. A pre-release casualty, stale track, destroyed target, or launcher failure settles that commitment as `cancel`; physical weapons settle `hit` or `miss`. No adapter may spawn a shipboard SAM or increment a synthetic launch counter.
 
+`selectConsumerTarget()` is the only target-ranking entry point. It applies accepted target kinds, domain scoring, and an optional engagement-ledger filter before returning an observation. Air OODA excludes already committed targets during ranking so it can select the next valid contact; ship doctrine supplies its own shoot-look-reengage eligibility before using the same consumer.
+
 ## Adding a ship
 
 1. Implement a model builder that exposes the equipment anchors required by its declared launcher and sensors.

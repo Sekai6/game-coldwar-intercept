@@ -1,17 +1,16 @@
-import type { TargetableEntity } from "../combat-entity";
 import type { EngagementRecord, EngagementSourceId } from "./engagement";
-import type {
-  DefenseObservation,
-  DefenseTargetPolicy,
-} from "./targeting";
-import { observationScore, selectDefenseObservation } from "./targeting.js";
+import type { DefenseObservation, DefenseTargetPolicy } from "./targeting";
+import { observationScore } from "./targeting.js";
 
-export interface DefenseConsumer<TKey = EngagementSourceId> {
-  entity: TargetableEntity;
-  scoringOrigin?: { x: number; y: number; z: number };
+export interface DefenseConsumer {
+  origin: { x: number; y: number; z: number };
   observations: readonly DefenseObservation[];
   policy: DefenseTargetPolicy;
-  engagements: ReadonlyMap<TKey, EngagementRecord>;
+  engagements: ReadonlyMap<EngagementSourceId, EngagementRecord>;
+  acceptEngagement?: (
+    observation: DefenseObservation,
+    engagement: EngagementRecord | undefined,
+  ) => boolean;
   scoreObservation?: (observation: DefenseObservation) => number;
 }
 
@@ -21,31 +20,29 @@ export type RankedDefenseObservation = {
 };
 
 export function rankDefenseObservations(
-  consumer: DefenseConsumer<unknown>,
+  consumer: DefenseConsumer,
 ): RankedDefenseObservation[] {
   return consumer.observations
+    .filter((observation) =>
+      consumer.acceptEngagement
+        ? consumer.acceptEngagement(
+            observation,
+            consumer.engagements.get(observation.id),
+          )
+        : true,
+    )
     .map((observation) => ({
       observation,
       score:
         consumer.scoreObservation?.(observation) ??
-        observationScore(
-          observation,
-          consumer.scoringOrigin ?? consumer.entity.position,
-          consumer.policy,
-        ),
+        observationScore(observation, consumer.origin, consumer.policy),
     }))
     .filter((ranked) => Number.isFinite(ranked.score))
     .sort((left, right) => right.score - left.score);
 }
 
 export function selectConsumerTarget(
-  consumer: DefenseConsumer<unknown>,
+  consumer: DefenseConsumer,
 ): DefenseObservation | undefined {
-  if (consumer.scoreObservation)
-    return rankDefenseObservations(consumer)[0]?.observation;
-  return selectDefenseObservation(
-    consumer.observations,
-    consumer.scoringOrigin ?? consumer.entity.position,
-    consumer.policy,
-  );
+  return rankDefenseObservations(consumer)[0]?.observation;
 }

@@ -6103,7 +6103,7 @@ function updateCombat(dt: number) {
       adaptCombatTrack(track, defenseTargetForSource(track.sourceId)!),
     ),
     selectedDefenseObservation = selectConsumerTarget({
-      entity: airScenarioContext().blueShip,
+      origin: defender.position,
       observations: defenseObservations,
       policy: {
         acceptedKinds: ["missile", "aircraft", "ship", "unknown"],

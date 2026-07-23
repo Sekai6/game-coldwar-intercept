@@ -1,5 +1,8 @@
 import type * as THREE from "three";
-import type { EngagementRecord } from "../defense/engagement";
+import type {
+  EngagementRecord,
+  EngagementSourceId,
+} from "../defense/engagement";
 import type {
   CombatEntity,
   CombatSide,
@@ -153,7 +156,7 @@ export interface AirPlatformInstance extends TargetableEntity {
   state:
     "formation" | "engaging" | "defending" | "egress" | "disabled" | "crashed";
   targetId: string | null;
-  engagements: Map<string, EngagementRecord>;
+  engagements: Map<EngagementSourceId, EngagementRecord>;
   missileWarnings: Map<string, AirTrack>;
   hardpoints: AirHardpointInstance[];
   countermeasurePrograms: CountermeasureReleaseProgram[];
