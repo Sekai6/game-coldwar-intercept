@@ -28,7 +28,7 @@ export function missionShouldReturn(input: {
   observedThreats: number;
 }) {
   return (
-    input.mission === "cap" &&
+    (input.mission === "cap" || input.mission === "intercept") &&
     input.hasEngaged &&
     input.observedHostileAircraft === 0 &&
     input.observedThreats === 0
