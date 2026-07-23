@@ -18,6 +18,13 @@ export function targetForSource(
   return typeof sourceId === "string" ? aircraft.get(sourceId) : missiles[sourceId - 1];
 }
 
+export function sourceForTarget(
+  target: DefenseTarget,
+  missiles: Missile[],
+): number | string {
+  return target.entity?.id ?? missiles.findIndex((candidate) => candidate === target) + 1;
+}
+
 export function allTargets(
   missiles: Missile[],
   aircraft: Map<string, DefenseTarget>,

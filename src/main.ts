@@ -75,7 +75,7 @@ import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
 import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
 import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
-import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
+import { allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
@@ -456,10 +456,7 @@ function defenseTargetForSource(sourceId: number | string) {
 }
 
 function defenseSourceForTarget(target: DefenseTarget) {
-  return (
-    target.entity?.id ??
-    missiles.findIndex((candidate) => candidate === target) + 1
-  );
+  return sourceForTarget(target, missiles);
 }
 
 function defenseSourceSeed(sourceId: number | string) {
