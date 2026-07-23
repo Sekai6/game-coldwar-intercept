@@ -168,75 +168,65 @@ export type AarCategory =
   | "maneuver"
   | "system";
 export type AarEvent = { time: number; text: string; category: AarCategory };
+export type AarKinematics = {
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  pitch: number;
+  roll: number;
+  speed: number;
+  verticalSpeed: number;
+};
 export type AarSnapshot = {
   time: number;
-  ship: { x: number; y: number; z: number; heading: number; hull: number };
-  missiles: {
+  ship: AarKinematics & { hull: number };
+  missiles: (AarKinematics & {
     id: number;
-    x: number;
-    y: number;
-    z: number;
-    heading: number;
     phase: MissilePhase;
     threatType: EnemyType;
-  }[];
-  interceptors: {
+    parentId?: string;
+  })[];
+  interceptors: (AarKinematics & {
     id: number;
-    x: number;
-    y: number;
-    z: number;
-    heading: number;
     weapon: WeaponType;
     targetId: number | string;
-  }[];
-  chaff: { id: number; x: number; y: number; z: number; side: "threat" | "ship" | "platform" }[];
-  enemyPlatform: {
-    x: number;
-    y: number;
-    z: number;
-    heading: number;
+  })[];
+  chaff: (AarKinematics & {
+    id: number;
+    side: "threat" | "ship" | "platform";
+  })[];
+  enemyPlatform: (AarKinematics & {
     hull: number;
     destroyed: boolean;
     name: string;
-  } | null;
-  surfaceStrikes: {
+  }) | null;
+  surfaceStrikes: (AarKinematics & {
     id: number;
-    x: number;
-    y: number;
-    z: number;
-    heading: number;
     phase: "boost" | "midcourse" | "terminal" | "penetrating" | "destroyed";
-  }[];
-  aircraft: {
+    targetId?: string;
+  })[];
+  aircraft: (AarKinematics & {
     id: string;
     name: string;
     side: "blue" | "red";
-    x: number;
-    y: number;
-    z: number;
-    heading: number;
     state: string;
     mission: string;
     alive: boolean;
     structure: number;
-  }[];
-  airWeapons: {
+  })[];
+  airWeapons: (AarKinematics & {
     id: string;
     name: string;
     side: "blue" | "red";
-    x: number;
-    y: number;
-    z: number;
-    heading: number;
     phase: string;
     targetId: string;
-  }[];
-  airDecoys: {
+    shooterId: string;
+  })[];
+  airDecoys: (AarKinematics & {
     id: string;
     type: "chaff" | "flare";
-    x: number;
-    y: number;
-    z: number;
     alive: boolean;
-  }[];
+    side: "blue" | "red";
+  })[];
 };

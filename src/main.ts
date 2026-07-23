@@ -3220,12 +3220,29 @@ function captureAarSnapshot(force = false) {
   if (!force && elapsed + 1e-6 < nextAarSnapshot) return;
   const headingFromVelocity = (velocity: THREE.Vector3) =>
     velocity.lengthSq() > 1e-6 ? Math.atan2(velocity.x, -velocity.z) : 0;
+  const kinematics = (
+    position: THREE.Vector3,
+    velocity: THREE.Vector3,
+    rotation?: THREE.Euler,
+  ) => ({
+    x: position.x,
+    y: position.y,
+    z: position.z,
+    heading: headingFromVelocity(velocity),
+    pitch:
+      rotation?.x ??
+      Math.atan2(velocity.y, Math.hypot(velocity.x, velocity.z)),
+    roll: rotation?.z ?? 0,
+    speed: velocity.length() * 100,
+    verticalSpeed: velocity.y * 50,
+  });
+  const shipVelocity = new THREE.Vector3(1, 0, 0)
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), defender.rotation.y)
+    .multiplyScalar(shipSpeedKnots * 0.005144);
   const snapshot: AarSnapshot = {
     time: elapsed,
     ship: {
-      x: defender.position.x,
-      y: defender.position.y,
-      z: defender.position.z,
+      ...kinematics(defender.position, shipVelocity, defender.rotation),
       heading: defender.rotation.y,
       hull: hullIntegrity,
     },
@@ -3233,10 +3250,7 @@ function captureAarSnapshot(force = false) {
       .filter((m) => elapsed >= m.launchAt)
       .map((m, id) => ({
         id: id + 1,
-        x: m.mesh.position.x,
-        y: m.mesh.position.y,
-        z: m.mesh.position.z,
-        heading: headingFromVelocity(m.velocity),
+        ...kinematics(m.mesh.position, m.velocity, m.mesh.rotation),
         phase: m.phase,
         threatType: m.threatType,
       })),
@@ -3245,25 +3259,22 @@ function captureAarSnapshot(force = false) {
       .filter((x) => x.i.mesh.visible)
       .map((x) => ({
         id: x.id + 1,
-        x: x.i.mesh.position.x,
-        y: x.i.mesh.position.y,
-        z: x.i.mesh.position.z,
-        heading: headingFromVelocity(x.i.velocity),
+        ...kinematics(x.i.mesh.position, x.i.velocity, x.i.mesh.rotation),
         weapon: x.i.weapon,
         targetId: defenseSourceForTarget(x.i.target),
       })),
     chaff: chaffClouds.map((c, id) => ({
       id: c.serial || id + 1,
-      x: c.position.x,
-      y: c.position.y,
-      z: c.position.z,
+      ...kinematics(c.position, c.velocity),
       side: c.side,
     })),
     enemyPlatform: enemyPlatform
       ? {
-          x: enemyPlatform.model.position.x,
-          y: enemyPlatform.model.position.y,
-          z: enemyPlatform.model.position.z,
+          ...kinematics(
+            enemyPlatform.model.position,
+            enemyPlatform.velocity,
+            enemyPlatform.model.rotation,
+          ),
           heading: enemyPlatform.model.rotation.y,
           hull: enemyPlatform.hullIntegrity,
           destroyed: enemyPlatform.destroyed,
@@ -3272,20 +3283,15 @@ function captureAarSnapshot(force = false) {
       : null,
     surfaceStrikes: surfaceStrikeMissiles.map((missile) => ({
       id: missile.id,
-      x: missile.mesh.position.x,
-      y: missile.mesh.position.y,
-      z: missile.mesh.position.z,
-      heading: headingFromVelocity(missile.velocity),
+      ...kinematics(missile.mesh.position, missile.velocity, missile.mesh.rotation),
       phase: missile.phase,
+      targetId: "red-surface-ship",
     })),
     aircraft: airCombat.aircraft.map((aircraft) => ({
       id: aircraft.id,
       name: aircraft.definition.name,
       side: aircraft.side,
-      x: aircraft.position.x,
-      y: aircraft.position.y,
-      z: aircraft.position.z,
-      heading: headingFromVelocity(aircraft.velocity),
+      ...kinematics(aircraft.position, aircraft.velocity, aircraft.model.rotation),
       state: aircraft.state,
       mission: aircraft.mission,
       alive: aircraft.alive,
@@ -3295,20 +3301,17 @@ function captureAarSnapshot(force = false) {
       id: missile.id,
       name: missile.definition.name,
       side: missile.side,
-      x: missile.position.x,
-      y: missile.position.y,
-      z: missile.position.z,
-      heading: headingFromVelocity(missile.velocity),
+      ...kinematics(missile.position, missile.velocity, missile.model.rotation),
       phase: missile.phase,
       targetId: missile.targetId,
+      shooterId: missile.shooterId,
     })),
     airDecoys: airCombat.decoys.map((decoy) => ({
       id: decoy.id,
       type: decoy.decoyType,
-      x: decoy.position.x,
-      y: decoy.position.y,
-      z: decoy.position.z,
+      ...kinematics(decoy.position, decoy.velocity, decoy.model.rotation),
       alive: decoy.alive,
+      side: decoy.side,
     })),
   };
   if (
