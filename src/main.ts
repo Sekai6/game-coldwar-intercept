@@ -44,6 +44,8 @@ import {
 } from "./visual/threat-particles";
 import { createOceanSurface } from "./visual/ocean";
 import { createHighQualityEnvironment } from "./visual/high-quality-environment";
+import { createCinematicAtmospherePass } from "./visual/cinematic-atmosphere-pass";
+import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
   getEnemyPlatformDefinition,
@@ -185,6 +187,7 @@ const composer = new EffectComposer(renderer),
     0.38,
     0.78,
   ),
+  cinematicAtmospherePass = createCinematicAtmospherePass(),
   outputPass = new OutputPass();
 ssaoPass.kernelRadius = 8;
 ssaoPass.minDistance = 0.001;
@@ -198,6 +201,7 @@ composer.addPass(renderPass);
 composer.addPass(ssaoPass);
 composer.addPass(gtaoPass);
 composer.addPass(bloomPass);
+composer.addPass(cinematicAtmospherePass);
 composer.addPass(outputPass);
 canvas.dataset.renderPipeline = "webgl2-pbr-ssao-bloom-aces";
 canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
@@ -223,7 +227,7 @@ pmremGenerator.dispose();
 const ambientSky = new THREE.HemisphereLight(0x9cc7dd, 0x10212b, 1.55);
 scene.add(ambientSky);
 const sun = new THREE.DirectionalLight(0xffe3ad, 2.5);
-sun.position.set(-120, 200, 100);
+sun.position.copy(AFTERNOON_SUN_DIRECTION).multiplyScalar(360);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -250;
@@ -2922,6 +2926,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).onclick = () => {
   highQualityEnvironmentEnabled = highQualityEnvironmentInput.checked;
   highQualityEnvironment.setEnabled(highQualityEnvironmentEnabled);
+  cinematicAtmospherePass.enabled = highQualityEnvironmentEnabled;
   ocean.setHighQuality(highQualityEnvironmentEnabled);
   ssaoPass.enabled = !highQualityEnvironmentEnabled && innerWidth > 720;
   gtaoPass.enabled = highQualityEnvironmentEnabled;
@@ -2936,7 +2941,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   ambientSky.groundColor.setHex(highQualityEnvironmentEnabled ? 0x17232a : 0x10212b);
   sun.intensity = highQualityEnvironmentEnabled ? 3.45 : 2.5;
   sun.color.setHex(highQualityEnvironmentEnabled ? 0xffd09a : 0xffe3ad);
-  sun.position.set(-135, 520, 105);
+  sun.position.copy(AFTERNOON_SUN_DIRECTION).multiplyScalar(360);
   atmosphericFill.intensity = highQualityEnvironmentEnabled ? 0.62 : 0;
   scene.fog = highQualityEnvironmentEnabled
     ? new THREE.FogExp2(0x8298a4, 0.00072)
@@ -7619,10 +7624,13 @@ function tick(now: number) {
   canvas.dataset.environmentCloudCount = String(highQualityEnvironmentEnabled ? highQualityEnvironment.cloudCount : 0);
   canvas.dataset.environmentFogVolumeCount = String(highQualityEnvironmentEnabled ? highQualityEnvironment.fogVolumeCount : 0);
   canvas.dataset.environmentSunIntensity = sun.intensity.toFixed(2);
+  canvas.dataset.environmentSunAltitudeDeg = AFTERNOON_SUN_ALTITUDE_DEG.toFixed(1);
   canvas.dataset.environmentExposure = renderer.toneMappingExposure.toFixed(2);
   canvas.dataset.environmentShadowMode = renderer.shadowMap.type === THREE.PCFSoftShadowMap ? "PCF_SOFT" : "OTHER";
   canvas.dataset.environmentAoMode = gtaoPass.enabled ? "GTAO_DENOISED" : ssaoPass.enabled ? "SSAO" : "OFF";
   canvas.dataset.environmentIndirectLighting = scene.environment === bouncedLightEnvironment ? "PMREM_MULTI_BOUNCE" : "OFF";
+  canvas.dataset.environmentGodRays = cinematicAtmospherePass.enabled ? "RADIAL_COLOR_OCCLUSION_28" : "OFF";
+  canvas.dataset.environmentColorGrade = cinematicAtmospherePass.enabled ? "CINEMATIC_OCEAN" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
@@ -7886,6 +7894,26 @@ function tick(now: number) {
   clockEl.textContent = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(Math.floor(elapsed % 60)).padStart(2, "0")}`;
   updateShipWeaponVisuals(realDt);
   updateCamera();
+  // Directional lights have no emitter position, so project a distant point
+  // along the same afternoon direction used by clouds, ocean and shadows.
+  const sunWorldPoint = camera.position
+    .clone()
+    .addScaledVector(AFTERNOON_SUN_DIRECTION, camera.far * 0.72);
+  const sunScreen = sunWorldPoint.project(camera);
+  cinematicAtmospherePass.uniforms.sunPosition.value.set(
+    sunScreen.x * 0.5 + 0.5,
+    sunScreen.y * 0.5 + 0.5,
+  );
+  const sunVisible = sunScreen.z > -1 && sunScreen.z < 1 &&
+    sunScreen.x > -1.25 && sunScreen.x < 1.25 && sunScreen.y > -1.25 && sunScreen.y < 1.25;
+  cinematicAtmospherePass.uniforms.godRayStrength.value =
+    highQualityEnvironmentEnabled && sunVisible ? 1.9 : 0;
+  canvas.dataset.environmentSunScreen = `${sunScreen.x.toFixed(3)},${sunScreen.y.toFixed(3)},${sunScreen.z.toFixed(3)}`;
+  canvas.dataset.environmentGodRayStrength = cinematicAtmospherePass.uniforms.godRayStrength.value.toFixed(2);
+  canvas.dataset.environmentSunVisible = String(sunVisible);
+  const followedMissile = viewMode === 4 &&
+    (interceptors.some((item) => item.mesh.visible) || missiles.some((item) => item.mesh.visible));
+  cinematicAtmospherePass.uniforms.chromaticAberration.value = followedMissile ? 0.72 : 0;
   updateShipVisualLod();
   updateShipLights();
   defender.userData.smokePuffs?.forEach((puff: THREE.Mesh, index: number) => {
@@ -7939,6 +7967,7 @@ addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
+  cinematicAtmospherePass.uniforms.resolution.value.set(innerWidth, innerHeight);
   ocean.resize(innerWidth, innerHeight);
   ssaoPass.enabled = innerWidth > 720;
   if (!highQualityEnvironmentEnabled) ssaoPass.enabled = innerWidth > 720;

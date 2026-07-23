@@ -20,16 +20,22 @@ try {
     fogVolumes: Number(canvas.dataset.environmentFogVolumeCount ?? 0),
     aircraft: Number(canvas.dataset.aircraftTotal ?? 0),
     sunIntensity: Number(canvas.dataset.environmentSunIntensity ?? 0),
+    sunAltitudeDeg: Number(canvas.dataset.environmentSunAltitudeDeg ?? 0),
     exposure: Number(canvas.dataset.environmentExposure ?? 0),
     shadowMode: canvas.dataset.environmentShadowMode ?? "",
     highQualityOcean: canvas.dataset.highQualityOcean ?? "",
     oceanBackend: canvas.dataset.oceanBackend ?? "",
     aoMode: canvas.dataset.environmentAoMode ?? "",
     indirectLighting: canvas.dataset.environmentIndirectLighting ?? "",
+    godRays: canvas.dataset.environmentGodRays ?? "",
+    colorGrade: canvas.dataset.environmentColorGrade ?? "",
+    sunScreen: canvas.dataset.environmentSunScreen ?? "",
+    sunVisible: canvas.dataset.environmentSunVisible ?? "",
+    godRayStrength: Number(canvas.dataset.environmentGodRayStrength ?? 0),
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT" || result.highQualityOcean !== "true" || result.oceanBackend !== "webgl-hq-gerstner" || result.aoMode !== "GTAO_DENOISED" || result.indirectLighting !== "PMREM_MULTI_BOUNCE") process.exitCode = 1;
+  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.sunAltitudeDeg < 27 || result.sunAltitudeDeg > 29 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT" || result.highQualityOcean !== "true" || result.oceanBackend !== "webgl-hq-gerstner" || result.aoMode !== "GTAO_DENOISED" || result.indirectLighting !== "PMREM_MULTI_BOUNCE" || result.godRays !== "RADIAL_COLOR_OCCLUSION_28" || result.colorGrade !== "CINEMATIC_OCEAN") process.exitCode = 1;
 } finally {
   await browser.close();
 }

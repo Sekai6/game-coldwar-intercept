@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { AFTERNOON_SUN_DIRECTION } from "./sunlight";
 
 export type OceanBackend = "webgl-cpu-waves" | "webgl-hq-gerstner" | "webgpu-fft";
 
@@ -24,7 +25,7 @@ class WebglOcean implements OceanSurface {
       fog: true,
       uniforms: {
         time: { value: 0 },
-        sunDirection: { value: new THREE.Vector3(-135, 520, 105).normalize() },
+        sunDirection: { value: AFTERNOON_SUN_DIRECTION.clone() },
         sunColor: { value: new THREE.Color(0xffd09a) },
         deepColor: { value: new THREE.Color(0x071f2d) },
         shallowColor: { value: new THREE.Color(0x176477) },

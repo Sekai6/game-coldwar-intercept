@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { AFTERNOON_SUN_DIRECTION } from "./sunlight";
 
 export interface HighQualityEnvironment {
   readonly object: THREE.Group;
@@ -17,7 +18,7 @@ function seeded(index: number, salt: number) {
 export function createHighQualityEnvironment(): HighQualityEnvironment {
   const object = new THREE.Group();
   object.name = "high-quality-environment";
-  const atmosphericSunDirection = new THREE.Vector3(-135, 520, 105).normalize();
+  const atmosphericSunDirection = AFTERNOON_SUN_DIRECTION.clone();
 
   const skyMaterial = new THREE.ShaderMaterial({
     side: THREE.BackSide,
