@@ -82,6 +82,8 @@ Chaff and flares are ejected one physical object at a time using `Countermeasure
 
 Two-aircraft formations derive their three-dimensional slot from the leader's horizontal heading and use hysteretic `joined / separated / rejoining` states; a separated wingman prioritizes rejoin geometry. `src/air/damage.ts` centralizes continue, damaged-return, and loss-of-control mission-kill decisions so individual hit paths cannot simply delete an aircraft. `verify:air-formation-damage` covers slot geometry, break/rejoin transitions, and critical-system thresholds.
 
+Aircraft models now contain persistent smoke and fire nodes driven by subsystem damage. A mission-killed aircraft remains visible while tumbling and descending; sea impact preserves visible wreckage and an expanding surface splash instead of hiding the model. The joint-air HUD lists mission, formation state/error, best track quality, fuel, remaining weapons, and confirmable damage for each aircraft without leaking unobserved enemy subsystem health.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.

@@ -19,6 +19,31 @@ function finishAircraft(group: THREE.Group, length: number, engines: readonly TH
     glow.rotation.x = Math.PI / 2; glow.position.copy(p); glow.position.z += 0.8; group.add(glow); exhausts.push(glow);
   }
   group.userData.exhausts = exhausts;
+  const damageSmoke = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0x252a2b, transparent: true, opacity: 0, depthWrite: false }),
+  );
+  damageSmoke.position.set(0, 0.55, 1.8);
+  damageSmoke.visible = false;
+  group.add(damageSmoke);
+  const damageFire = new THREE.Mesh(
+    new THREE.SphereGeometry(0.3, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff7a2f, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  damageFire.position.set(0, 0.3, 1.35);
+  damageFire.visible = false;
+  group.add(damageFire);
+  const crashSplash = new THREE.Mesh(
+    new THREE.RingGeometry(0.5, 1.1, 24),
+    new THREE.MeshBasicMaterial({ color: 0xd9f2ed, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  crashSplash.rotation.x = -Math.PI / 2;
+  crashSplash.position.y = -0.2;
+  crashSplash.visible = false;
+  group.add(crashSplash);
+  group.userData.damageSmoke = damageSmoke;
+  group.userData.damageFire = damageFire;
+  group.userData.crashSplash = crashSplash;
   group.traverse(o => { if (o instanceof THREE.Mesh) o.castShadow = true; });
   return group;
 }

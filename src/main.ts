@@ -7827,6 +7827,7 @@ function tick(now: number) {
   }
   canvas.dataset.surfaceEsmCue = surfaceEsmCue.valid ? "valid" : "none";
   const air = airCombat.diagnostics();
+  const airVisuals = airCombat.visualDiagnostics();
   canvas.dataset.airCombatEnabled = String(airCombat.enabled);
   canvas.dataset.aircraftTotal = String(air.aircraft);
   canvas.dataset.aircraftLive = String(air.live);
@@ -7836,6 +7837,9 @@ function tick(now: number) {
   canvas.dataset.airWeaponsActive = String(air.activeMissiles);
   canvas.dataset.airCombatHits = String(air.hits);
   canvas.dataset.airCombatKills = String(air.kills);
+  canvas.dataset.aircraftSmoking = String(airVisuals.smoking);
+  canvas.dataset.aircraftBurning = String(airVisuals.burning);
+  canvas.dataset.aircraftCrashed = String(airVisuals.crashed);
   canvas.dataset.airChaff = String(air.chaff);
   canvas.dataset.airFlares = String(air.flares);
   canvas.dataset.airMissileWarnings = String(air.missileWarnings);
@@ -7921,7 +7925,21 @@ function tick(now: number) {
     .map((missile) => `${missile.definition.name}:${missile.phase}:${missile.seekerAcquired}`)
     .join(",");
   airStatusPanel.style.display = airCombat.enabled ? "block" : "none";
-  airStatusPanel.innerHTML = `<b>JOINT AIR PICTURE</b><span>BLUE <strong>${air.blueLive}</strong> / RED <strong>${air.redLive}</strong> / WEAPONS ${air.activeMissiles}</span><br><span>CHAFF ${air.chaff} / FLARES ${air.flares}</span>`;
+  const airRows = airCombat.aircraft
+    .map((aircraft) => {
+      const bestTrack = Math.max(0, ...[...aircraft.tracks.values()].map((track) => track.quality));
+      const fuel = Math.round((aircraft.fuel / aircraft.definition.flight.fuelSeconds) * 100);
+      const ammo = [...aircraft.ammo.values()].reduce((sum, count) => sum + count, 0);
+      const structure = Math.round(aircraft.subsystemHealth.get("structure") ?? 0);
+      const damage = aircraft.side === "blue"
+        ? `STR ${structure}%`
+        : aircraft.state === "disabled" || aircraft.state === "crashed"
+          ? "KILL CONFIRMED"
+          : "BDA UNKNOWN";
+      return `<small>${aircraft.definition.id} ${aircraft.formationIndex + 1} / ${aircraft.mission.toUpperCase()} / ${aircraft.formationStatus.toUpperCase()} ${Number.isFinite(aircraft.formationError) ? aircraft.formationError.toFixed(0) : "LOST"} / TQ ${Math.round(bestTrack * 100)}% / FUEL ${fuel}% / WPN ${ammo} / ${damage}</small>`;
+    })
+    .join("<br>");
+  airStatusPanel.innerHTML = `<b>JOINT AIR PICTURE</b><span>BLUE <strong>${air.blueLive}</strong> / RED <strong>${air.redLive}</strong> / WEAPONS ${air.activeMissiles}</span><br><span>CHAFF ${air.chaff} / FLARES ${air.flares} / SMOKE ${airVisuals.smoking} / FIRE ${airVisuals.burning}</span><br>${airRows}`;
   canvas.dataset.surfaceEsmCueQuality = surfaceEsmCue.quality.toFixed(3);
   canvas.dataset.surfaceEsmCueAge = Number.isFinite(surfaceEsmCue.age)
     ? surfaceEsmCue.age.toFixed(2)
