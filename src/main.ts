@@ -79,6 +79,7 @@ import { adaptCombatTrack, adaptTargetableEntity, allTargets, sourceForTarget, s
 import { moveAngle, moveToward, setMk10Elevation } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
+import { selectConsumerTarget } from "./defense/consumer.js";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -6011,8 +6012,8 @@ function updateCombat(dt: number) {
   pending.forEach((request) =>
     assignments.set(request.target, (assignments.get(request.target) ?? 0) + 1),
   );
-  const best = [...combatPicture.tracks.values()]
-    .filter((t) => {
+  const eligibleDefenseTracks = [...combatPicture.tracks.values()].filter(
+    (t) => {
       const missile = defenseTargetForSource(t.sourceId);
       return (
         missile &&
@@ -6023,12 +6024,30 @@ function updateCombat(dt: number) {
         (assignments.get(missile) ?? 0) <
           defensiveShotRequirement(missile, t.quality)
       );
-    })
-    .sort(
-      (a, b) =>
-        missileThreatScore(defenseTargetForSource(b.sourceId)!, b) -
-        missileThreatScore(defenseTargetForSource(a.sourceId)!, a),
-    )[0];
+    },
+  );
+  const defenseTrackBySource = new Map(
+      eligibleDefenseTracks.map((track) => [track.sourceId, track]),
+    ),
+    defenseObservations = eligibleDefenseTracks.map((track) =>
+      adaptCombatTrack(track, defenseTargetForSource(track.sourceId)!),
+    ),
+    selectedDefenseObservation = selectConsumerTarget({
+      entity: airScenarioContext().blueShip,
+      observations: defenseObservations,
+      policy: {
+        acceptedKinds: ["missile", "aircraft", "ship", "unknown"],
+      },
+      engagements,
+      scoreObservation: (observation) => {
+        const track = defenseTrackBySource.get(observation.id),
+          target = track ? defenseTargetForSource(track.sourceId) : undefined;
+        return track && target ? missileThreatScore(target, track) : -Infinity;
+      },
+    }),
+    best = selectedDefenseObservation
+      ? defenseTrackBySource.get(selectedDefenseObservation.id)
+      : undefined;
   const terminalSm2 = activeInterceptors
     .filter(
       (i) =>

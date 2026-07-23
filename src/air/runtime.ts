@@ -783,6 +783,8 @@ export class AirCombatSystem {
       mission: a.mission,
       tracks: [...a.tracks.values()],
       origin: protectedEntity?.position ?? a.position,
+      consumer: a,
+      engagements: a.engagements,
     });
   }
   private updateAircraft(

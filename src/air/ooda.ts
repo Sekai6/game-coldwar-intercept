@@ -1,5 +1,8 @@
 import type { AirMissionOrder, AirTrack } from "./types";
 import { selectDefenseObservation, type DefenseObservation } from "../defense/targeting.js";
+import { selectConsumerTarget } from "../defense/consumer.js";
+import type { TargetableEntity } from "../combat-entity";
+import type { EngagementRecord } from "../defense/engagement";
 
 export function airTrackObservation(track: AirTrack): DefenseObservation {
   return {
@@ -16,13 +19,21 @@ export function selectMissionTrack(input: {
   mission: AirMissionOrder;
   tracks: readonly AirTrack[];
   origin: { x: number; y: number; z: number };
+  consumer?: TargetableEntity;
+  engagements?: ReadonlyMap<string, EngagementRecord>;
 }) {
   const desiredClassification = input.mission === "anti-ship" ? "ship" : "aircraft";
-  const selected = selectDefenseObservation(
-    input.tracks.map(airTrackObservation),
-    input.origin,
-    { acceptedKinds: [desiredClassification], distanceWeight: 1 },
-  );
+  const observations = input.tracks.map(airTrackObservation);
+  const policy = { acceptedKinds: [desiredClassification], distanceWeight: 1 } as const;
+  const selected = input.consumer
+    ? selectConsumerTarget({
+        entity: input.consumer,
+        scoringOrigin: input.origin,
+        observations,
+        policy,
+        engagements: input.engagements ?? new Map(),
+      })
+    : selectDefenseObservation(observations, input.origin, policy);
   return selected
     ? input.tracks.find((track) => track.targetId === selected.id)
     : undefined;
