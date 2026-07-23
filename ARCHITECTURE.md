@@ -62,6 +62,8 @@ The simulation is organized around capabilities rather than ship-name checks.
 4. Aircraft consume only `AirTrack` estimates until a terminal seeker acquires. Defensive maneuver and countermeasure decisions may use detected incoming weapons, not hidden enemy truth.
    Launch range, weapon selection, and the initial command point are derived from the observed track position and velocity. Target truth is not used to seed midcourse guidance.
 5. Run `npm run verify:joint-air` and `npm run verify:air-strike-defense` serially. The gates prove the three aircraft weapon chains, physical shipboard launcher departure, hard-kill synchronization, and leaker damage with one Chromium context and a renderer-process limit.
+6. Joint mission completion waits for active air weapons and aircraft still executing combat orders. Anti-ship aircraft transition to `egress` after releasing their mission weapon; CAP transitions to `return` only after hostile aircraft and hostile air weapons are gone.
+7. Every AAR snapshot includes aircraft identity, side, 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects. These are runtime snapshots, not reconstructed event-log estimates.
 
 ## Adding an incoming missile
 

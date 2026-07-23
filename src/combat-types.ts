@@ -199,4 +199,34 @@ export type AarSnapshot = {
     z: number;
     phase: "boost" | "midcourse" | "terminal" | "penetrating" | "destroyed";
   }[];
+  aircraft: {
+    id: string;
+    name: string;
+    side: "blue" | "red";
+    x: number;
+    y: number;
+    z: number;
+    state: string;
+    mission: string;
+    alive: boolean;
+    structure: number;
+  }[];
+  airWeapons: {
+    id: string;
+    name: string;
+    side: "blue" | "red";
+    x: number;
+    y: number;
+    z: number;
+    phase: string;
+    targetId: string;
+  }[];
+  airDecoys: {
+    id: string;
+    type: "chaff" | "flare";
+    x: number;
+    y: number;
+    z: number;
+    alive: boolean;
+  }[];
 };

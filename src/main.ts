@@ -3588,6 +3588,36 @@ function captureAarSnapshot(force = false) {
       z: missile.mesh.position.z,
       phase: missile.phase,
     })),
+    aircraft: airCombat.aircraft.map((aircraft) => ({
+      id: aircraft.id,
+      name: aircraft.definition.name,
+      side: aircraft.side,
+      x: aircraft.position.x,
+      y: aircraft.position.y,
+      z: aircraft.position.z,
+      state: aircraft.state,
+      mission: aircraft.mission,
+      alive: aircraft.alive,
+      structure: aircraft.subsystemHealth.get("structure") ?? 0,
+    })),
+    airWeapons: airCombat.missiles.map((missile) => ({
+      id: missile.id,
+      name: missile.definition.name,
+      side: missile.side,
+      x: missile.position.x,
+      y: missile.position.y,
+      z: missile.position.z,
+      phase: missile.phase,
+      targetId: missile.targetId,
+    })),
+    airDecoys: airCombat.decoys.map((decoy) => ({
+      id: decoy.id,
+      type: decoy.decoyType,
+      x: decoy.position.x,
+      y: decoy.position.y,
+      z: decoy.position.z,
+      alive: decoy.alive,
+    })),
   };
   if (
     force &&
@@ -6653,6 +6683,7 @@ function updateCombat(dt: number) {
     launchSystemIdle &&
     surfaceLaunchQueue.length === 0 &&
     surfaceStrikeMissiles.every((m) => m.phase === "destroyed")
+    && (!airCombat.enabled || !airCombat.hasActiveCombat())
   ) {
     interceptors.forEach((i) => {
       i.mesh.visible = false;
@@ -7822,6 +7853,13 @@ function tick(now: number) {
   canvas.dataset.airDefenseTargetNames = airDefenseSamLaunches
     .map((interceptor) => interceptor.target.externalDisplayName)
     .join("|");
+  const latestAar = aarSnapshots[aarSnapshots.length - 1];
+  canvas.dataset.aarAircraftCount = String(latestAar?.aircraft.length ?? 0);
+  canvas.dataset.aarAirWeaponCount = String(latestAar?.airWeapons.length ?? 0);
+  canvas.dataset.aarAirDecoyCount = String(latestAar?.airDecoys.length ?? 0);
+  canvas.dataset.airMissionStates = airCombat.aircraft
+    .map((aircraft) => `${aircraft.id}:${aircraft.mission}`)
+    .join(",");
   canvas.dataset.airShipHits = String(airShipHits);
   canvas.dataset.airShipDamage = airShipDamage.toFixed(1);
   canvas.dataset.airWeaponLaunchLog = airCombat.events
