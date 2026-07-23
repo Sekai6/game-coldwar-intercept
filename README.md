@@ -23,13 +23,13 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 箔条与热焰弹按 `CountermeasureProgram.interval` 逐枚抛射，库存也在每个实体实际离机时扣减。飞行动力学核心位于 `src/air/flight-dynamics.ts`，统一计算速度相关过载能力、飞控健康、最大滚转率、俯仰/迎角限制、失速以及与油门和爬升相关的燃油流量。对应门槛为 `verify:air-countermeasures` 与 `verify:air-dynamics`。
 
-双机编队使用长机水平航向计算三维槽位，并通过 `joined / separated / rejoining` 迟滞状态避免边界抖动；失散僚机会优先重新集合。飞机毁伤处置由 `src/air/damage.ts` 统一判断继续任务、受损返航或失控任务击毁，避免每个命中路径自行删除飞机。`verify:air-formation-damage` 覆盖槽位、失散/重集合和关键系统毁伤门槛。
+双机编队使用长机水平航向计算三维槽位，并通过 `joined / separated / rejoining` 迟滞状态避免边界抖动；失散僚机会优先重新集合。飞机毁伤处置与模型局部命中分区由 `src/air/damage.ts` 统一处理，机鼻、发动机舱、外翼、尾部和中央机身分别作用于对应系统，不再随机抽取受损系统。`verify:air-formation-damage` 与 `verify:air-damage-geometry` 覆盖编队状态、关键系统门槛和命中区域。
 
 飞机模型包含随系统毁伤程度开启的持续烟雾与火焰节点；任务击毁后会保持可见失控翻滚和下降，撞海后保留残骸及扩散水面冲击，不再瞬间隐藏。联合空情面板逐机显示任务、编队状态/误差、最佳航迹质量、燃油、剩余武器和可确认战损；敌方未确认的内部健康不会泄露到 HUD。
 
 发射资源规则已从 `air/runtime.ts` 分离到 `src/air/launch-management.ts`：在飞与待释放武器共同占用数据链/照射通道，武器选择同时验证分类、射程、弹药、通道和兼容实体挂点。反制程序的冷却、库存与逐枚调度位于 `src/air/countermeasure-program.ts`。`scripts/verify-air-resources.mjs` 对两类资源进行无浏览器验证。
 
-任务级 OODA 规则位于 `src/air/ooda.ts`：CAP/反舰选敌只使用航迹分类与估计位置，防御横切和命中倒计时只使用导弹告警航迹，CAP 返航同时检查敌机和敌方在飞武器。`verify:air-ooda` 与 `verify:air-resources` 已加入统一 npm 脚本；`package.json` 也改为可维护的多行格式。
+任务级 OODA 规则位于 `src/air/ooda.ts`：CAP/反舰选敌只使用航迹分类与估计位置，防御横切和命中倒计时只使用导弹告警航迹，CAP 返航同时检查敌机和敌方在飞武器。没有有效水面航迹时，攻击机只保持预定任务航向或编队槽位，不读取敌舰真值位置。`verify:air-ooda` 与 `verify:air-resources` 已加入统一 npm 脚本。
 
 航迹生命周期位于 `src/air/track-store.ts`。估计位置、质量和不确定度现在每个物理 tick 连续外推/老化，雷达扫描只写入新的带误差测量；不再把刚生成的测量立即额外推进一个扫描周期。弱航迹与导弹/诱饵保持 `unknown` 分类，陈旧或低质量航迹按统一门槛删除。`verify:air-tracks` 验证测量、连续外推、分类和失效。
 

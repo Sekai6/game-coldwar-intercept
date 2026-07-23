@@ -35,6 +35,19 @@ export function missionShouldReturn(input: {
   );
 }
 
+export function noContactMissionDirection(input: {
+  mission: AirMissionOrder;
+  side: "blue" | "red";
+  currentHeading: { x: number; y: number; z: number };
+}) {
+  if (input.mission === "anti-ship") return { ...input.currentHeading };
+  return {
+    x: input.side === "blue" ? 0.25 : -0.25,
+    y: 0,
+    z: input.side === "blue" ? -1 : 1,
+  };
+}
+
 export function defensiveManeuverFromWarning(input: {
   aircraftPosition: { x: number; y: number; z: number };
   warningPosition: { x: number; y: number; z: number };
