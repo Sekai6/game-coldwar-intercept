@@ -7889,6 +7889,10 @@ function tick(now: number) {
     .filter((event) => event.text.includes("RELEASE AUTHORIZED"))
     .map((event) => event.text)
     .join("|");
+  canvas.dataset.airCountermeasureEventLog = airCombat.events
+    .filter((event) => event.kind === "countermeasure")
+    .map((event) => `${event.time.toFixed(2)}:${event.text}`)
+    .join("|");
   canvas.dataset.airHardpointStates = airCombat.aircraft
     .flatMap((aircraft) =>
       aircraft.hardpoints.map(

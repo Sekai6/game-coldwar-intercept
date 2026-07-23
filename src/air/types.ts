@@ -68,6 +68,7 @@ export interface AirPlatformDefinition {
     maxLoadFactor: number;
     maxRollRateDeg: number;
     maxPitchRateDeg: number;
+    maxAngleOfAttackDeg?: number;
     fuelSeconds: number;
   };
   sensor: AirSensorDefinition;
@@ -132,6 +133,12 @@ export interface AirPlatformInstance extends CombatEntity {
   shotAt: Set<string>;
   missileWarnings: Map<string, AirTrack>;
   hardpoints: AirHardpointInstance[];
+  countermeasurePrograms: {
+    type: "chaff" | "flare";
+    remaining: number;
+    nextReleaseAt: number;
+    interval: number;
+  }[];
 }
 
 export interface AirHardpointInstance {
