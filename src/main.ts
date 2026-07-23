@@ -2461,9 +2461,6 @@ function destroyMissileVisual(
   }
   flashCombat(effect);
 }
-function ciwsTracer(target: THREE.Vector3, origin: THREE.Vector3) {
-  createCiwsTracer(scene, target, origin);
-}
 for (const threat of initialSurfaceThreats())
   addMissile(threat.position, threat.threatType);
 let running = true,
@@ -4826,7 +4823,7 @@ function updateCiws() {
   const mountOrigin = new THREE.Vector3();
   target.mount.model!.getWorldPosition(mountOrigin);
   mountOrigin.y += 1.2;
-  ciwsTracer(target.m.mesh.position, mountOrigin);
+  createCiwsTracer(scene, target.m.mesh.position, mountOrigin);
   const saturation = Math.max(1, candidates.length),
     basePk =
       (Math.max(0.08, 0.46 / saturation) -
@@ -5551,7 +5548,7 @@ function updateSurfaceCombat(
         event.targetBearing,
         event.traverseError,
       );
-      ciwsTracer(missile.mesh.position, event.origin);
+      createCiwsTracer(scene, missile.mesh.position, event.origin);
       log(
         `${missile.target.definition.name} POINT DEFENSE FIRE / ${String(missile.target.model.userData.lastPointDefenseMount).toUpperCase()} / HARPOON ${missile.id} / SHOT ${event.engagement}/${event.maximumEngagements} / TOF ${event.timeOfFlight.toFixed(2)}s / PK ${Math.round(event.pk * 100)}% / READY BURSTS ${event.engagementsRemaining}`,
       );
