@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { EnemyType } from "../combat-types";
+import type { ShipDefinition } from "../ship-types";
 
 export type InitialSurfaceThreat = {
   position: THREE.Vector3;
@@ -21,6 +22,16 @@ export const DEFAULT_SURFACE_CONFIG: SurfaceScenarioConfig = {
   autoFire: true,
   shipEcmEnabled: true,
 };
+
+export function initialSurfaceLoadout(ship: ShipDefinition) {
+  return {
+    rim67: ship.ammo.rim67,
+    sm2mr: ship.ammo.sm2mr,
+    sm2er: ship.ammo.sm2er,
+    ciws: ship.ammo.ciws,
+    surfaceStrike: ship.surfaceStrike?.magazine ?? 0,
+  };
+}
 
 export const DEFAULT_SURFACE_SCENARIO: readonly InitialSurfaceThreat[] = [
   { position: new THREE.Vector3(-85, 18, -210), threatType: "P-500" as EnemyType },

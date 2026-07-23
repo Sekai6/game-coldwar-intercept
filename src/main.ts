@@ -74,7 +74,7 @@ import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
 import { createAirShipBridge } from "./air/ship-bridge";
-import { DEFAULT_SURFACE_CONFIG, initialSurfaceThreats } from "./scenarios/surface-scenarios";
+import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot } from "./ship-defense/engagement-runtime";
@@ -402,6 +402,7 @@ type PlatformFirePlan = {
 };
 let platformFirePlan: PlatformFirePlan | null = null;
 const surfaceStrikeMissiles: SurfaceStrikeMissile[] = [];
+let initialLoadout = initialSurfaceLoadout(activeShip);
 const surfaceLaunchQueue: {
   hardpoint: ModelWeaponHardpoint;
   launchAt: number;
@@ -414,7 +415,7 @@ let surfaceHardpointState = new Map<
     string,
     "ready" | "reserved" | "fired"
   >(),
-  surfaceStrikeAmmo = activeShip.surfaceStrike?.magazine ?? 0,
+  surfaceStrikeAmmo = initialLoadout.surfaceStrike,
   nextSurfaceLaunch = 0,
   nextSurfaceDecision = 0,
   autoSurfaceStrike = true,
@@ -2274,6 +2275,7 @@ function configureShip(shipClass: ShipClass) {
     rotation = defender.rotation.clone();
   scene.remove(defender);
   activeShip = definition;
+  initialLoadout = initialSurfaceLoadout(activeShip);
   defender = activeShip.build();
   if (activeShip.fixedSensorFaces)
     defender.userData.fixedSensorFaceHealth = createFaceHealth(
@@ -2468,9 +2470,9 @@ let running = true,
   elapsed = 0,
   simAccumulator = 0,
   last = performance.now(),
-  ammo = activeShip.ammo.rim67,
-  sm2Ammo = activeShip.ammo.sm2mr,
-  sm2erAmmo = activeShip.ammo.sm2er,
+  ammo = initialLoadout.rim67,
+  sm2Ammo = initialLoadout.sm2mr,
+  sm2erAmmo = initialLoadout.sm2er,
   selectedWeapon: WeaponType = activeShip.launcher.compatibleWeapons[0],
   autoFire = DEFAULT_SURFACE_CONFIG.autoFire,
   radarEnabled = DEFAULT_SURFACE_CONFIG.radarEnabled,
@@ -2478,7 +2480,7 @@ let running = true,
   selectedTargetId = 1,
   hullIntegrity = 100,
   ciwsEnabled = true,
-  ciwsRounds = 1200,
+  ciwsRounds = initialLoadout.ciws,
   lastCiwsShot = -10,
   nextSamLaunch = 0,
   leakers = 0,
