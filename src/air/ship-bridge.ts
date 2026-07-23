@@ -10,18 +10,40 @@ export type AirShipBridgeDependencies = {
   applyBlueDamage: (damage: number, hitPoint: THREE.Vector3) => void;
 };
 
+export type ShipTargetDependencies = {
+  id: string;
+  side: "blue" | "red";
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  radarCrossSection: number;
+  alive: boolean;
+  applyDamage: (damage: number, hitPoint: THREE.Vector3) => void;
+};
+
+export function createShipTarget(deps: ShipTargetDependencies): TargetableEntity {
+  return {
+    id: deps.id,
+    side: deps.side,
+    kind: "ship",
+    position: deps.position,
+    velocity: deps.velocity,
+    radarCrossSection: deps.radarCrossSection,
+    infraredSignature: 0.8,
+    alive: deps.alive,
+    applyDamage: deps.applyDamage,
+  };
+}
+
 export function createAirShipBridge(deps: AirShipBridgeDependencies) {
-  const blueShip: TargetableEntity = {
+  const blueShip = createShipTarget({
     id: "blue-surface-ship",
     side: "blue",
-    kind: "ship",
     position: deps.bluePosition,
     velocity: deps.blueVelocity,
     radarCrossSection: deps.blueRcs,
-    infraredSignature: 0.8,
     alive: deps.blueAlive,
     applyDamage: deps.applyBlueDamage,
-  };
+  });
   return {
     blueShip,
     redShip: deps.redShip,

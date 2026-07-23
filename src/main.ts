@@ -73,7 +73,7 @@ import { pointDefenseCapability } from "./platforms/defense";
 import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
-import { createAirShipBridge } from "./air/ship-bridge";
+import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
 import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
@@ -2687,21 +2687,19 @@ function airScenarioContext() {
       -Math.sin(defender.rotation.y) * shipSpeedKnots * 0.005144,
     );
   const redShip: TargetableEntity | null = enemyPlatform
-    ? {
+    ? createShipTarget({
         id: "red-surface-ship",
         side: "red",
-        kind: "ship",
         position: enemyPlatform.model.position,
         velocity: enemyPlatform.velocity,
         radarCrossSection: enemyPlatform.definition.radarCrossSection,
-        infraredSignature: 0.8,
         alive: !enemyPlatform.destroyed,
         applyDamage: (damage) => {
           if (!enemyPlatform) return;
           enemyPlatform.hullIntegrity = Math.max(0, enemyPlatform.hullIntegrity - damage);
           if (enemyPlatform.hullIntegrity <= 0) enemyPlatform.destroyed = true;
         },
-      }
+      })
     : null;
   const bridge = createAirShipBridge({
     bluePosition: defender.position,
