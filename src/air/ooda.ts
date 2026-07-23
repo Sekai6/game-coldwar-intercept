@@ -23,13 +23,15 @@ export function selectMissionTrack(input: {
 
 export function missionShouldReturn(input: {
   mission: AirMissionOrder;
-  hostileAircraft: number;
-  hostileWeapons: number;
+  hasEngaged: boolean;
+  observedHostileAircraft: number;
+  observedThreats: number;
 }) {
   return (
     input.mission === "cap" &&
-    input.hostileAircraft === 0 &&
-    input.hostileWeapons === 0
+    input.hasEngaged &&
+    input.observedHostileAircraft === 0 &&
+    input.observedThreats === 0
   );
 }
 
