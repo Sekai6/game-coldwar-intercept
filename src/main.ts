@@ -3833,6 +3833,11 @@ const speedButton = controlButton("TIME: 1X", () => {
   timeScale = timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1;
   speedButton.textContent = `TIME: ${timeScale}X`;
 });
+controlButton("END EXERCISE / AAR", () => {
+  if (!running || missionEnded) return;
+  log("EXERCISE TERMINATED / AAR REQUESTED");
+  finishMission(hullIntegrity > 0, "EXERCISE TERMINATED / PARTIAL AAR");
+});
 controlButton("SCENARIO SETUP", () => {
   running = false;
   sandbox.style.display = "block";
