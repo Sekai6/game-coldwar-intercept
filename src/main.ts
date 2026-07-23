@@ -42,6 +42,7 @@ import {
   type ThreatParticleTrail,
 } from "./visual/threat-particles";
 import { createOceanSurface } from "./visual/ocean";
+import { createHighQualityEnvironment } from "./visual/high-quality-environment";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
   getEnemyPlatformDefinition,
@@ -205,6 +206,9 @@ sun.shadow.camera.bottom = -250;
 scene.add(sun);
 const ocean = createOceanSurface();
 scene.add(ocean.object);
+const highQualityEnvironment = createHighQualityEnvironment();
+scene.add(highQualityEnvironment.object);
+let highQualityEnvironmentEnabled = false;
 const airCombat = new AirCombatSystem(scene);
 let airShipHits = 0,
   airShipDamage = 0;
@@ -2354,6 +2358,12 @@ sandbox.insertBefore(tacviewExportField, sandbox.querySelector("#sbStart"));
 const tacviewAutoExportInput = tacviewExportField.querySelector(
   "input",
 ) as HTMLInputElement;
+const highQualityField = document.createElement("label");
+highQualityField.className = "sandbox-toggle";
+highQualityField.innerHTML =
+  '<input id="sbHighQualityEnvironment" type="checkbox"> HIGH QUALITY ENVIRONMENT / SKY + CLOUDS + VOLUMETRIC FOG';
+sandbox.insertBefore(highQualityField, sandbox.querySelector("#sbStart"));
+const highQualityEnvironmentInput = highQualityField.querySelector("input") as HTMLInputElement;
 const airPresetField = document.createElement("label");
 airPresetField.className = "sandbox-field";
 airPresetField.innerHTML = `<span>AIR PRESET</span><select id="sbAirPreset">${Object.entries(
@@ -2877,6 +2887,12 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   true,
 );
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).onclick = () => {
+  highQualityEnvironmentEnabled = highQualityEnvironmentInput.checked;
+  highQualityEnvironment.setEnabled(highQualityEnvironmentEnabled);
+  scene.fog = highQualityEnvironmentEnabled
+    ? new THREE.FogExp2(0x8298a4, 0.00072)
+    : new THREE.Fog(0x06111b, 180, 900);
+  scene.background = highQualityEnvironmentEnabled ? null : new THREE.Color(0x06111b);
   missiles.forEach((m) => {
     scene.remove(m.mesh, m.path);
     m.path.geometry.dispose();
@@ -7550,6 +7566,9 @@ function tick(now: number) {
   const air = airCombat.diagnostics();
   const airVisuals = airCombat.visualDiagnostics();
   canvas.dataset.airCombatEnabled = String(airCombat.enabled);
+  canvas.dataset.highQualityEnvironment = String(highQualityEnvironmentEnabled);
+  canvas.dataset.environmentCloudCount = String(highQualityEnvironmentEnabled ? highQualityEnvironment.cloudCount : 0);
+  canvas.dataset.environmentFogVolumeCount = String(highQualityEnvironmentEnabled ? highQualityEnvironment.fogVolumeCount : 0);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
   canvas.dataset.pureAirCombat = String(pureAirCombatStart);
@@ -7766,6 +7785,7 @@ function tick(now: number) {
     ? surfaceEsmCue.age.toFixed(2)
     : "infinity";
   ocean.update(elapsed);
+  highQualityEnvironment.update(elapsed, camera.position);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
     ewThreat = missiles.some((m) => m.mesh.visible && m.phase === "terminal"),
     ecmHealth = subsystemHealth("ecm");
