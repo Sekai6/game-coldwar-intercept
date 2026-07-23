@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { CombatEntity, CombatSide } from "../combat-entity";
+import type { EnemyType } from "../threats/catalog";
 
 export type AirMissionOrder = "cap" | "intercept" | "escort" | "anti-ship" | "egress" | "return";
 export type AirGuidance = "active-radar" | "semi-active-radar" | "infrared" | "anti-ship-radar";
@@ -23,6 +24,7 @@ export interface AirWeaponDefinition {
   damage: number;
   proximityRadius: number;
   countermeasureResistance: number;
+  shipDefenseTemplate: EnemyType;
 }
 
 export interface AirSensorDefinition {
@@ -65,6 +67,18 @@ export interface AirPlatformDefinition {
   countermeasures: { chaff: number; flares: number; program: CountermeasureProgram };
   loadout: Readonly<Record<AirWeaponId, number>>;
   buildModel: () => THREE.Group;
+  shipDefenseTemplate: EnemyType;
+}
+
+export interface AirShipDefenseContact {
+  id: string;
+  name: string;
+  category: "aircraft" | "missile";
+  model: THREE.Group;
+  velocity: THREE.Vector3;
+  radarCrossSection: number;
+  template: EnemyType;
+  phase: "inbound" | "boost" | "midcourse" | "terminal";
 }
 
 export interface AirTrack {

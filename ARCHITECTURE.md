@@ -10,7 +10,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/air/catalog.ts`: game-scaled F-14A, Tu-16K, A-6E, AIM-54A, AIM-7F, AIM-9L, KSR-5, and AGM-84A capability data.
 - `src/air/models.ts`: reusable procedural aircraft geometry and stable animation anchors.
 - `src/air/runtime.ts`: formation flight, point-mass energy limits, airborne OODA, uncertain radar tracks, guidance, countermeasures, and aircraft/air-weapon damage. It exposes incoming anti-ship missiles but does not own or spawn shipboard weapons.
-- `src/main.ts` registers air-launched anti-ship missiles as externally driven defensive targets. They enter the existing `CombatPicture`, fire-control, engagement, magazine, Mk 10/Mk 41 animation, interceptor-guidance, and hit-resolution path. Hard kills are synchronized back to the owning air-missile entity.
+- `src/main.ts` registers hostile aircraft and air-launched anti-ship missiles as externally driven defensive contacts. Both enter the existing `CombatPicture`, fire-control, engagement, magazine, Mk 10/Mk 41 animation, interceptor-guidance, and hit-resolution path. Missiles resolve as hard kills; aircraft receive subsystem damage and may survive, lose control, or crash. Contact behavior is selected by catalog-owned defense templates, never an aircraft/weapon ID branch in `main.ts`.
 - `src/ship-catalog.ts`: ship registration and per-class capability metadata.
 - `src/ship-types.ts`: ship capability contracts shared by the catalog and runtime.
 - `src/models/long-beach.ts`: CGN-9 procedural model and Mk 10 visual components.
@@ -60,6 +60,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 2. Supply a procedural model whose forward axis is `-Z`. Optional moving parts are exposed through generic `userData` animation anchors.
 3. Declare every weapon in the loadout and `AIR_WEAPONS`. Target class, range, guidance, seeker, turn limit, damage, and countermeasure resistance remain weapon data.
 4. Aircraft consume only `AirTrack` estimates until a terminal seeker acquires. Defensive maneuver and countermeasure decisions may use detected incoming weapons, not hidden enemy truth.
+   Launch range, weapon selection, and the initial command point are derived from the observed track position and velocity. Target truth is not used to seed midcourse guidance.
 5. Run `npm run verify:joint-air` and `npm run verify:air-strike-defense` serially. The gates prove the three aircraft weapon chains, physical shipboard launcher departure, hard-kill synchronization, and leaker damage with one Chromium context and a renderer-process limit.
 
 ## Adding an incoming missile

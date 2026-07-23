@@ -24,6 +24,9 @@ export type Missile = {
   aimOffset: THREE.Vector3;
   bank: number;
   externalAirMissileId?: string;
+  externalAirEntityId?: string;
+  externalAirCategory?: "aircraft" | "missile";
+  externalDisplayName?: string;
   platformLaunch?: {
     reservation: PlatformLaunchReservation;
     released: boolean;
