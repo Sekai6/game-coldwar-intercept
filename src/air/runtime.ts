@@ -2,30 +2,83 @@ import * as THREE from "three";
 import type { CombatEntity, TargetableEntity } from "../combat-entity";
 import { AIR_WEAPONS } from "./catalog";
 import { airRadarFactors, missileWarningProbability } from "./sensors";
-import { infraredSeekerCaptureProbability, radarSeekerCaptureProbability, seekerMeasurementPoint, semiActiveIlluminationValid } from "./guidance";
+import {
+  infraredSeekerCaptureProbability,
+  radarSeekerCaptureProbability,
+  seekerMeasurementPoint,
+  semiActiveIlluminationValid,
+} from "./guidance";
 import { consumeFuel, stepFlightDynamics } from "./flight-dynamics";
 import { formationSlot, updateFormationStatus } from "./formation";
-import { airDamageDisposition, resolveAircraftHit, stepAircraftLossOfControl } from "./damage";
+import {
+  airDamageDisposition,
+  resolveAircraftHit,
+  stepAircraftLossOfControl,
+} from "./damage";
 import { chooseAirWeapon } from "./launch-management";
-import { advanceCountermeasurePrograms, queueCountermeasureProgram } from "./countermeasure-program";
-import { defensiveManeuverFromWarning, missionShouldReturn, noContactMissionDirection, selectMissionTrack } from "./ooda";
+import {
+  advanceCountermeasurePrograms,
+  queueCountermeasureProgram,
+} from "./countermeasure-program";
+import {
+  defensiveManeuverFromWarning,
+  missionShouldReturn,
+  noContactMissionDirection,
+  selectMissionTrack,
+} from "./ooda";
 import { advanceAirTracks, createAirMeasurement } from "./track-store";
-import { airToAirGuidancePoint, airToAirMissilePhase, shouldContinueAfterTargetLoss } from "./missile-runtime";
+import {
+  airToAirGuidancePoint,
+  airToAirMissilePhase,
+  shouldContinueAfterTargetLoss,
+} from "./missile-runtime";
 import { updateAntiShipGuidance } from "../anti-ship-guidance";
 import { radarCountermeasureContest } from "../radar-countermeasures";
-import { hasCommittedEngagement, recordEngagement } from "../defense/engagement.js";
-import type { AirCombatEvent, AirDecoyInstance, AirMissileInstance, AirPlatformInstance, AirScenarioContext, AirShipDefenseContact, AirSpawn, AirSubsystem, AirTrack, AirWeaponId } from "./types";
+import {
+  hasCommittedEngagement,
+  recordEngagement,
+  resolveEngagement,
+} from "../defense/engagement.js";
+import type {
+  AirCombatEvent,
+  AirDecoyInstance,
+  AirMissileInstance,
+  AirPlatformInstance,
+  AirScenarioContext,
+  AirShipDefenseContact,
+  AirSpawn,
+  AirSubsystem,
+  AirTrack,
+  AirWeaponId,
+} from "./types";
 
 const UP = new THREE.Vector3(0, 1, 0);
 const clamp = THREE.MathUtils.clamp;
 type AirRuntimeTarget = TargetableEntity | AirDecoyInstance;
-const resultRangeFor = (missile: AirMissileInstance, target: TargetableEntity) => missile.position.distanceTo(target.position);
-const angle = (a: THREE.Vector3, b: THREE.Vector3) => THREE.MathUtils.radToDeg(a.angleTo(b));
-function roll(seed: number) { const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
-function rotateToward(current: THREE.Vector3, desired: THREE.Vector3, radians: number) {
-  const delta = current.angleTo(desired); if (delta < 1e-5) return desired.clone();
-  const axis = current.clone().cross(desired); if (axis.lengthSq() < 1e-6) axis.copy(UP); else axis.normalize();
-  return current.clone().applyAxisAngle(axis, Math.min(delta, radians)).normalize();
+const resultRangeFor = (
+  missile: AirMissileInstance,
+  target: TargetableEntity,
+) => missile.position.distanceTo(target.position);
+const angle = (a: THREE.Vector3, b: THREE.Vector3) =>
+  THREE.MathUtils.radToDeg(a.angleTo(b));
+function roll(seed: number) {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+function rotateToward(
+  current: THREE.Vector3,
+  desired: THREE.Vector3,
+  radians: number,
+) {
+  const delta = current.angleTo(desired);
+  if (delta < 1e-5) return desired.clone();
+  const axis = current.clone().cross(desired);
+  if (axis.lengthSq() < 1e-6) axis.copy(UP);
+  else axis.normalize();
+  return current
+    .clone()
+    .applyAxisAngle(axis, Math.min(delta, radians))
+    .normalize();
 }
 
 function instantiate(
@@ -39,9 +92,10 @@ function instantiate(
     Object.entries(spawn.definition.loadout) as [AirWeaponId, number][],
   );
   const hardpoints = spawn.definition.hardpoints.map((definition) => {
-    const weaponId = definition.compatibleWeapons.find(
-      (candidate) => (remaining.get(candidate) ?? 0) > 0,
-    ) ?? null;
+    const weaponId =
+      definition.compatibleWeapons.find(
+        (candidate) => (remaining.get(candidate) ?? 0) > 0,
+      ) ?? null;
     const mountedModel = weaponId
       ? missileModel(AIR_WEAPONS[weaponId].guidance)
       : null;
@@ -61,7 +115,7 @@ function instantiate(
       ignitionDelay: definition.ignitionDelay,
       weaponId,
       mountedModel,
-      state: weaponId ? "ready" as const : "empty" as const,
+      state: weaponId ? ("ready" as const) : ("empty" as const),
       releaseAt: Infinity,
       targetId: null,
       commandPoint: new THREE.Vector3(),
@@ -70,80 +124,1513 @@ function instantiate(
     };
   });
   const id = `${spawn.side}-${spawn.definition.id}-${serial}`;
-  return { id, side:spawn.side, kind:"aircraft", position:model.position, velocity:spawn.heading.clone().normalize().multiplyScalar(spawn.definition.flight.cruiseSpeed), radarCrossSection:spawn.definition.radarCrossSection, infraredSignature:spawn.definition.infraredSignature, alive:true, applyDamage:(damage,point)=>applyDamage(id,damage,point), definition:spawn.definition, model, formationId:spawn.formationId, formationIndex:spawn.formationIndex, leaderId:spawn.leaderId ?? null, protectedId:null, mission:spawn.mission??spawn.definition.mission, fuel:spawn.definition.flight.fuelSeconds, heading:spawn.heading.clone().normalize(), desiredDirection:spawn.heading.clone().normalize(), bank:0, tracks:new Map(), missileWarnings:new Map(), ammo:new Map(Object.entries(spawn.definition.loadout) as [AirWeaponId,number][]), subsystemHealth:new Map<AirSubsystem,number>([["structure",100],["left-engine",100],["right-engine",100],["radar",100],["flight-control",100],["weapons",100]]), nextOoda:0, nextScan:0, nextCountermeasure:0, chaff:spawn.definition.countermeasures.chaff, flares:spawn.definition.countermeasures.flares, state:"formation", targetId:null, engagements:new Map(), hardpoints, countermeasurePrograms:[], formationStatus:spawn.formationIndex===0?"joined":"rejoining", formationError:0 };
+  return {
+    id,
+    side: spawn.side,
+    kind: "aircraft",
+    position: model.position,
+    velocity: spawn.heading
+      .clone()
+      .normalize()
+      .multiplyScalar(spawn.definition.flight.cruiseSpeed),
+    radarCrossSection: spawn.definition.radarCrossSection,
+    infraredSignature: spawn.definition.infraredSignature,
+    alive: true,
+    applyDamage: (damage, point) => applyDamage(id, damage, point),
+    definition: spawn.definition,
+    model,
+    formationId: spawn.formationId,
+    formationIndex: spawn.formationIndex,
+    leaderId: spawn.leaderId ?? null,
+    protectedId: null,
+    mission: spawn.mission ?? spawn.definition.mission,
+    fuel: spawn.definition.flight.fuelSeconds,
+    heading: spawn.heading.clone().normalize(),
+    desiredDirection: spawn.heading.clone().normalize(),
+    bank: 0,
+    tracks: new Map(),
+    missileWarnings: new Map(),
+    ammo: new Map(
+      Object.entries(spawn.definition.loadout) as [AirWeaponId, number][],
+    ),
+    subsystemHealth: new Map<AirSubsystem, number>([
+      ["structure", 100],
+      ["left-engine", 100],
+      ["right-engine", 100],
+      ["radar", 100],
+      ["flight-control", 100],
+      ["weapons", 100],
+    ]),
+    nextOoda: 0,
+    nextScan: 0,
+    nextCountermeasure: 0,
+    chaff: spawn.definition.countermeasures.chaff,
+    flares: spawn.definition.countermeasures.flares,
+    state: "formation",
+    targetId: null,
+    engagements: new Map(),
+    hardpoints,
+    countermeasurePrograms: [],
+    formationStatus: spawn.formationIndex === 0 ? "joined" : "rejoining",
+    formationError: 0,
+  };
 }
 
 function missileModel(guidance: AirMissileInstance["definition"]["guidance"]) {
-  const g=new THREE.Group(), radar=guidance!=="infrared", mat=new THREE.MeshStandardMaterial({color:radar?0xe6e3d6:0xd5d8d2,metalness:.55,roughness:.36});
-  const body=new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,2.2,10),mat);body.rotation.x=Math.PI/2;g.add(body);
-  const nose=new THREE.Mesh(new THREE.ConeGeometry(.16,.65,10),new THREE.MeshStandardMaterial({color:radar?0x31383a:0x25201c,metalness:.4,roughness:.3}));nose.rotation.x=-Math.PI/2;nose.position.z=-1.42;g.add(nose);
-  const flame=new THREE.Mesh(new THREE.ConeGeometry(.13,1.25,8,1,true),new THREE.MeshBasicMaterial({color:0xffa34f,transparent:true,opacity:.72,blending:THREE.AdditiveBlending,depthWrite:false}));flame.rotation.x=Math.PI/2;flame.position.z=1.7;g.add(flame);g.userData.flame=flame;return g;
+  const g = new THREE.Group(),
+    radar = guidance !== "infrared",
+    mat = new THREE.MeshStandardMaterial({
+      color: radar ? 0xe6e3d6 : 0xd5d8d2,
+      metalness: 0.55,
+      roughness: 0.36,
+    });
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.2, 2.2, 10),
+    mat,
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.16, 0.65, 10),
+    new THREE.MeshStandardMaterial({
+      color: radar ? 0x31383a : 0x25201c,
+      metalness: 0.4,
+      roughness: 0.3,
+    }),
+  );
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -1.42;
+  g.add(nose);
+  const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.13, 1.25, 8, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffa34f,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  flame.rotation.x = Math.PI / 2;
+  flame.position.z = 1.7;
+  g.add(flame);
+  g.userData.flame = flame;
+  return g;
 }
 
 export class AirCombatSystem {
-  readonly group=new THREE.Group(); readonly aircraft:AirPlatformInstance[]=[]; readonly missiles:AirMissileInstance[]=[]; readonly decoys:AirDecoyInstance[]=[]; readonly events:AirCombatEvent[]=[];
-  enabled=true; countermeasuresEnabled=true; private serial=0; private lastEventIndex=0; private currentTime=0; private standardDamageApplications=0;
-  constructor(private scene:THREE.Scene){this.group.name="air-combat";scene.add(this.group);}
-  reset(blueShip:CombatEntity, redShip:CombatEntity|null,spawns:readonly AirSpawn[]){ this.disposeObjects(); this.serial=0; this.standardDamageApplications=0;
-    const protectedFormations=new Map<string,string>();
-    for(const spawn of spawns){const p=instantiate(spawn,++this.serial,(id,damage,point)=>{const target=this.aircraft.find(candidate=>candidate.id===id&&candidate.alive);if(target)this.applyAircraftDamage(target,damage,point,this.currentTime);});if(spawn.protectedFormationId)protectedFormations.set(p.id,spawn.protectedFormationId);this.aircraft.push(p);this.group.add(p.model);}
-    for(const p of this.aircraft){ if(p.formationIndex>0){const leader=this.aircraft.find(x=>x.formationId===p.formationId&&x.formationIndex===0);p.leaderId=leader?.id??null;} }
-    for(const [escortId,protectedFormationId] of protectedFormations){const escort=this.aircraft.find(aircraft=>aircraft.id===escortId),protectedLeader=this.aircraft.find(aircraft=>aircraft.formationId===protectedFormationId&&aircraft.formationIndex===0);if(escort&&protectedLeader){escort.protectedId=protectedLeader.id;escort.leaderId=protectedLeader.id;}}
-    this.group.userData.context={blueShip,redShip};
+  readonly group = new THREE.Group();
+  readonly aircraft: AirPlatformInstance[] = [];
+  readonly missiles: AirMissileInstance[] = [];
+  readonly decoys: AirDecoyInstance[] = [];
+  readonly events: AirCombatEvent[] = [];
+  enabled = true;
+  countermeasuresEnabled = true;
+  private serial = 0;
+  private lastEventIndex = 0;
+  private currentTime = 0;
+  private standardDamageApplications = 0;
+  constructor(private scene: THREE.Scene) {
+    this.group.name = "air-combat";
+    scene.add(this.group);
   }
-  private disposeObjects(){for(const o of [...this.aircraft.map(x=>x.model),...this.missiles.map(x=>x.model),...this.decoys.map(x=>x.model)]){this.group.remove(o);o.traverse(c=>{if(c instanceof THREE.Mesh){c.geometry.dispose();const m=c.material;if(Array.isArray(m))m.forEach(x=>x.dispose());else m.dispose();}});}this.aircraft.length=this.missiles.length=this.decoys.length=this.events.length=0;this.lastEventIndex=0;}
-  dispose(){this.disposeObjects();this.scene.remove(this.group);}
-  private emit(time:number,kind:AirCombatEvent["kind"],text:string){this.events.push({time,kind,text});}
-  drainEvents(){const out=this.events.slice(this.lastEventIndex);this.lastEventIndex=this.events.length;return out;}
-  private entities(context:AirScenarioContext){return [...this.aircraft.filter(a=>a.alive),...this.missiles.filter(m=>m.alive),...this.decoys.filter(d=>d.alive),context.blueShip,...(context.redShip?.alive?[context.redShip]:[])];}
-  update(time:number,dt:number,context:AirScenarioContext){if(!this.enabled)return;this.currentTime=time;this.group.userData.context=context;this.updateDecoys(dt);this.updateCountermeasurePrograms(time);for(const a of this.aircraft){this.updateFormationState(a);this.updateAircraft(a,time,dt,context);this.updateDamageVisuals(a,time);}this.updateHardpointReleases(time);for(const m of this.missiles)this.updateMissile(m,time,dt,context);}
-
-  private updateDamageVisuals(aircraft:AirPlatformInstance,time:number){const structure=(aircraft.subsystemHealth.get("structure")??100)/100,left=(aircraft.subsystemHealth.get("left-engine")??100)/100,right=(aircraft.subsystemHealth.get("right-engine")??100)/100,severity=clamp(1-Math.min(structure,(left+right)/2),0,1),smoke=aircraft.model.userData.damageSmoke as THREE.Mesh|undefined,fire=aircraft.model.userData.damageFire as THREE.Mesh|undefined,splash=aircraft.model.userData.crashSplash as THREE.Mesh|undefined;if(smoke){smoke.visible=severity>.18||aircraft.state==="disabled"||aircraft.state==="crashed";(smoke.material as THREE.MeshBasicMaterial).opacity=smoke.visible?.25+severity*.45:0;smoke.scale.setScalar(1+severity*2+Math.sin(time*4+aircraft.formationIndex)*.12);}if(fire){fire.visible=severity>.48||aircraft.state==="disabled";(fire.material as THREE.MeshBasicMaterial).opacity=fire.visible?.5+severity*.35:0;fire.scale.setScalar(.8+severity*.9+Math.sin(time*8)*.1);}if(splash&&aircraft.state==="crashed"){splash.visible=true;const age=(aircraft.model.userData.crashAge as number|undefined)??0,updated=age+.05;aircraft.model.userData.crashAge=updated;splash.scale.setScalar(1+updated*2.2);(splash.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.85-updated*.18);}}
-
-  private updateFormationState(aircraft:AirPlatformInstance){if(aircraft.formationIndex===0){aircraft.formationStatus="joined";aircraft.formationError=0;return;}const leader=this.aircraft.find(candidate=>candidate.id===aircraft.leaderId&&candidate.alive);if(!leader){aircraft.formationStatus="separated";aircraft.formationError=Infinity;return;}const slot=formationSlot({leader:leader.position,leaderHeading:leader.heading,lateral:aircraft.formationIndex%2?12:-12,vertical:2,trail:10}),slotPosition=new THREE.Vector3(slot.x,slot.y,slot.z);aircraft.formationError=aircraft.position.distanceTo(slotPosition);aircraft.formationStatus=updateFormationStatus({current:aircraft.formationStatus,error:aircraft.formationError,joinDistance:8,breakDistance:45});if((aircraft.formationStatus==="separated"||aircraft.formationStatus==="rejoining")&&aircraft.state!=="defending"){aircraft.desiredDirection.copy(slotPosition).sub(aircraft.position).normalize();aircraft.state="formation";}}
-
-  shipDefenseContacts(targetId:string):AirShipDefenseContact[]{return [
-    ...this.aircraft.filter(a=>a.alive&&a.side==="red").map(a=>({entity:a,name:a.definition.name,model:a.model,template:a.definition.shipDefenseTemplate,phase:"inbound" as const})),
-    ...this.missiles.filter(m=>m.alive&&m.phase!=="destroyed"&&m.side==="red"&&m.targetId===targetId&&m.definition.targets.includes("ship")).map(m=>({entity:m,name:m.definition.name,model:m.model,template:m.definition.shipDefenseTemplate,phase:m.phase as "boost"|"midcourse"|"terminal"})),
-  ];}
-  private updateTracks(a:AirPlatformInstance,time:number,dt:number,context:AirScenarioContext){advanceAirTracks(a.tracks,dt,time);if(time<a.nextScan||!a.alive)return;a.nextScan=time+a.definition.sensor.updateInterval;const radarHealth=(a.subsystemHealth.get("radar")??0)/100;
-    for(const target of this.entities(context)){if(target.side===a.side||target.id===a.id||!target.alive)continue;const offset=target.position.clone().sub(a.position),range=offset.length(),ecm=target.kind==="aircraft"?(target as AirPlatformInstance).definition.ecm:undefined,factors=airRadarFactors({sensorAltitude:a.position.y,targetAltitude:target.position.y,range,nominalRange:a.definition.sensor.range,targetRcs:target.radarCrossSection,radarHealth,precision:a.definition.sensor.precision,ecmStrength:ecm?.strength,burnThroughRange:ecm?.burnThroughRange}),boresight=angle(a.heading,offset);
-      const key=(time/a.definition.sensor.updateInterval|0)+this.serial+target.id.length+a.id.length;if(range<=factors.effectiveRange&&boresight<=a.definition.sensor.fieldOfViewDeg*.5&&roll(key)<factors.probability){const first=!a.tracks.has(target.id),measurement=createAirMeasurement({targetId:target.id,targetKind:target.kind,position:target.position,velocity:target.velocity,quality:factors.quality,precision:a.definition.sensor.precision,time,noise:[roll(key+2),roll(key+3),roll(key+4)]});a.tracks.set(target.id,measurement);if(first)this.emit(time,"detect",`${a.definition.name} DETECT / ${measurement.classification.toUpperCase()} / TQ ${Math.round(measurement.quality*100)}%${range>factors.horizon?" / HORIZON DEGRADED":""}${ecm&&!factors.burned?" / ECM":""}`);}
-    }}
-  private chooseWeapon(a:AirPlatformInstance,classification:AirTrack["classification"],range:number){return chooseAirWeapon({aircraft:a,missiles:this.missiles,classification,range,weaponCatalog:AIR_WEAPONS});}
-  private launch(a:AirPlatformInstance,target:CombatEntity,track:AirTrack,time:number){const range=a.position.distanceTo(track.position),weapon=this.chooseWeapon(a,track.classification,range),hardpoint=weapon?a.hardpoints.find(candidate=>candidate.state==="ready"&&candidate.weaponId===weapon.id):undefined;if(!weapon||!hardpoint||(a.subsystemHealth.get("weapons")??0)<=5)return false;hardpoint.state="reserved";hardpoint.targetId=target.id;hardpoint.commandPoint.copy(track.position).addScaledVector(track.velocity,weapon.datalinkInterval);hardpoint.commandVelocity.copy(track.velocity);hardpoint.trackQuality=track.quality;hardpoint.releaseAt=time+hardpoint.releaseDelay;hardpoint.state="releasing";recordEngagement(a.engagements,target.id);this.emit(time,"maneuver",`${a.definition.name} ${hardpoint.id.toUpperCase()} RELEASE AUTHORIZED / ${weapon.name}`);return true;}
-  private updateHardpointReleases(time:number){for(const aircraft of this.aircraft){for(const hardpoint of aircraft.hardpoints){if(hardpoint.state!=="releasing"||time<hardpoint.releaseAt||!hardpoint.weaponId||!hardpoint.mountedModel||!hardpoint.targetId)continue;const weapon=AIR_WEAPONS[hardpoint.weaponId],model=hardpoint.mountedModel,worldPosition=model.getWorldPosition(new THREE.Vector3()),worldQuaternion=model.getWorldQuaternion(new THREE.Quaternion()),ejection=new THREE.Vector3(0,-1.15,.18).applyQuaternion(aircraft.model.quaternion);aircraft.model.remove(model);this.group.add(model);model.position.copy(worldPosition);model.quaternion.copy(worldQuaternion);const velocity=aircraft.velocity.clone().add(ejection),missile:AirMissileInstance={id:`air-weapon-${++this.serial}`,side:aircraft.side,kind:"missile",position:model.position,velocity,radarCrossSection:.12,infraredSignature:2.2,alive:true,applyDamage:()=>{missile.alive=false;missile.phase="destroyed";missile.model.visible=false;},definition:weapon,model,shooterId:aircraft.id,targetId:hardpoint.targetId,age:0,phase:"boost",commandPoint:hardpoint.commandPoint.clone(),nextDatalink:time,seekerAcquired:false,illuminationLostAt:null,softKillResolved:false,ignitionDelay:hardpoint.ignitionDelay,releaseAge:0,nextSeekerAttempt:time};this.missiles.push(missile);aircraft.ammo.set(weapon.id,Math.max(0,(aircraft.ammo.get(weapon.id)??0)-1));hardpoint.weaponId=null;hardpoint.mountedModel=null;hardpoint.targetId=null;hardpoint.state="empty";if(aircraft.mission==="anti-ship"){aircraft.mission="egress";aircraft.state="egress";}this.emit(time,"launch",`${aircraft.definition.name} LAUNCH ${weapon.name} / ${hardpoint.id.toUpperCase()} / TRACK TQ ${Math.round(hardpoint.trackQuality*100)}%`);}}}
-  private incomingFor(a:AirPlatformInstance,time:number){for(const m of this.missiles.filter(m=>m.alive&&m.side!==a.side&&m.targetId===a.id)){const range=m.position.distanceTo(a.position),active=m.seekerAcquired||(m.definition.guidance==="active-radar"&&range<=m.definition.seekerRange),visual=range<=28,detected=visual||roll(this.serial+m.id.length+a.id.length+Math.floor(time*2))<missileWarningProbability(range,active);if(detected){const warningRange=active?150:70,quality=visual?.95:clamp(.4+(1-range/warningRange)*.5,.3,.92),uncertainty=(1-quality)*12;a.missileWarnings.set(m.id,{targetId:m.id,position:m.position.clone().add(new THREE.Vector3((roll(time+m.id.length)-.5)*uncertainty,0,(roll(time+m.id.length+1)-.5)*uncertainty)),velocity:m.velocity.clone(),quality,uncertainty,lastUpdate:time,classification:"unknown"});}}for(const [id,warning] of a.missileWarnings)if(time-warning.lastUpdate>2.5)a.missileWarnings.delete(id);return [...a.missileWarnings.values()].map(warning=>({warning,missile:this.missiles.find(m=>m.id===warning.targetId)})).filter((contact):contact is {warning:AirTrack;missile:AirMissileInstance}=>!!contact.missile?.alive).sort((x,y)=>x.warning.position.distanceTo(a.position)-y.warning.position.distanceTo(a.position))[0];}
-  private deployCountermeasures(a:AirPlatformInstance,m:AirMissileInstance,time:number){const program=a.definition.countermeasures.program,isIr=m.definition.guidance==="infrared",type=isIr?"flare":"chaff",count=queueCountermeasureProgram({aircraft:a,type,requestedCount:isIr?program.flareBurst:program.chaffBurst,interval:program.interval,cooldown:program.cooldown,time});if(count>0)this.emit(time,"countermeasure",`${a.definition.name} ${type.toUpperCase()} PROGRAM / ${count} ROUNDS / ${program.interval.toFixed(2)}s INTERVAL`);}
-  private updateCountermeasurePrograms(time:number){for(const aircraft of this.aircraft){const result=advanceCountermeasurePrograms(aircraft.countermeasurePrograms,{chaff:aircraft.chaff,flares:aircraft.flares},time);aircraft.countermeasurePrograms=result.programs;aircraft.chaff=result.inventory.chaff;aircraft.flares=result.inventory.flares;for(const type of result.releases){this.spawnDecoy(aircraft,type);this.emit(time,"countermeasure",`${aircraft.definition.name} ${type.toUpperCase()} EJECT`);}}}
-  private spawnDecoy(a:AirPlatformInstance,type:"chaff"|"flare"){const mesh=new THREE.Mesh(type==="flare"?new THREE.SphereGeometry(.28,8,6):new THREE.IcosahedronGeometry(.6,1),new THREE.MeshBasicMaterial({color:type==="flare"?0xffb05d:0xb8e8e4,transparent:true,opacity:.8,blending:THREE.AdditiveBlending,depthWrite:false}));mesh.position.copy(a.position).add(new THREE.Vector3((roll(this.serial)-.5)*1.4,-.4,1));const d:AirDecoyInstance={id:`${type}-${++this.serial}`,side:a.side,kind:"decoy",position:mesh.position,velocity:a.velocity.clone().multiplyScalar(.65).add(new THREE.Vector3((roll(this.serial)-.5)*1.5,-.3,(roll(this.serial+1)-.5)*1.5)),radarCrossSection:type==="chaff"?18:.02,infraredSignature:type==="flare"?4:.02,alive:true,decoyType:type,model:mesh,age:0,life:type==="chaff"?14:5};this.decoys.push(d);this.group.add(mesh);}
-  private missionTrackFor(a:AirPlatformInstance,context:AirScenarioContext){const protectedEntity=a.protectedId?this.targetById(a.protectedId,context):undefined;return selectMissionTrack({mission:a.mission,tracks:[...a.tracks.values()],origin:protectedEntity?.position??a.position});}
-  private updateAircraft(a:AirPlatformInstance,time:number,dt:number,context:AirScenarioContext){if(!a.alive){if(a.state==="disabled"){const loss=stepAircraftLossOfControl({position:a.position,velocity:a.velocity,roll:a.model.rotation.z,dt});a.position.set(loss.position.x,loss.position.y,loss.position.z);a.velocity.set(loss.velocity.x,loss.velocity.y,loss.velocity.z);a.model.rotation.z=loss.roll;if(loss.crashed){a.state="crashed";a.model.visible=true;this.emit(time,"kill",`${a.definition.name} IMPACTED SEA / WRECKAGE VISIBLE`);}}return;}this.updateTracks(a,time,dt,context);if(a.fuel<=0)a.mission="return";const observedTracks=[...a.tracks.values()].filter(track=>time-track.lastUpdate<=8&&track.quality>=.04),observedHostileAircraft=observedTracks.filter(track=>track.classification==="aircraft").length,observedThreats=observedTracks.filter(track=>track.classification==="unknown").length+a.missileWarnings.size;if(missionShouldReturn({mission:a.mission,hasEngaged:a.engagements.size>0,observedHostileAircraft,observedThreats})){a.mission="return";a.state="egress";}if(a.mission==="egress"||a.mission==="return"){a.state="egress";a.desiredDirection.set(a.side==="blue"?-1:1,.04,1).normalize();}
-    const incoming=this.incomingFor(a,time);if(incoming){const defense=defensiveManeuverFromWarning({aircraftPosition:a.position,warningPosition:incoming.warning.position,warningVelocity:incoming.warning.velocity,side:a.formationIndex?1:-1});a.state="defending";a.desiredDirection.set(defense.direction.x,defense.direction.y,defense.direction.z);if(this.countermeasuresEnabled&&defense.timeToImpact<a.definition.countermeasures.program.triggerTti)this.deployCountermeasures(a,incoming.missile,time);if(a.mission==="anti-ship"&&time>=a.nextOoda){a.nextOoda=time+1;const track=this.missionTrackFor(a,context),ship=track?this.targetById(track.targetId,context):undefined;if(ship&&track&&!hasCommittedEngagement(a.engagements,ship.id))this.launch(a,ship,track,time);}}
-    else if(a.mission!=="egress"&&a.mission!=="return"&&time>=a.nextOoda){a.nextOoda=time+1.0;const track=this.missionTrackFor(a,context),target=track?this.targetById(track.targetId,context):undefined;a.targetId=target?.id??null;
-      if(target){const track=a.tracks.get(target.id)!;a.state="engaging";a.desiredDirection.copy(track.position).sub(a.position).normalize();if(track.quality>=.22&&!hasCommittedEngagement(a.engagements,target.id))this.launch(a,target,track,time);}
-      else {const leader=this.aircraft.find(x=>x.id===a.leaderId&&x.alive);if(leader){const slot=formationSlot({leader:leader.position,leaderHeading:leader.heading,lateral:a.formationIndex%2?12:-12,vertical:2,trail:10});a.desiredDirection.set(slot.x,slot.y,slot.z).sub(a.position).normalize();}else {const direction=noContactMissionDirection({mission:a.mission,side:a.side,currentHeading:a.heading});a.desiredDirection.set(direction.x,direction.y,direction.z).normalize();}}}
-    const fc=(a.subsystemHealth.get("flight-control")??0)/100,eng=((a.subsystemHealth.get("left-engine")??0)+(a.subsystemHealth.get("right-engine")??0))/200,flight=a.definition.flight,speed=a.velocity.length(),desiredBank=clamp(Math.atan2(a.heading.clone().cross(a.desiredDirection).y,a.heading.dot(a.desiredDirection))*3,-1.15,1.15),flightStep=stepFlightDynamics({speed,currentBank:THREE.MathUtils.radToDeg(a.bank),desiredBank:THREE.MathUtils.radToDeg(desiredBank),flightPathAngleDeg:THREE.MathUtils.radToDeg(Math.asin(clamp(a.heading.y,-1,1))),desiredFlightPathAngleDeg:THREE.MathUtils.radToDeg(Math.asin(clamp(a.desiredDirection.y,-1,1))),flightControlHealth:fc,engineHealth:eng,defending:a.state==="defending",dt,envelope:flight});a.bank=THREE.MathUtils.degToRad(flightStep.bank);const pitchLimited=a.heading.clone();pitchLimited.y=Math.sin(THREE.MathUtils.degToRad(THREE.MathUtils.radToDeg(Math.asin(clamp(a.heading.y,-1,1)))+flightStep.pitchDelta));pitchLimited.normalize();const horizontalDesired=a.desiredDirection.clone();horizontalDesired.y=pitchLimited.y;horizontalDesired.normalize();const next=rotateToward(a.heading,horizontalDesired,THREE.MathUtils.degToRad(flightStep.maximumTurnRateDeg)*dt);a.heading.copy(next);if(flightStep.stalled){a.heading.y=Math.max(-.18,a.heading.y-.25*dt);a.state="defending";}a.fuel=consumeFuel(a.fuel,flightStep.fuelBurn);const newSpeed=flightStep.speed;a.velocity.copy(a.heading).multiplyScalar(newSpeed);a.position.addScaledVector(a.velocity,dt);a.position.y=Math.max(.25,a.position.y);a.model.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,-1),a.heading);a.model.rotateZ(-a.bank);
-    const wings=a.model.userData.variableWings as THREE.Object3D[]|undefined;if(wings){const sweep=THREE.MathUtils.lerp(.28,.9,clamp((newSpeed-flight.cruiseSpeed)/(flight.maxSpeed-flight.cruiseSpeed),0,1));wings.forEach((w,i)=>w.rotation.y=(i?.0:0)+(i%2?1:-1)*sweep);}
+  reset(
+    blueShip: CombatEntity,
+    redShip: CombatEntity | null,
+    spawns: readonly AirSpawn[],
+  ) {
+    this.disposeObjects();
+    this.serial = 0;
+    this.standardDamageApplications = 0;
+    const protectedFormations = new Map<string, string>();
+    for (const spawn of spawns) {
+      const p = instantiate(spawn, ++this.serial, (id, damage, point) => {
+        const target = this.aircraft.find(
+          (candidate) => candidate.id === id && candidate.alive,
+        );
+        if (target)
+          this.applyAircraftDamage(target, damage, point, this.currentTime);
+      });
+      if (spawn.protectedFormationId)
+        protectedFormations.set(p.id, spawn.protectedFormationId);
+      this.aircraft.push(p);
+      this.group.add(p.model);
+    }
+    for (const p of this.aircraft) {
+      if (p.formationIndex > 0) {
+        const leader = this.aircraft.find(
+          (x) => x.formationId === p.formationId && x.formationIndex === 0,
+        );
+        p.leaderId = leader?.id ?? null;
+      }
+    }
+    for (const [escortId, protectedFormationId] of protectedFormations) {
+      const escort = this.aircraft.find((aircraft) => aircraft.id === escortId),
+        protectedLeader = this.aircraft.find(
+          (aircraft) =>
+            aircraft.formationId === protectedFormationId &&
+            aircraft.formationIndex === 0,
+        );
+      if (escort && protectedLeader) {
+        escort.protectedId = protectedLeader.id;
+        escort.leaderId = protectedLeader.id;
+      }
+    }
+    this.group.userData.context = { blueShip, redShip };
   }
-  private targetById(id:string,context:AirScenarioContext){return this.entities(context).find(e=>e.id===id);}
-  private terminateMissile(missile:AirMissileInstance){missile.alive=false;missile.phase="destroyed";missile.model.visible=false;}
-  private updateReleasedMissile(missile:AirMissileInstance,dt:number){missile.releaseAge+=dt;if(missile.releaseAge>=missile.ignitionDelay)return false;missile.velocity.y-=.42*dt;missile.position.addScaledVector(missile.velocity,dt);const flame=missile.model.userData.flame as THREE.Mesh|undefined;if(flame)flame.visible=false;return true;}
-  private updateMissileAfterTargetLoss(missile:AirMissileInstance,dt:number){missile.age+=dt;missile.seekerAcquired=false;if(!shouldContinueAfterTargetLoss({age:missile.age,maximumAge:180,altitude:missile.position.y})){this.terminateMissile(missile);return;}const desired=missile.commandPoint.clone().sub(missile.position).normalize(),turn=THREE.MathUtils.degToRad(missile.definition.maxTurnRateDeg)*dt;missile.velocity.copy(rotateToward(missile.velocity.clone().normalize(),desired,turn).multiplyScalar(THREE.MathUtils.lerp(missile.velocity.length(),missile.definition.speed,Math.min(1,dt*1.8))));missile.position.addScaledVector(missile.velocity,dt);missile.model.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,-1),missile.velocity.clone().normalize());}
-  private updateMissileDatalink(missile:AirMissileInstance,target:AirRuntimeTarget,shooter:AirPlatformInstance|undefined,time:number){if(missile.phase!=="midcourse"||time<missile.nextDatalink)return;missile.nextDatalink=time+missile.definition.datalinkInterval;const track=shooter?.tracks.get(target.id);if(track)missile.commandPoint.copy(track.position).addScaledVector(track.velocity,missile.definition.datalinkInterval);}
-  private matchingDecoy(missile:AirMissileInstance,target:AirRuntimeTarget){return this.decoys.filter(decoy=>decoy.alive&&decoy.side===target.side&&decoy.position.distanceTo(target.position)<30&&angle(missile.velocity,decoy.position.clone().sub(missile.position))<=missile.definition.seekerFovDeg*.5&&((missile.definition.guidance==="infrared"&&decoy.decoyType==="flare")||(missile.definition.guidance!=="infrared"&&decoy.decoyType==="chaff"))).sort((left,right)=>left.position.distanceTo(missile.position)-right.position.distanceTo(missile.position))[0];}
-  private attemptMissileSeekerCapture(missile:AirMissileInstance,target:AirRuntimeTarget,decoy:AirDecoyInstance|undefined,range:number,time:number){if(missile.phase!=="terminal"||missile.seekerAcquired||time<missile.nextSeekerAttempt)return;missile.nextSeekerAttempt=time+.25;const offBoresight=angle(missile.velocity,target.position.clone().sub(missile.position).normalize());let captureProbability=0;if(missile.definition.guidance==="infrared"&&target.kind==="aircraft"){const aircraftTarget=target as AirPlatformInstance,targetToMissile=missile.position.clone().sub(target.position).normalize(),rearAspect=clamp(-target.velocity.clone().normalize().dot(targetToMissile),0,1),engineHealth=((aircraftTarget.subsystemHealth.get("left-engine")??0)+(aircraftTarget.subsystemHealth.get("right-engine")??0))/200;captureProbability=infraredSeekerCaptureProbability({range,seekerRange:missile.definition.seekerRange,offBoresightDeg:offBoresight,fieldOfViewDeg:missile.definition.seekerFovDeg,infraredSignature:target.infraredSignature*(.55+.45*engineHealth),rearAspect,targetAltitude:target.position.y,flareSignal:decoy?.infraredSignature});}else if(missile.definition.guidance!=="infrared"){const ecm=target.kind==="aircraft"?(target as AirPlatformInstance).definition.ecm:undefined;captureProbability=radarSeekerCaptureProbability({range,seekerRange:missile.definition.seekerRange,offBoresightDeg:offBoresight,fieldOfViewDeg:missile.definition.seekerFovDeg,targetRcs:target.radarCrossSection,ecmStrength:ecm?.strength??0,burnThroughRange:ecm?.burnThroughRange??0});}if(roll(this.serial+missile.id.length+Math.floor(time*4))<captureProbability){missile.seekerAcquired=true;this.emit(time,"detect",`${missile.definition.name} SEEKER ACQUIRED / ${Math.round(captureProbability*100)}% SOLUTION`);}}
-  private maintainMissileIllumination(missile:AirMissileInstance,target:AirRuntimeTarget,shooter:AirPlatformInstance|undefined,time:number){if(missile.definition.guidance!=="semi-active-radar")return true;const track=shooter?.tracks.get(target.id),offset=track&&shooter?track.position.clone().sub(shooter.position):undefined,illuminating=semiActiveIlluminationValid({shooterAlive:!!shooter?.alive,trackClassification:track?.classification??"unknown",trackQuality:track?.quality??0,trackAge:track?time-track.lastUpdate:Infinity,maximumTrackAge:(shooter?.definition.sensor.updateInterval??0)*2.2,offBoresightDeg:offset&&shooter?angle(shooter.heading,offset):Infinity,illuminationFieldOfViewDeg:shooter?.definition.sensor.fieldOfViewDeg??0});if(!illuminating)missile.illuminationLostAt??=time;else missile.illuminationLostAt=null;if(missile.illuminationLostAt===null||time-missile.illuminationLostAt<=1.5)return true;this.terminateMissile(missile);this.emit(time,"maneuver",`${missile.definition.name} LOST ILLUMINATION`);return false;}
-  private missileAimPoint(missile:AirMissileInstance,target:AirRuntimeTarget,decoy:AirDecoyInstance|undefined,range:number,dt:number,time:number){const targetEcm=target.kind==="aircraft"?(target as AirPlatformInstance).definition.ecm:undefined,burnedThrough=range<=(targetEcm?.burnThroughRange??0),measurementUncertainty=(1-missile.definition.countermeasureResistance)*range*.025+(burnedThrough?0:(targetEcm?.strength??0)*range*.018),measurement=missile.seekerAcquired?seekerMeasurementPoint({targetPosition:target.position,uncertainty:measurementUncertainty,noise:[roll(time*4+missile.id.length),roll(time*4+missile.id.length+1),roll(time*4+missile.id.length+2)]}):undefined;let aim=airToAirGuidancePoint({seekerAcquired:missile.seekerAcquired,commandPoint:missile.commandPoint,measuredTargetPosition:measurement?new THREE.Vector3(measurement.x,measurement.y,measurement.z):undefined});if(!missile.seekerAcquired||!decoy||decoy.position.distanceTo(missile.position)>=range)return aim;const signal=missile.definition.guidance==="infrared"?decoy.infraredSignature:decoy.radarCrossSection,targetSignal=missile.definition.guidance==="infrared"?target.infraredSignature:target.radarCrossSection,ecm=target.kind==="aircraft"?(target as AirPlatformInstance).definition.ecm:undefined,burned=range<=(ecm?.burnThroughRange??0),capture=(signal/(signal+targetSignal))*(1-missile.definition.countermeasureResistance)+(burned?0:(ecm?.strength??0)*.2);if(roll(this.serial+missile.age*7)<capture*dt*2.2){aim=decoy.position.clone();missile.targetId=decoy.id;this.emit(time,"countermeasure",`${missile.definition.name} DECOY CAPTURE / ${decoy.decoyType.toUpperCase()}`);}return aim;}
-  private integrateAirToAirMissile(missile:AirMissileInstance,aim:THREE.Vector3,dt:number){const desired=aim.sub(missile.position).normalize(),turn=THREE.MathUtils.degToRad(missile.definition.maxTurnRateDeg)*dt;missile.velocity.copy(rotateToward(missile.velocity.clone().normalize(),desired,turn).multiplyScalar(THREE.MathUtils.lerp(missile.velocity.length(),missile.definition.speed,Math.min(1,dt*1.8))));missile.position.addScaledVector(missile.velocity,dt);missile.model.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,-1),missile.velocity.clone().normalize());const flame=missile.model.userData.flame as THREE.Mesh|undefined;if(flame)flame.visible=missile.age<missile.definition.boostSeconds;}
-  private resolveAirToAirFuze(missile:AirMissileInstance,target:AirRuntimeTarget,range:number,time:number){if(range<=missile.definition.proximityRadius){if(target.kind!=="decoy"){target.applyDamage(missile.definition.damage,missile.position);this.standardDamageApplications++;if(!target.alive)this.emit(time,"kill",`${missile.definition.name} INTERCEPT / ${target.id}`);this.emit(time,"hit",`${missile.definition.name} HIT / ${target.id}`);}this.terminateMissile(missile);return;}if(missile.age>180||missile.position.y<0)this.terminateMissile(missile);}
-  private updateMissile(missile:AirMissileInstance,time:number,dt:number,context:AirScenarioContext){if(!missile.alive||this.updateReleasedMissile(missile,dt))return;const target=this.targetById(missile.targetId,context),shooter=this.aircraft.find(aircraft=>aircraft.id===missile.shooterId);if(!target){this.updateMissileAfterTargetLoss(missile,dt);return;}if(missile.definition.guidance==="anti-ship-radar"){if(target.kind==="decoy")this.terminateMissile(missile);else this.updateAntiShipMissile(missile,target,shooter,time,dt,context);return;}const range=missile.position.distanceTo(target.position);missile.age+=dt;missile.phase=airToAirMissilePhase({age:missile.age,boostSeconds:missile.definition.boostSeconds,commandRange:missile.position.distanceTo(missile.commandPoint),seekerRange:missile.definition.seekerRange,seekerAcquired:missile.seekerAcquired});this.updateMissileDatalink(missile,target,shooter,time);const decoy=this.matchingDecoy(missile,target);this.attemptMissileSeekerCapture(missile,target,decoy,range,time);if(!this.maintainMissileIllumination(missile,target,shooter,time))return;const aim=this.missileAimPoint(missile,target,decoy,range,dt,time);this.integrateAirToAirMissile(missile,aim,dt);this.resolveAirToAirFuze(missile,target,range,time);}
-  private updateAntiShipMissile(m:AirMissileInstance,target:TargetableEntity,shooter:AirPlatformInstance|undefined,time:number,dt:number,context:AirScenarioContext){const flight=m.definition.antiShipFlight;if(!flight)throw new Error(`${m.definition.id} missing anti-ship flight envelope`);const cm=context.countermeasures?.(target.id),burnThrough=!!cm&&(!cm.ecmEnabled||cm.ecmHealth<=.05||resultRangeFor(m,target)<=cm.burnThroughRange),ecmPenalty=cm&&cm.ecmEnabled&&!burnThrough?cm.ecmStrength*.42:0,rcsFactor=THREE.MathUtils.clamp(.55+target.radarCrossSection/20*.35,.55,.9),seekerCaptureProbability=THREE.MathUtils.clamp((burnThrough?.96:.82)-ecmPenalty, .12,.96)*rcsFactor,previousPhase=m.phase,previousAcquired=m.seekerAcquired,result=updateAntiShipGuidance({state:m,config:{boostSeconds:m.definition.boostSeconds,terminalRange:m.definition.seekerRange,seekerRange:m.definition.seekerRange,seekerFovDeg:m.definition.seekerFovDeg,boostAltitude:Math.max(flight.boostAltitude,m.position.y),cruiseAltitude:flight.cruiseAltitude,terminalAltitude:flight.terminalAltitude,boostSpeed:m.definition.speed*flight.boostSpeedFactor,cruiseSpeed:m.definition.speed*flight.cruiseSpeedFactor,terminalSpeed:m.definition.speed,midcourseTurnRateDeg:m.definition.maxTurnRateDeg,terminalTurnRateDeg:m.definition.maxTurnRateDeg*flight.terminalTurnFactor},position:m.position,velocity:m.velocity,commandPoint:m.commandPoint,commandVelocity:shooter?.tracks.get(target.id)?.velocity??new THREE.Vector3(),targetPosition:target.position,targetVelocity:target.velocity,dt,seekerCaptureProbability,seekerSample:roll(this.serial+m.id.length+Math.floor(m.age*4))});m.velocity.copy(result.direction.multiplyScalar(result.speed));m.position.addScaledVector(m.velocity,dt);m.position.y=Math.max(.08,THREE.MathUtils.lerp(m.position.y,result.desiredAltitude,Math.min(1,dt*(m.phase==="terminal"?1.4:.55))));m.model.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,-1),m.velocity.clone().normalize());const flame=m.model.userData.flame as THREE.Mesh|undefined;if(flame)flame.visible=m.age<m.definition.boostSeconds;if(previousPhase!=="terminal"&&m.phase==="terminal")this.emit(time,"maneuver",`${m.definition.name} ACTIVE SEARCH / COMMAND RANGE ${result.commandRange.toFixed(0)} wu`);if(!previousAcquired&&result.acquiredNow)this.emit(time,"detect",`${m.definition.name} SEEKER ACQUIRED / ${Math.round(result.captureProbability*100)}% SOLUTION / ${burnThrough?"BURN THROUGH":"PROBABILISTIC"}`);if(m.seekerAcquired&&!m.softKillResolved&&cm){m.softKillResolved=true;const nearest=cm.decoys.filter(d=>d.position.distanceTo(target.position)<30).sort((a,b)=>a.position.distanceTo(m.position)-b.position.distanceTo(m.position))[0],contest=radarCountermeasureContest({targetRcs:target.radarCrossSection,targetRange:result.targetRange,decoyRcs:nearest?.rcs,decoyRange:nearest?.position.distanceTo(m.position),ecmEnabled:cm.ecmEnabled,ecmStrength:cm.ecmStrength,ecmHealth:cm.ecmHealth,burnThroughRange:cm.burnThroughRange});if(roll(this.serial+m.id.length)<contest.defeatProbability){m.alive=false;m.phase="destroyed";m.model.visible=false;this.emit(time,"countermeasure",`${m.definition.name} SOFT KILL / ${nearest?"ECM + DECOY":"ECM"} / PK ${Math.round(contest.defeatProbability*100)}%`);return;}this.emit(time,"countermeasure",`${m.definition.name} ${result.targetRange<=cm.burnThroughRange?"BURN THROUGH":nearest?"DECOY REJECTED":"ECM CONTESTED"}`);}if(result.targetRange<=m.definition.proximityRadius){target.applyDamage(m.definition.damage,m.position);this.standardDamageApplications++;m.alive=false;m.phase="destroyed";m.model.visible=false;this.emit(time,"hit",`${m.definition.name} HIT / ${target.id}`);}}
-  private applyAircraftDamage(a:AirPlatformInstance,damage:number,point:THREE.Vector3,time:number){const localHit=a.model.worldToLocal(point.clone()),resolution=resolveAircraftHit({localHit,modelLength:Number(a.model.userData.modelLength??8),damage}),primaryBefore=a.subsystemHealth.get(resolution.primary)??100;a.subsystemHealth.set(resolution.primary,Math.max(0,primaryBefore-resolution.primaryDamage));if(resolution.structureDamage>0)a.subsystemHealth.set("structure",Math.max(0,(a.subsystemHealth.get("structure")??100)-resolution.structureDamage));this.emit(time,"damage",`${a.definition.name} ${resolution.zone.toUpperCase()} / ${resolution.primary.toUpperCase()} ${Math.round(a.subsystemHealth.get(resolution.primary)??0)}% / STRUCTURE ${Math.round(a.subsystemHealth.get("structure")??0)}%`);const disposition=airDamageDisposition({structure:a.subsystemHealth.get("structure")??0,leftEngine:a.subsystemHealth.get("left-engine")??0,rightEngine:a.subsystemHealth.get("right-engine")??0,radar:a.subsystemHealth.get("radar")??0,flightControl:a.subsystemHealth.get("flight-control")??0,weapons:a.subsystemHealth.get("weapons")??0});if(disposition==="mission-kill"){a.alive=false;a.state="disabled";this.emit(time,"kill",`${a.definition.name} MISSION KILL / LOSS OF CONTROL`);}else if(disposition==="egress"&&a.mission!=="return"){a.mission="return";a.state="egress";this.emit(time,"maneuver",`${a.definition.name} DAMAGE ABORT / RETURN`);}
+  private disposeObjects() {
+    for (const o of [
+      ...this.aircraft.map((x) => x.model),
+      ...this.missiles.map((x) => x.model),
+      ...this.decoys.map((x) => x.model),
+    ]) {
+      this.group.remove(o);
+      o.traverse((c) => {
+        if (c instanceof THREE.Mesh) {
+          c.geometry.dispose();
+          const m = c.material;
+          if (Array.isArray(m)) m.forEach((x) => x.dispose());
+          else m.dispose();
+        }
+      });
+    }
+    this.aircraft.length =
+      this.missiles.length =
+      this.decoys.length =
+      this.events.length =
+        0;
+    this.lastEventIndex = 0;
   }
-  private updateDecoys(dt:number){for(const d of this.decoys){if(!d.alive)continue;d.age+=dt;d.position.addScaledVector(d.velocity,dt);d.velocity.multiplyScalar(Math.max(0,1-dt*.12));d.velocity.y-=dt*.05;const mesh=d.model as THREE.Mesh,mat=mesh.material as THREE.MeshBasicMaterial;mat.opacity=Math.max(0,.85*(1-d.age/d.life));d.model.scale.setScalar(1+d.age*(d.decoyType==="chaff"?.32:.06));if(d.age>=d.life){d.alive=false;d.model.visible=false;}}}
-  diagnostics(){const live=this.aircraft.filter(a=>a.alive),ksr=this.missiles.filter(m=>m.definition.id==="KSR-5");return {aircraft:this.aircraft.length,live:live.length,blueLive:live.filter(a=>a.side==="blue").length,redLive:live.filter(a=>a.side==="red").length,missiles:this.missiles.length,activeMissiles:this.missiles.filter(m=>m.alive).length,chaff:this.decoys.filter(d=>d.alive&&d.decoyType==="chaff").length,flares:this.decoys.filter(d=>d.alive&&d.decoyType==="flare").length,missileWarnings:this.aircraft.reduce((sum,a)=>sum+a.missileWarnings.size,0),ecmDetections:this.events.filter(e=>e.kind==="detect"&&e.text.includes(" / ECM")).length,launches:this.events.filter(e=>e.kind==="launch").length,hits:this.events.filter(e=>e.kind==="hit").length,kills:this.events.filter(e=>e.kind==="kill").length,standardDamageApplications:this.standardDamageApplications,ksrMaximumSpeed:Math.max(0,...ksr.map(m=>m.velocity.length()))};}
-  visualDiagnostics(){return {smoking:this.aircraft.filter(a=>(a.model.userData.damageSmoke as THREE.Object3D|undefined)?.visible).length,burning:this.aircraft.filter(a=>(a.model.userData.damageFire as THREE.Object3D|undefined)?.visible).length,crashed:this.aircraft.filter(a=>a.state==="crashed").length};}
-  hasActiveCombat(){return this.missiles.some(m=>m.alive)||this.aircraft.some(a=>a.alive&&a.state!=="egress"&&a.mission!=="return");}
-  focusTarget(){return this.missiles.find(m=>m.alive)?.model??this.aircraft.find(a=>a.alive)?.model??null;}
+  dispose() {
+    this.disposeObjects();
+    this.scene.remove(this.group);
+  }
+  private emit(time: number, kind: AirCombatEvent["kind"], text: string) {
+    this.events.push({ time, kind, text });
+  }
+  drainEvents() {
+    const out = this.events.slice(this.lastEventIndex);
+    this.lastEventIndex = this.events.length;
+    return out;
+  }
+  private entities(context: AirScenarioContext) {
+    return [
+      ...this.aircraft.filter((a) => a.alive),
+      ...this.missiles.filter((m) => m.alive),
+      ...this.decoys.filter((d) => d.alive),
+      context.blueShip,
+      ...(context.redShip?.alive ? [context.redShip] : []),
+    ];
+  }
+  update(time: number, dt: number, context: AirScenarioContext) {
+    if (!this.enabled) return;
+    this.currentTime = time;
+    this.group.userData.context = context;
+    this.updateDecoys(dt);
+    this.updateCountermeasurePrograms(time);
+    for (const a of this.aircraft) {
+      this.updateFormationState(a);
+      this.updateAircraft(a, time, dt, context);
+      this.updateDamageVisuals(a, time);
+    }
+    this.updateHardpointReleases(time);
+    for (const m of this.missiles) this.updateMissile(m, time, dt, context);
+  }
+
+  private updateDamageVisuals(aircraft: AirPlatformInstance, time: number) {
+    const structure = (aircraft.subsystemHealth.get("structure") ?? 100) / 100,
+      left = (aircraft.subsystemHealth.get("left-engine") ?? 100) / 100,
+      right = (aircraft.subsystemHealth.get("right-engine") ?? 100) / 100,
+      severity = clamp(1 - Math.min(structure, (left + right) / 2), 0, 1),
+      smoke = aircraft.model.userData.damageSmoke as THREE.Mesh | undefined,
+      fire = aircraft.model.userData.damageFire as THREE.Mesh | undefined,
+      splash = aircraft.model.userData.crashSplash as THREE.Mesh | undefined;
+    if (smoke) {
+      smoke.visible =
+        severity > 0.18 ||
+        aircraft.state === "disabled" ||
+        aircraft.state === "crashed";
+      (smoke.material as THREE.MeshBasicMaterial).opacity = smoke.visible
+        ? 0.25 + severity * 0.45
+        : 0;
+      smoke.scale.setScalar(
+        1 + severity * 2 + Math.sin(time * 4 + aircraft.formationIndex) * 0.12,
+      );
+    }
+    if (fire) {
+      fire.visible = severity > 0.48 || aircraft.state === "disabled";
+      (fire.material as THREE.MeshBasicMaterial).opacity = fire.visible
+        ? 0.5 + severity * 0.35
+        : 0;
+      fire.scale.setScalar(0.8 + severity * 0.9 + Math.sin(time * 8) * 0.1);
+    }
+    if (splash && aircraft.state === "crashed") {
+      splash.visible = true;
+      const age = (aircraft.model.userData.crashAge as number | undefined) ?? 0,
+        updated = age + 0.05;
+      aircraft.model.userData.crashAge = updated;
+      splash.scale.setScalar(1 + updated * 2.2);
+      (splash.material as THREE.MeshBasicMaterial).opacity = Math.max(
+        0,
+        0.85 - updated * 0.18,
+      );
+    }
+  }
+
+  private updateFormationState(aircraft: AirPlatformInstance) {
+    if (aircraft.formationIndex === 0) {
+      aircraft.formationStatus = "joined";
+      aircraft.formationError = 0;
+      return;
+    }
+    const leader = this.aircraft.find(
+      (candidate) => candidate.id === aircraft.leaderId && candidate.alive,
+    );
+    if (!leader) {
+      aircraft.formationStatus = "separated";
+      aircraft.formationError = Infinity;
+      return;
+    }
+    const slot = formationSlot({
+        leader: leader.position,
+        leaderHeading: leader.heading,
+        lateral: aircraft.formationIndex % 2 ? 12 : -12,
+        vertical: 2,
+        trail: 10,
+      }),
+      slotPosition = new THREE.Vector3(slot.x, slot.y, slot.z);
+    aircraft.formationError = aircraft.position.distanceTo(slotPosition);
+    aircraft.formationStatus = updateFormationStatus({
+      current: aircraft.formationStatus,
+      error: aircraft.formationError,
+      joinDistance: 8,
+      breakDistance: 45,
+    });
+    if (
+      (aircraft.formationStatus === "separated" ||
+        aircraft.formationStatus === "rejoining") &&
+      aircraft.state !== "defending"
+    ) {
+      aircraft.desiredDirection
+        .copy(slotPosition)
+        .sub(aircraft.position)
+        .normalize();
+      aircraft.state = "formation";
+    }
+  }
+
+  shipDefenseContacts(targetId: string): AirShipDefenseContact[] {
+    return [
+      ...this.aircraft
+        .filter((a) => a.alive && a.side === "red")
+        .map((a) => ({
+          entity: a,
+          name: a.definition.name,
+          model: a.model,
+          template: a.definition.shipDefenseTemplate,
+          phase: "inbound" as const,
+        })),
+      ...this.missiles
+        .filter(
+          (m) =>
+            m.alive &&
+            m.phase !== "destroyed" &&
+            m.side === "red" &&
+            m.targetId === targetId &&
+            m.definition.targets.includes("ship"),
+        )
+        .map((m) => ({
+          entity: m,
+          name: m.definition.name,
+          model: m.model,
+          template: m.definition.shipDefenseTemplate,
+          phase: m.phase as "boost" | "midcourse" | "terminal",
+        })),
+    ];
+  }
+  private updateTracks(
+    a: AirPlatformInstance,
+    time: number,
+    dt: number,
+    context: AirScenarioContext,
+  ) {
+    advanceAirTracks(a.tracks, dt, time);
+    if (time < a.nextScan || !a.alive) return;
+    a.nextScan = time + a.definition.sensor.updateInterval;
+    const radarHealth = (a.subsystemHealth.get("radar") ?? 0) / 100;
+    for (const target of this.entities(context)) {
+      if (target.side === a.side || target.id === a.id || !target.alive)
+        continue;
+      const offset = target.position.clone().sub(a.position),
+        range = offset.length(),
+        ecm =
+          target.kind === "aircraft"
+            ? (target as AirPlatformInstance).definition.ecm
+            : undefined,
+        factors = airRadarFactors({
+          sensorAltitude: a.position.y,
+          targetAltitude: target.position.y,
+          range,
+          nominalRange: a.definition.sensor.range,
+          targetRcs: target.radarCrossSection,
+          radarHealth,
+          precision: a.definition.sensor.precision,
+          ecmStrength: ecm?.strength,
+          burnThroughRange: ecm?.burnThroughRange,
+        }),
+        boresight = angle(a.heading, offset);
+      const key =
+        ((time / a.definition.sensor.updateInterval) | 0) +
+        this.serial +
+        target.id.length +
+        a.id.length;
+      if (
+        range <= factors.effectiveRange &&
+        boresight <= a.definition.sensor.fieldOfViewDeg * 0.5 &&
+        roll(key) < factors.probability
+      ) {
+        const first = !a.tracks.has(target.id),
+          measurement = createAirMeasurement({
+            targetId: target.id,
+            targetKind: target.kind,
+            position: target.position,
+            velocity: target.velocity,
+            quality: factors.quality,
+            precision: a.definition.sensor.precision,
+            time,
+            noise: [roll(key + 2), roll(key + 3), roll(key + 4)],
+          });
+        a.tracks.set(target.id, measurement);
+        if (first)
+          this.emit(
+            time,
+            "detect",
+            `${a.definition.name} DETECT / ${measurement.classification.toUpperCase()} / TQ ${Math.round(measurement.quality * 100)}%${range > factors.horizon ? " / HORIZON DEGRADED" : ""}${ecm && !factors.burned ? " / ECM" : ""}`,
+          );
+      }
+    }
+  }
+  private chooseWeapon(
+    a: AirPlatformInstance,
+    classification: AirTrack["classification"],
+    range: number,
+  ) {
+    return chooseAirWeapon({
+      aircraft: a,
+      missiles: this.missiles,
+      classification,
+      range,
+      weaponCatalog: AIR_WEAPONS,
+    });
+  }
+  private launch(
+    a: AirPlatformInstance,
+    target: CombatEntity,
+    track: AirTrack,
+    time: number,
+  ) {
+    const range = a.position.distanceTo(track.position),
+      weapon = this.chooseWeapon(a, track.classification, range),
+      hardpoint = weapon
+        ? a.hardpoints.find(
+            (candidate) =>
+              candidate.state === "ready" && candidate.weaponId === weapon.id,
+          )
+        : undefined;
+    if (!weapon || !hardpoint || (a.subsystemHealth.get("weapons") ?? 0) <= 5)
+      return false;
+    hardpoint.state = "reserved";
+    hardpoint.targetId = target.id;
+    hardpoint.commandPoint
+      .copy(track.position)
+      .addScaledVector(track.velocity, weapon.datalinkInterval);
+    hardpoint.commandVelocity.copy(track.velocity);
+    hardpoint.trackQuality = track.quality;
+    hardpoint.releaseAt = time + hardpoint.releaseDelay;
+    hardpoint.state = "releasing";
+    recordEngagement(a.engagements, target.id);
+    this.emit(
+      time,
+      "maneuver",
+      `${a.definition.name} ${hardpoint.id.toUpperCase()} RELEASE AUTHORIZED / ${weapon.name}`,
+    );
+    return true;
+  }
+  private updateHardpointReleases(time: number) {
+    for (const aircraft of this.aircraft) {
+      for (const hardpoint of aircraft.hardpoints) {
+        if (
+          hardpoint.state !== "releasing" ||
+          time < hardpoint.releaseAt ||
+          !hardpoint.weaponId ||
+          !hardpoint.mountedModel ||
+          !hardpoint.targetId
+        )
+          continue;
+        const weapon = AIR_WEAPONS[hardpoint.weaponId],
+          model = hardpoint.mountedModel,
+          worldPosition = model.getWorldPosition(new THREE.Vector3()),
+          worldQuaternion = model.getWorldQuaternion(new THREE.Quaternion()),
+          ejection = new THREE.Vector3(0, -1.15, 0.18).applyQuaternion(
+            aircraft.model.quaternion,
+          );
+        aircraft.model.remove(model);
+        this.group.add(model);
+        model.position.copy(worldPosition);
+        model.quaternion.copy(worldQuaternion);
+        const velocity = aircraft.velocity.clone().add(ejection),
+          missile: AirMissileInstance = {
+            id: `air-weapon-${++this.serial}`,
+            side: aircraft.side,
+            kind: "missile",
+            position: model.position,
+            velocity,
+            radarCrossSection: 0.12,
+            infraredSignature: 2.2,
+            alive: true,
+            applyDamage: () => {
+              missile.alive = false;
+              missile.phase = "destroyed";
+              missile.model.visible = false;
+            },
+            definition: weapon,
+            model,
+          shooterId: aircraft.id,
+          targetId: hardpoint.targetId,
+          engagementTargetId: hardpoint.targetId,
+            age: 0,
+            phase: "boost",
+            commandPoint: hardpoint.commandPoint.clone(),
+            nextDatalink: time,
+            seekerAcquired: false,
+            illuminationLostAt: null,
+            softKillResolved: false,
+            ignitionDelay: hardpoint.ignitionDelay,
+            releaseAge: 0,
+            nextSeekerAttempt: time,
+            engagementSettled: false,
+          };
+        this.missiles.push(missile);
+        aircraft.ammo.set(
+          weapon.id,
+          Math.max(0, (aircraft.ammo.get(weapon.id) ?? 0) - 1),
+        );
+        hardpoint.weaponId = null;
+        hardpoint.mountedModel = null;
+        hardpoint.targetId = null;
+        hardpoint.state = "empty";
+        if (aircraft.mission === "anti-ship") {
+          aircraft.mission = "egress";
+          aircraft.state = "egress";
+        }
+        this.emit(
+          time,
+          "launch",
+          `${aircraft.definition.name} LAUNCH ${weapon.name} / ${hardpoint.id.toUpperCase()} / TRACK TQ ${Math.round(hardpoint.trackQuality * 100)}%`,
+        );
+      }
+    }
+  }
+  private incomingFor(a: AirPlatformInstance, time: number) {
+    for (const m of this.missiles.filter(
+      (m) => m.alive && m.side !== a.side && m.targetId === a.id,
+    )) {
+      const range = m.position.distanceTo(a.position),
+        active =
+          m.seekerAcquired ||
+          (m.definition.guidance === "active-radar" &&
+            range <= m.definition.seekerRange),
+        visual = range <= 28,
+        detected =
+          visual ||
+          roll(this.serial + m.id.length + a.id.length + Math.floor(time * 2)) <
+            missileWarningProbability(range, active);
+      if (detected) {
+        const warningRange = active ? 150 : 70,
+          quality = visual
+            ? 0.95
+            : clamp(0.4 + (1 - range / warningRange) * 0.5, 0.3, 0.92),
+          uncertainty = (1 - quality) * 12;
+        a.missileWarnings.set(m.id, {
+          targetId: m.id,
+          position: m.position
+            .clone()
+            .add(
+              new THREE.Vector3(
+                (roll(time + m.id.length) - 0.5) * uncertainty,
+                0,
+                (roll(time + m.id.length + 1) - 0.5) * uncertainty,
+              ),
+            ),
+          velocity: m.velocity.clone(),
+          quality,
+          uncertainty,
+          lastUpdate: time,
+          classification: "unknown",
+        });
+      }
+    }
+    for (const [id, warning] of a.missileWarnings)
+      if (time - warning.lastUpdate > 2.5) a.missileWarnings.delete(id);
+    return [...a.missileWarnings.values()]
+      .map((warning) => ({
+        warning,
+        missile: this.missiles.find((m) => m.id === warning.targetId),
+      }))
+      .filter(
+        (
+          contact,
+        ): contact is { warning: AirTrack; missile: AirMissileInstance } =>
+          !!contact.missile?.alive,
+      )
+      .sort(
+        (x, y) =>
+          x.warning.position.distanceTo(a.position) -
+          y.warning.position.distanceTo(a.position),
+      )[0];
+  }
+  private deployCountermeasures(
+    a: AirPlatformInstance,
+    m: AirMissileInstance,
+    time: number,
+  ) {
+    const program = a.definition.countermeasures.program,
+      isIr = m.definition.guidance === "infrared",
+      type = isIr ? "flare" : "chaff",
+      count = queueCountermeasureProgram({
+        aircraft: a,
+        type,
+        requestedCount: isIr ? program.flareBurst : program.chaffBurst,
+        interval: program.interval,
+        cooldown: program.cooldown,
+        time,
+      });
+    if (count > 0)
+      this.emit(
+        time,
+        "countermeasure",
+        `${a.definition.name} ${type.toUpperCase()} PROGRAM / ${count} ROUNDS / ${program.interval.toFixed(2)}s INTERVAL`,
+      );
+  }
+  private updateCountermeasurePrograms(time: number) {
+    for (const aircraft of this.aircraft) {
+      const result = advanceCountermeasurePrograms(
+        aircraft.countermeasurePrograms,
+        { chaff: aircraft.chaff, flares: aircraft.flares },
+        time,
+      );
+      aircraft.countermeasurePrograms = result.programs;
+      aircraft.chaff = result.inventory.chaff;
+      aircraft.flares = result.inventory.flares;
+      for (const type of result.releases) {
+        this.spawnDecoy(aircraft, type);
+        this.emit(
+          time,
+          "countermeasure",
+          `${aircraft.definition.name} ${type.toUpperCase()} EJECT`,
+        );
+      }
+    }
+  }
+  private spawnDecoy(a: AirPlatformInstance, type: "chaff" | "flare") {
+    const mesh = new THREE.Mesh(
+      type === "flare"
+        ? new THREE.SphereGeometry(0.28, 8, 6)
+        : new THREE.IcosahedronGeometry(0.6, 1),
+      new THREE.MeshBasicMaterial({
+        color: type === "flare" ? 0xffb05d : 0xb8e8e4,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    mesh.position
+      .copy(a.position)
+      .add(new THREE.Vector3((roll(this.serial) - 0.5) * 1.4, -0.4, 1));
+    const d: AirDecoyInstance = {
+      id: `${type}-${++this.serial}`,
+      side: a.side,
+      kind: "decoy",
+      position: mesh.position,
+      velocity: a.velocity
+        .clone()
+        .multiplyScalar(0.65)
+        .add(
+          new THREE.Vector3(
+            (roll(this.serial) - 0.5) * 1.5,
+            -0.3,
+            (roll(this.serial + 1) - 0.5) * 1.5,
+          ),
+        ),
+      radarCrossSection: type === "chaff" ? 18 : 0.02,
+      infraredSignature: type === "flare" ? 4 : 0.02,
+      alive: true,
+      decoyType: type,
+      model: mesh,
+      age: 0,
+      life: type === "chaff" ? 14 : 5,
+    };
+    this.decoys.push(d);
+    this.group.add(mesh);
+  }
+  private missionTrackFor(a: AirPlatformInstance, context: AirScenarioContext) {
+    const protectedEntity = a.protectedId
+      ? this.targetById(a.protectedId, context)
+      : undefined;
+    return selectMissionTrack({
+      mission: a.mission,
+      tracks: [...a.tracks.values()],
+      origin: protectedEntity?.position ?? a.position,
+    });
+  }
+  private updateAircraft(
+    a: AirPlatformInstance,
+    time: number,
+    dt: number,
+    context: AirScenarioContext,
+  ) {
+    if (!a.alive) {
+      if (a.state === "disabled") {
+        const loss = stepAircraftLossOfControl({
+          position: a.position,
+          velocity: a.velocity,
+          roll: a.model.rotation.z,
+          dt,
+        });
+        a.position.set(loss.position.x, loss.position.y, loss.position.z);
+        a.velocity.set(loss.velocity.x, loss.velocity.y, loss.velocity.z);
+        a.model.rotation.z = loss.roll;
+        if (loss.crashed) {
+          a.state = "crashed";
+          a.model.visible = true;
+          this.emit(
+            time,
+            "kill",
+            `${a.definition.name} IMPACTED SEA / WRECKAGE VISIBLE`,
+          );
+        }
+      }
+      return;
+    }
+    this.updateTracks(a, time, dt, context);
+    if (a.fuel <= 0) a.mission = "return";
+    const observedTracks = [...a.tracks.values()].filter(
+        (track) => time - track.lastUpdate <= 8 && track.quality >= 0.04,
+      ),
+      observedHostileAircraft = observedTracks.filter(
+        (track) => track.classification === "aircraft",
+      ).length,
+      observedThreats =
+        observedTracks.filter((track) => track.classification === "unknown")
+          .length + a.missileWarnings.size;
+    if (
+      missionShouldReturn({
+        mission: a.mission,
+        hasEngaged: a.engagements.size > 0,
+        observedHostileAircraft,
+        observedThreats,
+      })
+    ) {
+      a.mission = "return";
+      a.state = "egress";
+    }
+    if (a.mission === "egress" || a.mission === "return") {
+      a.state = "egress";
+      a.desiredDirection.set(a.side === "blue" ? -1 : 1, 0.04, 1).normalize();
+    }
+    const incoming = this.incomingFor(a, time);
+    if (incoming) {
+      const defense = defensiveManeuverFromWarning({
+        aircraftPosition: a.position,
+        warningPosition: incoming.warning.position,
+        warningVelocity: incoming.warning.velocity,
+        side: a.formationIndex ? 1 : -1,
+      });
+      a.state = "defending";
+      a.desiredDirection.set(
+        defense.direction.x,
+        defense.direction.y,
+        defense.direction.z,
+      );
+      if (
+        this.countermeasuresEnabled &&
+        defense.timeToImpact < a.definition.countermeasures.program.triggerTti
+      )
+        this.deployCountermeasures(a, incoming.missile, time);
+      if (a.mission === "anti-ship" && time >= a.nextOoda) {
+        a.nextOoda = time + 1;
+        const track = this.missionTrackFor(a, context),
+          ship = track ? this.targetById(track.targetId, context) : undefined;
+        if (ship && track && !hasCommittedEngagement(a.engagements, ship.id))
+          this.launch(a, ship, track, time);
+      }
+    } else if (
+      a.mission !== "egress" &&
+      a.mission !== "return" &&
+      time >= a.nextOoda
+    ) {
+      a.nextOoda = time + 1.0;
+      const track = this.missionTrackFor(a, context),
+        target = track ? this.targetById(track.targetId, context) : undefined;
+      a.targetId = target?.id ?? null;
+      if (target) {
+        const track = a.tracks.get(target.id)!;
+        a.state = "engaging";
+        a.desiredDirection.copy(track.position).sub(a.position).normalize();
+        if (
+          track.quality >= 0.22 &&
+          !hasCommittedEngagement(a.engagements, target.id)
+        )
+          this.launch(a, target, track, time);
+      } else {
+        const leader = this.aircraft.find(
+          (x) => x.id === a.leaderId && x.alive,
+        );
+        if (leader) {
+          const slot = formationSlot({
+            leader: leader.position,
+            leaderHeading: leader.heading,
+            lateral: a.formationIndex % 2 ? 12 : -12,
+            vertical: 2,
+            trail: 10,
+          });
+          a.desiredDirection
+            .set(slot.x, slot.y, slot.z)
+            .sub(a.position)
+            .normalize();
+        } else {
+          const direction = noContactMissionDirection({
+            mission: a.mission,
+            side: a.side,
+            currentHeading: a.heading,
+          });
+          a.desiredDirection
+            .set(direction.x, direction.y, direction.z)
+            .normalize();
+        }
+      }
+    }
+    const fc = (a.subsystemHealth.get("flight-control") ?? 0) / 100,
+      eng =
+        ((a.subsystemHealth.get("left-engine") ?? 0) +
+          (a.subsystemHealth.get("right-engine") ?? 0)) /
+        200,
+      flight = a.definition.flight,
+      speed = a.velocity.length(),
+      desiredBank = clamp(
+        Math.atan2(
+          a.heading.clone().cross(a.desiredDirection).y,
+          a.heading.dot(a.desiredDirection),
+        ) * 3,
+        -1.15,
+        1.15,
+      ),
+      flightStep = stepFlightDynamics({
+        speed,
+        currentBank: THREE.MathUtils.radToDeg(a.bank),
+        desiredBank: THREE.MathUtils.radToDeg(desiredBank),
+        flightPathAngleDeg: THREE.MathUtils.radToDeg(
+          Math.asin(clamp(a.heading.y, -1, 1)),
+        ),
+        desiredFlightPathAngleDeg: THREE.MathUtils.radToDeg(
+          Math.asin(clamp(a.desiredDirection.y, -1, 1)),
+        ),
+        flightControlHealth: fc,
+        engineHealth: eng,
+        defending: a.state === "defending",
+        dt,
+        envelope: flight,
+      });
+    a.bank = THREE.MathUtils.degToRad(flightStep.bank);
+    const pitchLimited = a.heading.clone();
+    pitchLimited.y = Math.sin(
+      THREE.MathUtils.degToRad(
+        THREE.MathUtils.radToDeg(Math.asin(clamp(a.heading.y, -1, 1))) +
+          flightStep.pitchDelta,
+      ),
+    );
+    pitchLimited.normalize();
+    const horizontalDesired = a.desiredDirection.clone();
+    horizontalDesired.y = pitchLimited.y;
+    horizontalDesired.normalize();
+    const next = rotateToward(
+      a.heading,
+      horizontalDesired,
+      THREE.MathUtils.degToRad(flightStep.maximumTurnRateDeg) * dt,
+    );
+    a.heading.copy(next);
+    if (flightStep.stalled) {
+      a.heading.y = Math.max(-0.18, a.heading.y - 0.25 * dt);
+      a.state = "defending";
+    }
+    a.fuel = consumeFuel(a.fuel, flightStep.fuelBurn);
+    const newSpeed = flightStep.speed;
+    a.velocity.copy(a.heading).multiplyScalar(newSpeed);
+    a.position.addScaledVector(a.velocity, dt);
+    a.position.y = Math.max(0.25, a.position.y);
+    a.model.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      a.heading,
+    );
+    a.model.rotateZ(-a.bank);
+    const wings = a.model.userData.variableWings as
+      | THREE.Object3D[]
+      | undefined;
+    if (wings) {
+      const sweep = THREE.MathUtils.lerp(
+        0.28,
+        0.9,
+        clamp(
+          (newSpeed - flight.cruiseSpeed) /
+            (flight.maxSpeed - flight.cruiseSpeed),
+          0,
+          1,
+        ),
+      );
+      wings.forEach(
+        (w, i) => (w.rotation.y = (i ? 0.0 : 0) + (i % 2 ? 1 : -1) * sweep),
+      );
+    }
+  }
+  private targetById(id: string, context: AirScenarioContext) {
+    return this.entities(context).find((e) => e.id === id);
+  }
+  private terminateMissile(
+    missile: AirMissileInstance,
+    result: "hit" | "miss" | "cancel" = "cancel",
+    time = this.currentTime,
+  ) {
+    missile.alive = false;
+    missile.phase = "destroyed";
+    missile.model.visible = false;
+    if (!missile.engagementSettled) {
+      const shooter = this.aircraft.find(
+        (candidate) => candidate.id === missile.shooterId,
+      );
+      if (shooter)
+        resolveEngagement(
+          shooter.engagements,
+          missile.engagementTargetId,
+          result,
+          time,
+        );
+      missile.engagementSettled = true;
+    }
+  }
+  private updateReleasedMissile(missile: AirMissileInstance, dt: number) {
+    missile.releaseAge += dt;
+    if (missile.releaseAge >= missile.ignitionDelay) return false;
+    missile.velocity.y -= 0.42 * dt;
+    missile.position.addScaledVector(missile.velocity, dt);
+    const flame = missile.model.userData.flame as THREE.Mesh | undefined;
+    if (flame) flame.visible = false;
+    return true;
+  }
+  private updateMissileAfterTargetLoss(
+    missile: AirMissileInstance,
+    dt: number,
+  ) {
+    missile.age += dt;
+    missile.seekerAcquired = false;
+    if (
+      !shouldContinueAfterTargetLoss({
+        age: missile.age,
+        maximumAge: 180,
+        altitude: missile.position.y,
+      })
+    ) {
+      this.terminateMissile(missile);
+      return;
+    }
+    const desired = missile.commandPoint
+        .clone()
+        .sub(missile.position)
+        .normalize(),
+      turn = THREE.MathUtils.degToRad(missile.definition.maxTurnRateDeg) * dt;
+    missile.velocity.copy(
+      rotateToward(
+        missile.velocity.clone().normalize(),
+        desired,
+        turn,
+      ).multiplyScalar(
+        THREE.MathUtils.lerp(
+          missile.velocity.length(),
+          missile.definition.speed,
+          Math.min(1, dt * 1.8),
+        ),
+      ),
+    );
+    missile.position.addScaledVector(missile.velocity, dt);
+    missile.model.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      missile.velocity.clone().normalize(),
+    );
+  }
+  private updateMissileDatalink(
+    missile: AirMissileInstance,
+    target: AirRuntimeTarget,
+    shooter: AirPlatformInstance | undefined,
+    time: number,
+  ) {
+    if (missile.phase !== "midcourse" || time < missile.nextDatalink) return;
+    missile.nextDatalink = time + missile.definition.datalinkInterval;
+    const track = shooter?.tracks.get(target.id);
+    if (track)
+      missile.commandPoint
+        .copy(track.position)
+        .addScaledVector(track.velocity, missile.definition.datalinkInterval);
+  }
+  private matchingDecoy(missile: AirMissileInstance, target: AirRuntimeTarget) {
+    return this.decoys
+      .filter(
+        (decoy) =>
+          decoy.alive &&
+          decoy.side === target.side &&
+          decoy.position.distanceTo(target.position) < 30 &&
+          angle(
+            missile.velocity,
+            decoy.position.clone().sub(missile.position),
+          ) <=
+            missile.definition.seekerFovDeg * 0.5 &&
+          ((missile.definition.guidance === "infrared" &&
+            decoy.decoyType === "flare") ||
+            (missile.definition.guidance !== "infrared" &&
+              decoy.decoyType === "chaff")),
+      )
+      .sort(
+        (left, right) =>
+          left.position.distanceTo(missile.position) -
+          right.position.distanceTo(missile.position),
+      )[0];
+  }
+  private attemptMissileSeekerCapture(
+    missile: AirMissileInstance,
+    target: AirRuntimeTarget,
+    decoy: AirDecoyInstance | undefined,
+    range: number,
+    time: number,
+  ) {
+    if (
+      missile.phase !== "terminal" ||
+      missile.seekerAcquired ||
+      time < missile.nextSeekerAttempt
+    )
+      return;
+    missile.nextSeekerAttempt = time + 0.25;
+    const offBoresight = angle(
+      missile.velocity,
+      target.position.clone().sub(missile.position).normalize(),
+    );
+    let captureProbability = 0;
+    if (
+      missile.definition.guidance === "infrared" &&
+      target.kind === "aircraft"
+    ) {
+      const aircraftTarget = target as AirPlatformInstance,
+        targetToMissile = missile.position
+          .clone()
+          .sub(target.position)
+          .normalize(),
+        rearAspect = clamp(
+          -target.velocity.clone().normalize().dot(targetToMissile),
+          0,
+          1,
+        ),
+        engineHealth =
+          ((aircraftTarget.subsystemHealth.get("left-engine") ?? 0) +
+            (aircraftTarget.subsystemHealth.get("right-engine") ?? 0)) /
+          200;
+      captureProbability = infraredSeekerCaptureProbability({
+        range,
+        seekerRange: missile.definition.seekerRange,
+        offBoresightDeg: offBoresight,
+        fieldOfViewDeg: missile.definition.seekerFovDeg,
+        infraredSignature:
+          target.infraredSignature * (0.55 + 0.45 * engineHealth),
+        rearAspect,
+        targetAltitude: target.position.y,
+        flareSignal: decoy?.infraredSignature,
+      });
+    } else if (missile.definition.guidance !== "infrared") {
+      const ecm =
+        target.kind === "aircraft"
+          ? (target as AirPlatformInstance).definition.ecm
+          : undefined;
+      captureProbability = radarSeekerCaptureProbability({
+        range,
+        seekerRange: missile.definition.seekerRange,
+        offBoresightDeg: offBoresight,
+        fieldOfViewDeg: missile.definition.seekerFovDeg,
+        targetRcs: target.radarCrossSection,
+        ecmStrength: ecm?.strength ?? 0,
+        burnThroughRange: ecm?.burnThroughRange ?? 0,
+      });
+    }
+    if (
+      roll(this.serial + missile.id.length + Math.floor(time * 4)) <
+      captureProbability
+    ) {
+      missile.seekerAcquired = true;
+      this.emit(
+        time,
+        "detect",
+        `${missile.definition.name} SEEKER ACQUIRED / ${Math.round(captureProbability * 100)}% SOLUTION`,
+      );
+    }
+  }
+  private maintainMissileIllumination(
+    missile: AirMissileInstance,
+    target: AirRuntimeTarget,
+    shooter: AirPlatformInstance | undefined,
+    time: number,
+  ) {
+    if (missile.definition.guidance !== "semi-active-radar") return true;
+    const track = shooter?.tracks.get(target.id),
+      offset =
+        track && shooter
+          ? track.position.clone().sub(shooter.position)
+          : undefined,
+      illuminating = semiActiveIlluminationValid({
+        shooterAlive: !!shooter?.alive,
+        trackClassification: track?.classification ?? "unknown",
+        trackQuality: track?.quality ?? 0,
+        trackAge: track ? time - track.lastUpdate : Infinity,
+        maximumTrackAge: (shooter?.definition.sensor.updateInterval ?? 0) * 2.2,
+        offBoresightDeg:
+          offset && shooter ? angle(shooter.heading, offset) : Infinity,
+        illuminationFieldOfViewDeg:
+          shooter?.definition.sensor.fieldOfViewDeg ?? 0,
+      });
+    if (!illuminating) missile.illuminationLostAt ??= time;
+    else missile.illuminationLostAt = null;
+    if (
+      missile.illuminationLostAt === null ||
+      time - missile.illuminationLostAt <= 1.5
+    )
+      return true;
+    this.terminateMissile(missile);
+    this.emit(time, "maneuver", `${missile.definition.name} LOST ILLUMINATION`);
+    return false;
+  }
+  private missileAimPoint(
+    missile: AirMissileInstance,
+    target: AirRuntimeTarget,
+    decoy: AirDecoyInstance | undefined,
+    range: number,
+    dt: number,
+    time: number,
+  ) {
+    const targetEcm =
+        target.kind === "aircraft"
+          ? (target as AirPlatformInstance).definition.ecm
+          : undefined,
+      burnedThrough = range <= (targetEcm?.burnThroughRange ?? 0),
+      measurementUncertainty =
+        (1 - missile.definition.countermeasureResistance) * range * 0.025 +
+        (burnedThrough ? 0 : (targetEcm?.strength ?? 0) * range * 0.018),
+      measurement = missile.seekerAcquired
+        ? seekerMeasurementPoint({
+            targetPosition: target.position,
+            uncertainty: measurementUncertainty,
+            noise: [
+              roll(time * 4 + missile.id.length),
+              roll(time * 4 + missile.id.length + 1),
+              roll(time * 4 + missile.id.length + 2),
+            ],
+          })
+        : undefined;
+    let aim = airToAirGuidancePoint({
+      seekerAcquired: missile.seekerAcquired,
+      commandPoint: missile.commandPoint,
+      measuredTargetPosition: measurement
+        ? new THREE.Vector3(measurement.x, measurement.y, measurement.z)
+        : undefined,
+    });
+    if (
+      !missile.seekerAcquired ||
+      !decoy ||
+      decoy.position.distanceTo(missile.position) >= range
+    )
+      return aim;
+    const signal =
+        missile.definition.guidance === "infrared"
+          ? decoy.infraredSignature
+          : decoy.radarCrossSection,
+      targetSignal =
+        missile.definition.guidance === "infrared"
+          ? target.infraredSignature
+          : target.radarCrossSection,
+      ecm =
+        target.kind === "aircraft"
+          ? (target as AirPlatformInstance).definition.ecm
+          : undefined,
+      burned = range <= (ecm?.burnThroughRange ?? 0),
+      capture =
+        (signal / (signal + targetSignal)) *
+          (1 - missile.definition.countermeasureResistance) +
+        (burned ? 0 : (ecm?.strength ?? 0) * 0.2);
+    if (roll(this.serial + missile.age * 7) < capture * dt * 2.2) {
+      aim = decoy.position.clone();
+      missile.targetId = decoy.id;
+      this.emit(
+        time,
+        "countermeasure",
+        `${missile.definition.name} DECOY CAPTURE / ${decoy.decoyType.toUpperCase()}`,
+      );
+    }
+    return aim;
+  }
+  private integrateAirToAirMissile(
+    missile: AirMissileInstance,
+    aim: THREE.Vector3,
+    dt: number,
+  ) {
+    const desired = aim.sub(missile.position).normalize(),
+      turn = THREE.MathUtils.degToRad(missile.definition.maxTurnRateDeg) * dt;
+    missile.velocity.copy(
+      rotateToward(
+        missile.velocity.clone().normalize(),
+        desired,
+        turn,
+      ).multiplyScalar(
+        THREE.MathUtils.lerp(
+          missile.velocity.length(),
+          missile.definition.speed,
+          Math.min(1, dt * 1.8),
+        ),
+      ),
+    );
+    missile.position.addScaledVector(missile.velocity, dt);
+    missile.model.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      missile.velocity.clone().normalize(),
+    );
+    const flame = missile.model.userData.flame as THREE.Mesh | undefined;
+    if (flame) flame.visible = missile.age < missile.definition.boostSeconds;
+  }
+  private resolveAirToAirFuze(
+    missile: AirMissileInstance,
+    target: AirRuntimeTarget,
+    range: number,
+    time: number,
+  ) {
+    if (range <= missile.definition.proximityRadius) {
+      if (target.kind !== "decoy") {
+        target.applyDamage(missile.definition.damage, missile.position);
+        this.standardDamageApplications++;
+        if (!target.alive)
+          this.emit(
+            time,
+            "kill",
+            `${missile.definition.name} INTERCEPT / ${target.id}`,
+          );
+        this.emit(time, "hit", `${missile.definition.name} HIT / ${target.id}`);
+      }
+      this.terminateMissile(
+        missile,
+        target.kind === "decoy" ? "miss" : "hit",
+        time,
+      );
+      return;
+    }
+    if (missile.age > 180 || missile.position.y < 0)
+      this.terminateMissile(missile, "miss", time);
+  }
+  private updateMissile(
+    missile: AirMissileInstance,
+    time: number,
+    dt: number,
+    context: AirScenarioContext,
+  ) {
+    if (!missile.alive || this.updateReleasedMissile(missile, dt)) return;
+    const target = this.targetById(missile.targetId, context),
+      shooter = this.aircraft.find(
+        (aircraft) => aircraft.id === missile.shooterId,
+      );
+    if (!target) {
+      this.updateMissileAfterTargetLoss(missile, dt);
+      return;
+    }
+    if (missile.definition.guidance === "anti-ship-radar") {
+      if (target.kind === "decoy") this.terminateMissile(missile, "miss", time);
+      else
+        this.updateAntiShipMissile(missile, target, shooter, time, dt, context);
+      return;
+    }
+    const range = missile.position.distanceTo(target.position);
+    missile.age += dt;
+    missile.phase = airToAirMissilePhase({
+      age: missile.age,
+      boostSeconds: missile.definition.boostSeconds,
+      commandRange: missile.position.distanceTo(missile.commandPoint),
+      seekerRange: missile.definition.seekerRange,
+      seekerAcquired: missile.seekerAcquired,
+    });
+    this.updateMissileDatalink(missile, target, shooter, time);
+    const decoy = this.matchingDecoy(missile, target);
+    this.attemptMissileSeekerCapture(missile, target, decoy, range, time);
+    if (!this.maintainMissileIllumination(missile, target, shooter, time))
+      return;
+    const aim = this.missileAimPoint(missile, target, decoy, range, dt, time);
+    this.integrateAirToAirMissile(missile, aim, dt);
+    this.resolveAirToAirFuze(missile, target, range, time);
+  }
+  private updateAntiShipMissile(
+    m: AirMissileInstance,
+    target: TargetableEntity,
+    shooter: AirPlatformInstance | undefined,
+    time: number,
+    dt: number,
+    context: AirScenarioContext,
+  ) {
+    const flight = m.definition.antiShipFlight;
+    if (!flight)
+      throw new Error(`${m.definition.id} missing anti-ship flight envelope`);
+    const cm = context.countermeasures?.(target.id),
+      burnThrough =
+        !!cm &&
+        (!cm.ecmEnabled ||
+          cm.ecmHealth <= 0.05 ||
+          resultRangeFor(m, target) <= cm.burnThroughRange),
+      ecmPenalty =
+        cm && cm.ecmEnabled && !burnThrough ? cm.ecmStrength * 0.42 : 0,
+      rcsFactor = THREE.MathUtils.clamp(
+        0.55 + (target.radarCrossSection / 20) * 0.35,
+        0.55,
+        0.9,
+      ),
+      seekerCaptureProbability =
+        THREE.MathUtils.clamp(
+          (burnThrough ? 0.96 : 0.82) - ecmPenalty,
+          0.12,
+          0.96,
+        ) * rcsFactor,
+      previousPhase = m.phase,
+      previousAcquired = m.seekerAcquired,
+      result = updateAntiShipGuidance({
+        state: m,
+        config: {
+          boostSeconds: m.definition.boostSeconds,
+          terminalRange: m.definition.seekerRange,
+          seekerRange: m.definition.seekerRange,
+          seekerFovDeg: m.definition.seekerFovDeg,
+          boostAltitude: Math.max(flight.boostAltitude, m.position.y),
+          cruiseAltitude: flight.cruiseAltitude,
+          terminalAltitude: flight.terminalAltitude,
+          boostSpeed: m.definition.speed * flight.boostSpeedFactor,
+          cruiseSpeed: m.definition.speed * flight.cruiseSpeedFactor,
+          terminalSpeed: m.definition.speed,
+          midcourseTurnRateDeg: m.definition.maxTurnRateDeg,
+          terminalTurnRateDeg:
+            m.definition.maxTurnRateDeg * flight.terminalTurnFactor,
+        },
+        position: m.position,
+        velocity: m.velocity,
+        commandPoint: m.commandPoint,
+        commandVelocity:
+          shooter?.tracks.get(target.id)?.velocity ?? new THREE.Vector3(),
+        targetPosition: target.position,
+        targetVelocity: target.velocity,
+        dt,
+        seekerCaptureProbability,
+        seekerSample: roll(this.serial + m.id.length + Math.floor(m.age * 4)),
+      });
+    m.velocity.copy(result.direction.multiplyScalar(result.speed));
+    m.position.addScaledVector(m.velocity, dt);
+    m.position.y = Math.max(
+      0.08,
+      THREE.MathUtils.lerp(
+        m.position.y,
+        result.desiredAltitude,
+        Math.min(1, dt * (m.phase === "terminal" ? 1.4 : 0.55)),
+      ),
+    );
+    m.model.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      m.velocity.clone().normalize(),
+    );
+    const flame = m.model.userData.flame as THREE.Mesh | undefined;
+    if (flame) flame.visible = m.age < m.definition.boostSeconds;
+    if (previousPhase !== "terminal" && m.phase === "terminal")
+      this.emit(
+        time,
+        "maneuver",
+        `${m.definition.name} ACTIVE SEARCH / COMMAND RANGE ${result.commandRange.toFixed(0)} wu`,
+      );
+    if (!previousAcquired && result.acquiredNow)
+      this.emit(
+        time,
+        "detect",
+        `${m.definition.name} SEEKER ACQUIRED / ${Math.round(result.captureProbability * 100)}% SOLUTION / ${burnThrough ? "BURN THROUGH" : "PROBABILISTIC"}`,
+      );
+    if (m.seekerAcquired && !m.softKillResolved && cm) {
+      m.softKillResolved = true;
+      const nearest = cm.decoys
+          .filter((d) => d.position.distanceTo(target.position) < 30)
+          .sort(
+            (a, b) =>
+              a.position.distanceTo(m.position) -
+              b.position.distanceTo(m.position),
+          )[0],
+        contest = radarCountermeasureContest({
+          targetRcs: target.radarCrossSection,
+          targetRange: result.targetRange,
+          decoyRcs: nearest?.rcs,
+          decoyRange: nearest?.position.distanceTo(m.position),
+          ecmEnabled: cm.ecmEnabled,
+          ecmStrength: cm.ecmStrength,
+          ecmHealth: cm.ecmHealth,
+          burnThroughRange: cm.burnThroughRange,
+        });
+      if (roll(this.serial + m.id.length) < contest.defeatProbability) {
+        this.terminateMissile(m, "miss", time);
+        this.emit(
+          time,
+          "countermeasure",
+          `${m.definition.name} SOFT KILL / ${nearest ? "ECM + DECOY" : "ECM"} / PK ${Math.round(contest.defeatProbability * 100)}%`,
+        );
+        return;
+      }
+      this.emit(
+        time,
+        "countermeasure",
+        `${m.definition.name} ${result.targetRange <= cm.burnThroughRange ? "BURN THROUGH" : nearest ? "DECOY REJECTED" : "ECM CONTESTED"}`,
+      );
+    }
+    if (result.targetRange <= m.definition.proximityRadius) {
+      target.applyDamage(m.definition.damage, m.position);
+      this.standardDamageApplications++;
+      this.terminateMissile(m, "hit", time);
+      this.emit(time, "hit", `${m.definition.name} HIT / ${target.id}`);
+    }
+  }
+  private applyAircraftDamage(
+    a: AirPlatformInstance,
+    damage: number,
+    point: THREE.Vector3,
+    time: number,
+  ) {
+    const localHit = a.model.worldToLocal(point.clone()),
+      resolution = resolveAircraftHit({
+        localHit,
+        modelLength: Number(a.model.userData.modelLength ?? 8),
+        damage,
+      }),
+      primaryBefore = a.subsystemHealth.get(resolution.primary) ?? 100;
+    a.subsystemHealth.set(
+      resolution.primary,
+      Math.max(0, primaryBefore - resolution.primaryDamage),
+    );
+    if (resolution.structureDamage > 0)
+      a.subsystemHealth.set(
+        "structure",
+        Math.max(
+          0,
+          (a.subsystemHealth.get("structure") ?? 100) -
+            resolution.structureDamage,
+        ),
+      );
+    this.emit(
+      time,
+      "damage",
+      `${a.definition.name} ${resolution.zone.toUpperCase()} / ${resolution.primary.toUpperCase()} ${Math.round(a.subsystemHealth.get(resolution.primary) ?? 0)}% / STRUCTURE ${Math.round(a.subsystemHealth.get("structure") ?? 0)}%`,
+    );
+    const disposition = airDamageDisposition({
+      structure: a.subsystemHealth.get("structure") ?? 0,
+      leftEngine: a.subsystemHealth.get("left-engine") ?? 0,
+      rightEngine: a.subsystemHealth.get("right-engine") ?? 0,
+      radar: a.subsystemHealth.get("radar") ?? 0,
+      flightControl: a.subsystemHealth.get("flight-control") ?? 0,
+      weapons: a.subsystemHealth.get("weapons") ?? 0,
+    });
+    if (disposition === "mission-kill") {
+      a.alive = false;
+      a.state = "disabled";
+      this.emit(
+        time,
+        "kill",
+        `${a.definition.name} MISSION KILL / LOSS OF CONTROL`,
+      );
+    } else if (disposition === "egress" && a.mission !== "return") {
+      a.mission = "return";
+      a.state = "egress";
+      this.emit(time, "maneuver", `${a.definition.name} DAMAGE ABORT / RETURN`);
+    }
+  }
+  private updateDecoys(dt: number) {
+    for (const d of this.decoys) {
+      if (!d.alive) continue;
+      d.age += dt;
+      d.position.addScaledVector(d.velocity, dt);
+      d.velocity.multiplyScalar(Math.max(0, 1 - dt * 0.12));
+      d.velocity.y -= dt * 0.05;
+      const mesh = d.model as THREE.Mesh,
+        mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0, 0.85 * (1 - d.age / d.life));
+      d.model.scale.setScalar(
+        1 + d.age * (d.decoyType === "chaff" ? 0.32 : 0.06),
+      );
+      if (d.age >= d.life) {
+        d.alive = false;
+        d.model.visible = false;
+      }
+    }
+  }
+  diagnostics() {
+    const live = this.aircraft.filter((a) => a.alive),
+      ksr = this.missiles.filter((m) => m.definition.id === "KSR-5");
+    return {
+      aircraft: this.aircraft.length,
+      live: live.length,
+      blueLive: live.filter((a) => a.side === "blue").length,
+      redLive: live.filter((a) => a.side === "red").length,
+      missiles: this.missiles.length,
+      activeMissiles: this.missiles.filter((m) => m.alive).length,
+      chaff: this.decoys.filter((d) => d.alive && d.decoyType === "chaff")
+        .length,
+      flares: this.decoys.filter((d) => d.alive && d.decoyType === "flare")
+        .length,
+      missileWarnings: this.aircraft.reduce(
+        (sum, a) => sum + a.missileWarnings.size,
+        0,
+      ),
+      ecmDetections: this.events.filter(
+        (e) => e.kind === "detect" && e.text.includes(" / ECM"),
+      ).length,
+      launches: this.events.filter((e) => e.kind === "launch").length,
+      hits: this.events.filter((e) => e.kind === "hit").length,
+      kills: this.events.filter((e) => e.kind === "kill").length,
+      standardDamageApplications: this.standardDamageApplications,
+      ksrMaximumSpeed: Math.max(0, ...ksr.map((m) => m.velocity.length())),
+    };
+  }
+  visualDiagnostics() {
+    return {
+      smoking: this.aircraft.filter(
+        (a) =>
+          (a.model.userData.damageSmoke as THREE.Object3D | undefined)?.visible,
+      ).length,
+      burning: this.aircraft.filter(
+        (a) =>
+          (a.model.userData.damageFire as THREE.Object3D | undefined)?.visible,
+      ).length,
+      crashed: this.aircraft.filter((a) => a.state === "crashed").length,
+    };
+  }
+  hasActiveCombat() {
+    return (
+      this.missiles.some((m) => m.alive) ||
+      this.aircraft.some(
+        (a) => a.alive && a.state !== "egress" && a.mission !== "return",
+      )
+    );
+  }
+  focusTarget() {
+    return (
+      this.missiles.find((m) => m.alive)?.model ??
+      this.aircraft.find((a) => a.alive)?.model ??
+      null
+    );
+  }
 }

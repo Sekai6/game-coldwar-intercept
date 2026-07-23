@@ -1,14 +1,34 @@
 import type * as THREE from "three";
 import type { EngagementRecord } from "../defense/engagement";
-import type { CombatEntity, CombatSide, TargetableEntity } from "../combat-entity";
+import type {
+  CombatEntity,
+  CombatSide,
+  TargetableEntity,
+} from "../combat-entity";
 import type { EnemyType } from "../threats/catalog";
 import type { FormationStatus } from "./formation";
 
-export type AirMissionOrder = "cap" | "intercept" | "escort" | "anti-ship" | "egress" | "return";
-export type AirGuidance = "active-radar" | "semi-active-radar" | "infrared" | "anti-ship-radar";
+export type AirMissionOrder =
+  | "cap"
+  | "intercept"
+  | "escort"
+  | "anti-ship"
+  | "egress"
+  | "return";
+export type AirGuidance =
+  | "active-radar"
+  | "semi-active-radar"
+  | "infrared"
+  | "anti-ship-radar";
 export type AirPlatformId = "F-14A" | "TU-16K" | "A-6E";
 export type AirWeaponId = "AIM-54A" | "AIM-7F" | "AIM-9L" | "KSR-5" | "AGM-84A";
-export type AirSubsystem = "structure" | "left-engine" | "right-engine" | "radar" | "flight-control" | "weapons";
+export type AirSubsystem =
+  | "structure"
+  | "left-engine"
+  | "right-engine"
+  | "radar"
+  | "flight-control"
+  | "weapons";
 export interface CountermeasureReleaseProgram {
   type: "chaff" | "flare";
   remaining: number;
@@ -81,7 +101,11 @@ export interface AirPlatformDefinition {
   };
   sensor: AirSensorDefinition;
   ecm: { strength: number; burnThroughRange: number };
-  countermeasures: { chaff: number; flares: number; program: CountermeasureProgram };
+  countermeasures: {
+    chaff: number;
+    flares: number;
+    program: CountermeasureProgram;
+  };
   loadout: Readonly<Record<AirWeaponId, number>>;
   fireControlChannels: { datalink: number; illumination: number };
   hardpoints: readonly {
@@ -134,7 +158,13 @@ export interface AirPlatformInstance extends TargetableEntity {
   nextCountermeasure: number;
   chaff: number;
   flares: number;
-  state: "formation" | "engaging" | "defending" | "egress" | "disabled" | "crashed";
+  state:
+    | "formation"
+    | "engaging"
+    | "defending"
+    | "egress"
+    | "disabled"
+    | "crashed";
   targetId: string | null;
   engagements: Map<string, EngagementRecord>;
   missileWarnings: Map<string, AirTrack>;
@@ -166,6 +196,7 @@ export interface AirMissileInstance extends TargetableEntity {
   model: THREE.Group;
   shooterId: string;
   targetId: string;
+  engagementTargetId: string;
   age: number;
   phase: "boost" | "midcourse" | "terminal" | "destroyed";
   commandPoint: THREE.Vector3;
@@ -176,6 +207,7 @@ export interface AirMissileInstance extends TargetableEntity {
   ignitionDelay: number;
   releaseAge: number;
   nextSeekerAttempt: number;
+  engagementSettled: boolean;
 }
 
 export interface AirDecoyInstance extends CombatEntity {
@@ -200,7 +232,14 @@ export interface AirScenarioContext {
 
 export type AirCombatEvent = {
   time: number;
-  kind: "detect" | "launch" | "countermeasure" | "hit" | "damage" | "kill" | "maneuver";
+  kind:
+    | "detect"
+    | "launch"
+    | "countermeasure"
+    | "hit"
+    | "damage"
+    | "kill"
+    | "maneuver";
   text: string;
 };
 
