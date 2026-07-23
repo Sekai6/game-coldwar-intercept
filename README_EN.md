@@ -86,6 +86,8 @@ Aircraft models now contain persistent smoke and fire nodes driven by subsystem 
 
 Launch-resource policy has moved out of `air/runtime.ts` into `src/air/launch-management.ts`: live and pending weapons both consume datalink/illumination channels, while selection jointly checks classification, range, inventory, channel capacity, and a compatible physical hardpoint. Countermeasure cooldown, inventory, and timed-release scheduling live in `src/air/countermeasure-program.ts`. `scripts/verify-air-resources.mjs` verifies both resource paths without a browser.
 
+Mission-level OODA policy lives in `src/air/ooda.ts`: CAP and anti-ship selection consume only track classification and estimated position, defensive beaming and TTI consume only missile-warning tracks, and CAP return checks both hostile aircraft and hostile weapons still in flight. `verify:air-ooda` and `verify:air-resources` are now first-class npm scripts, and `package.json` has been expanded into maintainable multiline JSON.
+
 `npm run verify:joint-air` is the serial browser gate for the joint launch chains. `npm run verify:air-strike-defense` separately proves ship-radar tracks, a physical Mk 10/Mk 41 SAM departure, hard-kill synchronization, and visible leaker damage. Both checks use one constrained Chromium context at a time.
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.

@@ -1,1 +1,47 @@
-{"name":"codewar-intercept","private":true,"version":"0.1.0","type":"module","license":"PolyForm-Noncommercial-1.0.0","scripts":{"dev":"vite","build":"tsc && vite build","verify:cg57":"node scripts/verify-cg57.mjs","verify:surface-salvo":"node scripts/verify-surface-salvo.mjs","verify:bilateral-launch":"node scripts/verify-bilateral-launch.mjs","verify:platform-abort":"node scripts/verify-platform-abort.mjs","verify:platform-doctrine":"node scripts/verify-platform-doctrine.mjs","verify:platform-arrival":"node scripts/verify-platform-arrival.mjs","verify:platform-defense-visual":"node scripts/verify-platform-defense-visual.mjs","verify:default-platform":"node scripts/verify-default-platform.mjs","verify:default-engagement":"node scripts/verify-default-engagement.mjs","verify:surface-distance":"node scripts/verify-surface-distance.mjs","verify:platform-launcher-damage":"node scripts/verify-platform-launcher-damage.mjs","verify:platform-launcher-degraded":"node scripts/verify-platform-launcher-degraded.mjs","verify:platform-fire-control-damage":"node scripts/verify-platform-fire-control-damage.mjs","verify:platform-fire-control-degraded":"node scripts/verify-platform-fire-control-degraded.mjs","verify:sam-efficiency":"node scripts/measure-sam-efficiency.mjs","verify:joint-air":"node scripts/verify-joint-air.mjs","verify:air-strike-defense":"node scripts/verify-air-strike-defense.mjs","verify:air-hardpoints":"node scripts/verify-air-hardpoints.mjs","verify:air-guidance":"tsc src/air/guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-guidance.mjs","verify:air-dynamics":"tsc src/air/flight-dynamics.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-dynamics.mjs","verify:air-countermeasures":"node scripts/verify-air-countermeasures.mjs","verify:air-formation-damage":"tsc src/air/formation.ts src/air/damage.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-formation-damage.mjs","verify:air-sensors":"tsc src/air/sensors.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-sensors.mjs","verify:radar-countermeasures":"tsc src/radar-countermeasures.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-radar-countermeasures.mjs","verify:anti-ship-guidance":"tsc src/anti-ship-guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-anti-ship-guidance.mjs"},"dependencies":{"three":"^0.178.0"},"devDependencies":{"@types/three":"^0.178.0","playwright-core":"^1.61.1","typescript":"^5.8.3","vite":"^7.0.0"}}
+{
+  "name": "codewar-intercept",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "verify:cg57": "node scripts/verify-cg57.mjs",
+    "verify:surface-salvo": "node scripts/verify-surface-salvo.mjs",
+    "verify:bilateral-launch": "node scripts/verify-bilateral-launch.mjs",
+    "verify:platform-abort": "node scripts/verify-platform-abort.mjs",
+    "verify:platform-doctrine": "node scripts/verify-platform-doctrine.mjs",
+    "verify:platform-arrival": "node scripts/verify-platform-arrival.mjs",
+    "verify:platform-defense-visual": "node scripts/verify-platform-defense-visual.mjs",
+    "verify:default-platform": "node scripts/verify-default-platform.mjs",
+    "verify:default-engagement": "node scripts/verify-default-engagement.mjs",
+    "verify:surface-distance": "node scripts/verify-surface-distance.mjs",
+    "verify:platform-launcher-damage": "node scripts/verify-platform-launcher-damage.mjs",
+    "verify:platform-launcher-degraded": "node scripts/verify-platform-launcher-degraded.mjs",
+    "verify:platform-fire-control-damage": "node scripts/verify-platform-fire-control-damage.mjs",
+    "verify:platform-fire-control-degraded": "node scripts/verify-platform-fire-control-degraded.mjs",
+    "verify:sam-efficiency": "node scripts/measure-sam-efficiency.mjs",
+    "verify:joint-air": "node scripts/verify-joint-air.mjs",
+    "verify:air-strike-defense": "node scripts/verify-air-strike-defense.mjs",
+    "verify:air-hardpoints": "node scripts/verify-air-hardpoints.mjs",
+    "verify:air-guidance": "tsc src/air/guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-guidance.mjs",
+    "verify:air-dynamics": "tsc src/air/flight-dynamics.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-dynamics.mjs",
+    "verify:air-countermeasures": "node scripts/verify-air-countermeasures.mjs",
+    "verify:air-formation-damage": "tsc src/air/formation.ts src/air/damage.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-formation-damage.mjs",
+    "verify:air-resources": "tsc src/air/launch-management.ts src/air/countermeasure-program.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-resources.mjs",
+    "verify:air-ooda": "tsc src/air/ooda.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-ooda.mjs",
+    "verify:air-sensors": "tsc src/air/sensors.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-sensors.mjs",
+    "verify:radar-countermeasures": "tsc src/radar-countermeasures.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-radar-countermeasures.mjs",
+    "verify:anti-ship-guidance": "tsc src/anti-ship-guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-anti-ship-guidance.mjs"
+  },
+  "dependencies": {
+    "three": "^0.178.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.178.0",
+    "playwright-core": "^1.61.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0"
+  }
+}
