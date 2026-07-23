@@ -532,6 +532,17 @@ game-codewar-intercept/
    ├─ vls.ts                     # Mk 41 装填、排序、间隔和损伤隔离
    ├─ surface-combat.ts          # Harpoon 飞行、软硬杀伤和平台命中
    ├─ surface-doctrine.ts        # 反舰齐射规模与 BDA 规划
+   ├─ scenarios/
+   │  └─ surface-scenarios.ts    # 初始部署、装载、交战条令与 ECM 场景参数
+   ├─ air/
+   │  ├─ scenarios.ts            # 空中预设、编队、任务与护航关系
+   │  ├─ ship-bridge.ts          # 舰船到通用空中目标接口的适配层
+   │  └─ runtime.ts / guidance.ts / ooda.ts / flight-dynamics.ts
+   ├─ ship-defense/
+   │  ├─ defense-targets.ts      # 通用防空目标与来源映射
+   │  ├─ engagement-runtime.ts   # 交战状态与威胁排序
+   │  ├─ launcher-runtime.ts     # 发射架通用运动规则
+   │  └─ defense-visuals.ts      # CIWS 等防空视觉事件
    ├─ models/
    │  ├─ long-beach.ts
    │  ├─ ticonderoga.ts
@@ -555,6 +566,9 @@ game-codewar-intercept/
 ### 模块边界
 
 - `main.ts` 负责把通用能力组合成一局战斗，不应包含舰名或平台 ID 特判。
+- `scenarios/` 只描述一局战斗的初始状态和可调规则，不实现武器行为。
+- `air/ship-bridge.ts` 是空中系统与水面舰运行时之间的唯一目标适配边界。
+- `ship-defense/` 管理目标映射、交战状态、发射架通用规则和防空视觉；实体发射仍必须经过舰载弹药与发射架状态机。
 - 防御舰的能力、库存、传感器、发射器和损伤区段由 `ShipDefinition` 声明。
 - 来袭弹包线、终端能力、预设和程序化模型由 `ThreatDefinition` 声明。
 - 敌平台传感器、武器槽、机动、点防御、软杀伤和损管由 `EnemyPlatformDefinition` 声明。

@@ -621,6 +621,17 @@ game-codewar-intercept/
 │  ├─ sim.ts                  # Radar scans, association, uncertainty, fire-control solutions
 │  ├─ sensor-faces.ts         # Fixed-array aspect coverage and localized damage
 │  ├─ vls.ts                  # Pure VLS loading, geometry, and damage logic
+│  ├─ scenarios/
+│  │  └─ surface-scenarios.ts # Initial deployment, loadout, doctrine, and ECM scenario data
+│  ├─ air/
+│  │  ├─ scenarios.ts         # Air presets, formations, missions, and escort assignments
+│  │  ├─ ship-bridge.ts       # Surface-ship to generic air target adapter
+│  │  └─ runtime.ts / guidance.ts / ooda.ts / flight-dynamics.ts
+│  ├─ ship-defense/
+│  │  ├─ defense-targets.ts   # Generic defense targets and source mapping
+│  │  ├─ engagement-runtime.ts # Engagement state and threat ranking
+│  │  ├─ launcher-runtime.ts  # Common launcher motion rules
+│  │  └─ defense-visuals.ts   # CIWS and defense visual events
 │  ├─ threats/
 │  │  ├─ catalog.ts           # Incoming-threat registry, derived type, and lookup
 │  │  ├─ types.ts             # Envelope, terminal, EW, visual, and preset contracts
