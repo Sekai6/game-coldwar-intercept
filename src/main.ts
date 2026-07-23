@@ -7885,6 +7885,24 @@ function tick(now: number) {
     .filter((event) => event.kind === "launch")
     .map((event) => event.text)
     .join("|");
+  canvas.dataset.airReleaseAuthorizationLog = airCombat.events
+    .filter((event) => event.text.includes("RELEASE AUTHORIZED"))
+    .map((event) => event.text)
+    .join("|");
+  canvas.dataset.airHardpointStates = airCombat.aircraft
+    .flatMap((aircraft) =>
+      aircraft.hardpoints.map(
+        (hardpoint) =>
+          `${aircraft.id}:${hardpoint.id}:${hardpoint.state}:${hardpoint.weaponId ?? "none"}`,
+      ),
+    )
+    .join("|");
+  canvas.dataset.airWeaponReleaseAges = airCombat.missiles
+    .map(
+      (missile) =>
+        `${missile.id}:${missile.releaseAge.toFixed(2)}:${missile.ignitionDelay.toFixed(2)}`,
+    )
+    .join("|");
   const airStates = airCombat.aircraft.map((aircraft) =>
     `${aircraft.id}:${aircraft.state}:${aircraft.position.y.toFixed(1)}:${aircraft.velocity.length().toFixed(1)}`,
   );

@@ -74,6 +74,14 @@ export interface AirPlatformDefinition {
   ecm: { strength: number; burnThroughRange: number };
   countermeasures: { chaff: number; flares: number; program: CountermeasureProgram };
   loadout: Readonly<Record<AirWeaponId, number>>;
+  fireControlChannels: { datalink: number; illumination: number };
+  hardpoints: readonly {
+    id: string;
+    position: readonly [number, number, number];
+    compatibleWeapons: readonly AirWeaponId[];
+    releaseDelay: number;
+    ignitionDelay: number;
+  }[];
   buildModel: () => THREE.Group;
   shipDefenseTemplate: EnemyType;
 }
@@ -123,6 +131,23 @@ export interface AirPlatformInstance extends CombatEntity {
   targetId: string | null;
   shotAt: Set<string>;
   missileWarnings: Map<string, AirTrack>;
+  hardpoints: AirHardpointInstance[];
+}
+
+export interface AirHardpointInstance {
+  id: string;
+  position: THREE.Vector3;
+  compatibleWeapons: readonly AirWeaponId[];
+  releaseDelay: number;
+  ignitionDelay: number;
+  weaponId: AirWeaponId | null;
+  mountedModel: THREE.Group | null;
+  state: "ready" | "reserved" | "releasing" | "empty" | "damaged";
+  releaseAt: number;
+  targetId: string | null;
+  commandPoint: THREE.Vector3;
+  commandVelocity: THREE.Vector3;
+  trackQuality: number;
 }
 
 export interface AirMissileInstance extends CombatEntity {
@@ -138,6 +163,8 @@ export interface AirMissileInstance extends CombatEntity {
   seekerAcquired: boolean;
   illuminationLostAt: number | null;
   softKillResolved?: boolean;
+  ignitionDelay: number;
+  releaseAge: number;
 }
 
 export interface AirDecoyInstance extends CombatEntity {
