@@ -2167,7 +2167,8 @@ let dragging = false,
   el = 0.48,
   dist = 210,
   cinematic = false,
-  viewMode: 1 | 2 | 3 | 4 | 5 | 6 = 2;
+  viewMode: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 = 2,
+  selectedAircraftId: string | null = null;
 let shipSpeedKnots = DEFAULT_SURFACE_CONFIG.initialSpeedKnots,
   shipDesiredHeading = 0,
   shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots,
@@ -4106,11 +4107,32 @@ log("16:42:11  SURFACE SEARCH RADAR — CONTACTS ACQUIRED");
 function updateCamera() {
   if (cinematic) az += 0.0018;
   let focus: THREE.Vector3;
+  const selectedAircraft = airCombat.aircraft.find(
+    (aircraft) => aircraft.id === selectedAircraftId && aircraft.alive,
+  );
+  if ((viewMode === 6 || viewMode === 7 || viewMode === 8) && selectedAircraft) {
+    focus = selectedAircraft.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+    const forward = selectedAircraft.heading.clone().normalize(),
+      right = forward.clone().cross(new THREE.Vector3(0, 1, 0)).normalize(),
+      chasePosition = focus
+        .clone()
+        .addScaledVector(forward, -Math.max(9, dist * 0.32))
+        .addScaledVector(right, Math.sin(az) * dist * 0.08)
+        .add(new THREE.Vector3(0, 3.5 + Math.sin(el) * dist * 0.12, 0));
+    camera.position.lerp(chasePosition, 0.16);
+    camera.lookAt(focus.clone().addScaledVector(forward, 12));
+    return;
+  }
   if (viewMode === 1)
     focus = defender.position.clone().add(new THREE.Vector3(0, 9, 0));
-  else if (viewMode === 6) {
-    const airTarget = airCombat.focusTarget();
-    focus = airTarget?.position.clone() ?? defender.position.clone();
+  else if (viewMode === 9) {
+    const liveAircraft = airCombat.aircraft.filter((aircraft) => aircraft.alive);
+    focus = liveAircraft.length
+      ? liveAircraft.reduce(
+          (center, aircraft) => center.add(aircraft.position),
+          new THREE.Vector3(),
+        ).multiplyScalar(1 / liveAircraft.length)
+      : defender.position.clone();
   } else if (viewMode === 5 && enemyPlatform)
     focus = enemyPlatform.model.position
       .clone()
@@ -7528,6 +7550,8 @@ function tick(now: number) {
   const air = airCombat.diagnostics();
   const airVisuals = airCombat.visualDiagnostics();
   canvas.dataset.airCombatEnabled = String(airCombat.enabled);
+  canvas.dataset.cameraViewMode = String(viewMode);
+  canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
   canvas.dataset.pureAirCombat = String(pureAirCombatStart);
   canvas.dataset.aircraftTotal = String(air.aircraft);
   canvas.dataset.aircraftLive = String(air.live);
@@ -7860,6 +7884,19 @@ addEventListener("pointermove", (e) => {
 canvas.addEventListener("wheel", (e) => {
   dist = Math.max(70, Math.min(360, dist + e.deltaY * 0.12));
 });
+function cycleAircraft(
+  currentId: string | null,
+  side?: "blue" | "red",
+) {
+  const candidates = airCombat.aircraft.filter(
+    (aircraft) => aircraft.alive && (!side || aircraft.side === side),
+  );
+  if (!candidates.length) return null;
+  const currentIndex = candidates.findIndex(
+    (aircraft) => aircraft.id === currentId,
+  );
+  return candidates[(currentIndex + 1) % candidates.length].id;
+}
 addEventListener("keydown", (e) => {
   if (e.code === "Space") running = !running;
   if (e.key.toLowerCase() === "r") location.reload();
@@ -7903,9 +7940,34 @@ addEventListener("keydown", (e) => {
   if (e.key === "6") {
     cinematic = false;
     viewMode = 6;
-    az = 0.72;
+    selectedAircraftId = cycleAircraft(selectedAircraftId);
+    az = 0;
     el = 0.2;
-    dist = 38;
+    dist = 42;
+  }
+  if (e.key === "7") {
+    cinematic = false;
+    viewMode = 7;
+    selectedAircraftId = cycleAircraft(selectedAircraftId, "blue");
+    az = 0;
+    el = 0.2;
+    dist = 42;
+  }
+  if (e.key === "8") {
+    cinematic = false;
+    viewMode = 8;
+    selectedAircraftId = cycleAircraft(selectedAircraftId, "red");
+    az = 0;
+    el = 0.2;
+    dist = 42;
+  }
+  if (e.key === "9") {
+    cinematic = false;
+    viewMode = 9;
+    selectedAircraftId = null;
+    az = 0.65;
+    el = 0.58;
+    dist = 300;
   }
   if (e.key.toLowerCase() === "c") cinematic = !cinematic;
 });
