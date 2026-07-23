@@ -79,6 +79,7 @@ import type {
   AarSnapshot,
   BoosterDebris,
   ChaffCloud,
+  DefenseTarget,
   EnemyType,
   EngagementDoctrine,
   EngagementState,
@@ -438,9 +439,9 @@ let surfaceHardpointState = new Map<
   surfaceFireControlReadyAt = Infinity,
   surfaceFireControlReadyLogged = false;
 const interceptors: Interceptor[] = [];
-const airDefenseTargets = new Map<string, Missile>();
+const airDefenseTargets = new Map<string, DefenseTarget>();
 const airDefenseHardKills = new Set<string>();
-const engagements = new Map<Missile, EngagementState>();
+const engagements = new Map<DefenseTarget, EngagementState>();
 
 function defenseTargetForSource(sourceId: number | string) {
   return typeof sourceId === "string"
@@ -448,8 +449,11 @@ function defenseTargetForSource(sourceId: number | string) {
     : missiles[sourceId - 1];
 }
 
-function defenseSourceForTarget(target: Missile) {
-  return target.externalAirEntityId ?? missiles.indexOf(target) + 1;
+function defenseSourceForTarget(target: DefenseTarget) {
+  return (
+    target.externalAirEntityId ??
+    missiles.findIndex((candidate) => candidate === target) + 1
+  );
 }
 
 function defenseSourceSeed(sourceId: number | string) {
@@ -486,23 +490,12 @@ function synchronizeAirDefenseTargets() {
       selection.visible = false;
       contact.model.add(selection);
       contact.model.userData.selection = selection;
-      const path = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([contact.model.position.clone()]),
-        new THREE.LineBasicMaterial({ visible: false }),
-      );
       target = {
         mesh: contact.model,
         velocity: contact.velocity,
         phase: "inbound",
-        age: 0,
-        history: [contact.model.position.clone()],
-        path,
         kind: contact.template,
-        speedFactor: 1,
         rcs: contact.radarCrossSection,
-        launchAt: elapsed,
-        aimOffset: new THREE.Vector3(),
-        bank: 0,
         externalAirMissileId: contact.category === "missile" ? contact.id : undefined,
         externalAirEntityId: contact.id,
         externalAirCategory: contact.category,
@@ -512,7 +505,6 @@ function synchronizeAirDefenseTargets() {
       log(`AIR THREAT REGISTERED / ${contact.name} / ${contact.category.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`);
     }
     target.phase = contact.phase;
-    target.age += 0.05;
     target.rcs = contact.radarCrossSection;
   }
   for (const [id, target] of airDefenseTargets) {
@@ -522,7 +514,7 @@ function synchronizeAirDefenseTargets() {
   }
 }
 
-function resolveAirDefenseHit(target: Missile, damage: number) {
+function resolveAirDefenseHit(target: DefenseTarget, damage: number) {
   const id = target.externalAirEntityId;
   if (!id) return true;
   if (target.externalAirCategory === "aircraft") {
@@ -579,7 +571,7 @@ let launcherCycle = 0;
 const lastTrackClasses = new Map<number, string>(),
   lastAltitudeState = new Map<number, boolean>();
 const explosions: Explosion[] = [];
-const explodedTargets = new Set<Missile>();
+const explodedTargets = new Set<DefenseTarget>();
 const shipDamageEffects: ShipDamageEffect[] = [];
 const boosterDebris: BoosterDebris[] = [];
 const chaffClouds: ChaffCloud[] = [];
@@ -588,7 +580,7 @@ const vlsLaunchEffects: VlsLaunchEffect[] = [];
 let chaffSerial = 0;
 const WORLD_UNITS_PER_KM = 10,
   RADAR_PIXELS_PER_WORLD_UNIT = 0.14;
-function defensiveShotRequirement(missile: Missile, _quality: number) {
+function defensiveShotRequirement(missile: DefenseTarget, _quality: number) {
   if (missile.externalAirCategory === "aircraft") {
     const state = engagements.get(missile);
     if (!state) return 1;
@@ -611,7 +603,7 @@ function defensiveShotRequirement(missile: Missile, _quality: number) {
     return 0;
   return doctrine === "SINGLE" ? 1 : 2;
 }
-function recordEngagementLaunch(target: Missile) {
+function recordEngagementLaunch(target: DefenseTarget) {
   const state = engagements.get(target) ?? {
     shots: 0,
     pending: 0,
@@ -644,7 +636,7 @@ function settleEngagement(
       `DOCTRINE LOOK / TARGET ${defenseSourceForTarget(interceptor.target)} / ${state.misses} MISS`,
     );
 }
-function missileThreatScore(missile: Missile, quality: number) {
+function missileThreatScore(missile: DefenseTarget, quality: number) {
   const range = missile.mesh.position.distanceTo(defender.position),
     tti = range / Math.max(1, missile.velocity.length());
   return (
@@ -950,7 +942,7 @@ function updatePlatformFirePlan() {
 }
 
 function launchInterceptor(
-  target: Missile,
+  target: DefenseTarget,
   weapon: WeaponType,
   launcherLabel: string,
   launchPoint: string,
@@ -1239,7 +1231,7 @@ function applyVlsBankDamage(bankName: VlsCellState["bank"], health: number) {
     `MK 41 ${bankName} DAMAGE ISOLATION / ${disabled} CELLS DISABLED / ${bank.trappedRounds} ROUNDS TRAPPED`,
   );
 }
-function queueInterceptorLaunch(target: Missile, weapon: WeaponType) {
+function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
   const launcherConfig = activeShip.launcher;
   if (!launcherConfig.compatibleWeapons.includes(weapon)) {
     log(
@@ -2491,7 +2483,7 @@ function flashCombat(kind: "intercept" | "impact") {
   combatFlash.classList.add(kind);
 }
 function destroyMissileVisual(
-  missile: Missile,
+  missile: DefenseTarget,
   effect: "intercept" | "impact",
 ) {
   if (!explodedTargets.has(missile)) {
@@ -4726,7 +4718,7 @@ function scheduleIlluminators(candidates: Interceptor[], dt: number) {
     }
   }
   const slewRate = THREE.MathUtils.degToRad(55) * (0.25 + 0.75 * health);
-  const capturedTargets = new Map<Missile, number>();
+  const capturedTargets = new Map<DefenseTarget, number>();
   for (const [index, state] of illuminators.slice(0, limit).entries()) {
     const interceptor = state.target;
     if (!interceptor) continue;
@@ -6080,7 +6072,7 @@ function updateCombat(dt: number) {
   const activeInterceptors = interceptors.filter((i) => i.mesh.visible),
     pending = pendingLauncherRequests(),
     active = activeInterceptors.length + pending.length,
-    assignments = new Map<Missile, number>();
+    assignments = new Map<DefenseTarget, number>();
   activeInterceptors.forEach((i) =>
     assignments.set(i.target, (assignments.get(i.target) ?? 0) + 1),
   );
@@ -7903,6 +7895,16 @@ function tick(now: number) {
   canvas.dataset.shipAirMissileKills = String(airDefenseHardKills.size);
   canvas.dataset.airDefenseLegacyRegistrations = String(
     missiles.filter((target) => target.externalAirEntityId).length,
+  );
+  canvas.dataset.airDefenseLegacyFields = String(
+    [...airDefenseTargets.values()].reduce(
+      (count, target) =>
+        count +
+        ["age", "history", "path", "speedFactor", "launchAt", "aimOffset", "bank"].filter(
+          (field) => field in target,
+        ).length,
+      0,
+    ),
   );
   canvas.dataset.shipSamShots = String(airDefenseSamLaunches.length);
   canvas.dataset.airDefenseLaunchers = airDefenseSamLaunches

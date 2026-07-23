@@ -10,23 +10,25 @@ export type MissilePhase =
   | "midcourse"
   | "terminal"
   | "destroyed";
-export type Missile = {
+export type DefenseTarget = {
   mesh: THREE.Group;
   velocity: THREE.Vector3;
   phase: MissilePhase;
-  age: number;
-  history: THREE.Vector3[];
-  path: THREE.Line;
   kind: EnemyType;
-  speedFactor: number;
   rcs: number;
-  launchAt: number;
-  aimOffset: THREE.Vector3;
-  bank: number;
   externalAirMissileId?: string;
   externalAirEntityId?: string;
   externalAirCategory?: "aircraft" | "missile";
   externalDisplayName?: string;
+};
+export type Missile = DefenseTarget & {
+  age: number;
+  history: THREE.Vector3[];
+  path: THREE.Line;
+  speedFactor: number;
+  launchAt: number;
+  aimOffset: THREE.Vector3;
+  bank: number;
   platformLaunch?: {
     reservation: PlatformLaunchReservation;
     released: boolean;
@@ -43,7 +45,7 @@ export type Missile = {
 };
 export type Interceptor = {
   mesh: THREE.Group;
-  target: Missile;
+  target: DefenseTarget;
   age: number;
   weapon: WeaponType;
   velocity: THREE.Vector3;
@@ -57,7 +59,7 @@ export type Interceptor = {
   illuminated: boolean;
   illuminationBeam: THREE.Line;
 };
-export type LauncherRequest = { target: Missile; weapon: WeaponType };
+export type LauncherRequest = { target: DefenseTarget; weapon: WeaponType };
 export type Mk10Phase =
   | "ready"
   | "slewing"
