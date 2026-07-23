@@ -11,7 +11,9 @@ import {
   DefenseTargetRegistry,
 } from "../dist-test/defense/target-source.js";
 import {
+  allocateIlluminators,
   authorizeLaunch,
+  effectiveIlluminatorCount,
   planDefenseEngagement,
   resolveShot,
   threatScore,
@@ -258,6 +260,54 @@ assert(
   }),
   "defense planner created a plan without an available weapon",
 );
+assert(
+  effectiveIlluminatorCount(3, 4, 0.4) === 2 &&
+    effectiveIlluminatorCount(3, 4, 0) === 0,
+  "fire-control health did not scale illuminator capacity",
+);
+const interceptorA = {
+  mesh: new THREE.Group(),
+  target: missile,
+};
+const interceptorB = {
+  mesh: new THREE.Group(),
+  target: missile,
+};
+const secondTarget = { ...missile, mesh: new THREE.Group() };
+const interceptorC = {
+  mesh: new THREE.Group(),
+  target: secondTarget,
+};
+interceptorA.mesh.visible = true;
+interceptorB.mesh.visible = true;
+interceptorC.mesh.visible = true;
+const directorStates = [
+  { id: 1, azimuth: -1, target: null, lastTargetId: -1 },
+  { id: 2, azimuth: 1, target: null, lastTargetId: -1 },
+];
+allocateIlluminators({
+  states: directorStates,
+  candidates: [interceptorA, interceptorB, interceptorC],
+  limit: 2,
+  bearing: (interceptor) => (interceptor === interceptorC ? 0.9 : -0.8),
+  targetId: (interceptor) => interceptor.target.entity?.id ?? "second-target",
+});
+assert(
+  directorStates[0].target === interceptorA &&
+    directorStates[1].target === interceptorC &&
+    !directorStates.some((state) => state.target === interceptorB),
+  "illuminator allocator duplicated a target or ignored minimum slew",
+);
+secondTarget.phase = "destroyed";
+allocateIlluminators({
+  states: directorStates,
+  candidates: [interceptorA, interceptorC],
+  limit: 2,
+  bearing: () => 0,
+  targetId: () => "track",
+});
+assert(!directorStates[1].target, "invalid illumination assignment was not released");
+secondTarget.phase = "terminal";
 const aftLauncher = {
   ...mk10,
   name: "AFT",
@@ -340,6 +390,7 @@ console.log(
       ),
       plannedWeapon: defensePlan.weapon,
       alternateTarget: alternatePlan.observation.id,
+      illuminators: directorStates.filter((state) => state.target).length,
       elevation: launcher.elevation,
       mk10Launches: launches,
       mk10ReturnedRounds: returned,

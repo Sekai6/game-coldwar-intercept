@@ -108,7 +108,9 @@ import {
   updateVlsRuntime,
 } from "./ship-defense/launcher-runtime";
 import {
+  allocateIlluminators,
   authorizeLaunch,
+  effectiveIlluminatorCount,
   planDefenseEngagement,
   resolveShot,
   threatScore,
@@ -4004,10 +4006,10 @@ function updateShipStatus() {
     heading =
       (THREE.MathUtils.radToDeg(Math.atan2(forward.x, -forward.z)) + 360) % 360,
     directorCount = (defender.userData.directors as THREE.Group[]).length,
-    effectiveIlluminators = Math.min(
+    effectiveIlluminators = effectiveIlluminatorCount(
       maxIlluminators,
       directorCount,
-      Math.ceil(directorCount * subsystemHealth("fireControl")),
+      subsystemHealth("fireControl"),
     ),
     activeIlluminators = illuminators
       .slice(0, effectiveIlluminators)
@@ -4309,50 +4311,19 @@ function scheduleIlluminators(candidates: Interceptor[], dt: number) {
       (i) => i.mesh.visible && i.target.phase !== "destroyed",
     ),
     directorCount = (defender.userData.directors as THREE.Group[]).length,
-    limit =
-      health <= 0.05
-        ? 0
-        : Math.min(
-            maxIlluminators,
-            directorCount,
-            Math.max(1, Math.ceil(directorCount * health)),
-          );
-  illuminators.forEach((state, index) => {
-    if (index >= limit || !state.target || !active.includes(state.target))
-      state.target = null;
+    limit = effectiveIlluminatorCount(maxIlluminators, directorCount, health);
+  allocateIlluminators({
+    states: illuminators,
+    candidates: active,
+    limit,
+    bearing: (interceptor) => {
+      const local = defender.worldToLocal(interceptor.target.mesh.position.clone());
+      return Math.atan2(-local.z, local.x);
+    },
+    targetId: (interceptor) => defenseSourceForTarget(interceptor.target),
+    onAssignment: (state, id) =>
+      log(`FIRE CONTROL / ${activeShip.subsystemLabels.fireControl} ${state.id} / TRACK ${id} / SLEWING`),
   });
-  for (const interceptor of active) {
-    if (
-      illuminators.some(
-        (state) =>
-          state.target === interceptor ||
-          state.target?.target === interceptor.target,
-      )
-    )
-      continue;
-    const targetLocal = defender.worldToLocal(
-        interceptor.target.mesh.position.clone(),
-      ),
-      bearing = Math.atan2(-targetLocal.z, targetLocal.x);
-    const free = illuminators
-      .slice(0, limit)
-      .filter((state) => !state.target)
-      .sort(
-        (a, b) =>
-          Math.abs(angleDifference(bearing, a.azimuth)) -
-          Math.abs(angleDifference(bearing, b.azimuth)),
-      )[0];
-    if (free) {
-      free.target = interceptor;
-      const id = defenseSourceForTarget(interceptor.target);
-      if (free.lastTargetId !== id) {
-        free.lastTargetId = id;
-        log(
-          `FIRE CONTROL / ${activeShip.subsystemLabels.fireControl} ${free.id} / TRACK ${id} / SLEWING`,
-        );
-      }
-    }
-  }
   const slewRate = THREE.MathUtils.degToRad(55) * (0.25 + 0.75 * health);
   const capturedTargets = new Map<DefenseTarget, number>();
   for (const [index, state] of illuminators.slice(0, limit).entries()) {
