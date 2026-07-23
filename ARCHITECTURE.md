@@ -64,6 +64,7 @@ The simulation is organized around capabilities rather than ship-name checks.
 5. Run `npm run verify:joint-air` and `npm run verify:air-strike-defense` serially. The gates prove the three aircraft weapon chains, physical shipboard launcher departure, hard-kill synchronization, and leaker damage with one Chromium context and a renderer-process limit.
 6. Joint mission completion waits for active air weapons and aircraft still executing combat orders. Anti-ship aircraft transition to `egress` after releasing their mission weapon; CAP transitions to `return` only after hostile aircraft and hostile air weapons are gone.
 7. Every AAR snapshot includes aircraft identity, side, 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects. These are runtime snapshots, not reconstructed event-log estimates.
+8. Airborne radar factors live in `src/air/sensors.ts`: RCS fourth-root scaling, radar horizon, sensor precision, radar health, ECM range reduction, and burn-through all affect detection probability and track quality. Missile defense decisions consume short-lived warning tracks; an unobserved weapon cannot trigger maneuver or countermeasure deployment.
 
 ## Adding an incoming missile
 

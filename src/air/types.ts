@@ -114,6 +114,7 @@ export interface AirPlatformInstance extends CombatEntity {
   state: "formation" | "engaging" | "defending" | "egress" | "disabled" | "crashed";
   targetId: string | null;
   shotAt: Set<string>;
+  missileWarnings: Map<string, AirTrack>;
 }
 
 export interface AirMissileInstance extends CombatEntity {

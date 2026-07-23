@@ -78,6 +78,8 @@ Each aircraft has three-dimensional point-mass flight, speed-dependent turn auth
 
 Joint mission completion now waits for airborne weapons and aircraft still executing combat orders. Strike aircraft enter egress after mission-weapon release, while CAP returns only after hostile aircraft and hostile air weapons are gone. AAR snapshots contain aircraft 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects, so clearing the surface-defense queue no longer truncates the air battle record.
 
+Airborne radar now applies RCS fourth-root scaling, radar horizon, sensor precision, system health, ECM range/quality loss, and burn-through distance. Aircraft missile defense consumes short-lived warning tracks; a weapon outside RWR/MAWS/visual warning conditions cannot trigger maneuver or countermeasure deployment. `npm run verify:air-sensors` checks ECM, burn-through, and warning envelopes without a browser.
+
 The combat model is not a simple “target enters a circle and disappears on a dice roll.” Results emerge from an observable engagement chain:
 
 ```text

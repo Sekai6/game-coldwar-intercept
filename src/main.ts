@@ -7821,6 +7821,8 @@ function tick(now: number) {
   canvas.dataset.airCombatKills = String(air.kills);
   canvas.dataset.airChaff = String(air.chaff);
   canvas.dataset.airFlares = String(air.flares);
+  canvas.dataset.airMissileWarnings = String(air.missileWarnings);
+  canvas.dataset.airEcmDetections = String(air.ecmDetections);
   canvas.dataset.ksrMaximumSpeed = air.ksrMaximumSpeed.toFixed(2);
   const airDefenseTracks = [...combatPicture.tracks.values()].filter(
       (track) => missiles[track.sourceId - 1]?.externalAirMissileId,
