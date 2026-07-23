@@ -8,6 +8,12 @@ export type AirGuidance = "active-radar" | "semi-active-radar" | "infrared" | "a
 export type AirPlatformId = "F-14A" | "TU-16K" | "A-6E";
 export type AirWeaponId = "AIM-54A" | "AIM-7F" | "AIM-9L" | "KSR-5" | "AGM-84A";
 export type AirSubsystem = "structure" | "left-engine" | "right-engine" | "radar" | "flight-control" | "weapons";
+export interface CountermeasureReleaseProgram {
+  type: "chaff" | "flare";
+  remaining: number;
+  nextReleaseAt: number;
+  interval: number;
+}
 
 export interface AirWeaponDefinition {
   id: AirWeaponId;
@@ -134,12 +140,7 @@ export interface AirPlatformInstance extends CombatEntity {
   shotAt: Set<string>;
   missileWarnings: Map<string, AirTrack>;
   hardpoints: AirHardpointInstance[];
-  countermeasurePrograms: {
-    type: "chaff" | "flare";
-    remaining: number;
-    nextReleaseAt: number;
-    interval: number;
-  }[];
+  countermeasurePrograms: CountermeasureReleaseProgram[];
   formationStatus: FormationStatus;
   formationError: number;
 }
