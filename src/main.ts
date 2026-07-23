@@ -72,14 +72,41 @@ import {
 import { pointDefenseCapability } from "./platforms/defense";
 import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
-import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
+import {
+  AIR_SCENARIO_PRESETS,
+  airScenarioSpawns,
+  type AirScenarioPresetId,
+} from "./air/scenarios";
 import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
-import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
-import { adaptCombatTrack, adaptTargetableEntity, allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
-import { moveAngle, moveToward, setMk10Elevation } from "./ship-defense/launcher-runtime";
-import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
+import {
+  DEFAULT_SURFACE_CONFIG,
+  initialSurfaceLoadout,
+  initialSurfaceThreats,
+} from "./scenarios/surface-scenarios";
+import {
+  adaptCombatTrack,
+  adaptTargetableEntity,
+  allTargets,
+  sourceForTarget,
+  sourceSeed,
+  targetForSource,
+} from "./ship-defense/defense-targets";
+import {
+  moveAngle,
+  moveToward,
+  setMk10Elevation,
+} from "./ship-defense/launcher-runtime";
+import {
+  authorizeLaunch,
+  resolveShot,
+  threatScore,
+} from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
 import { selectConsumerTarget } from "./defense/consumer.js";
+import type {
+  EngagementRecord,
+  EngagementSourceId,
+} from "./defense/engagement.js";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -90,7 +117,6 @@ import type {
   DefenseTarget,
   EnemyType,
   EngagementDoctrine,
-  EngagementState,
   Explosion,
   IlluminatorState,
   Interceptor,
@@ -412,10 +438,7 @@ const surfaceLaunchQueue: {
   routeOffset: THREE.Vector3;
   plannedArrivalAt: number;
 }[] = [];
-let surfaceHardpointState = new Map<
-    string,
-    "ready" | "reserved" | "fired"
-  >(),
+let surfaceHardpointState = new Map<string, "ready" | "reserved" | "fired">(),
   surfaceStrikeAmmo = initialLoadout.surfaceStrike,
   nextSurfaceLaunch = 0,
   nextSurfaceDecision = 0,
@@ -450,7 +473,7 @@ let surfaceHardpointState = new Map<
 const interceptors: Interceptor[] = [];
 const airDefenseTargets = new Map<string, DefenseTarget>();
 const airDefenseHardKills = new Set<string>();
-const engagements = new Map<DefenseTarget, EngagementState>();
+const engagements = new Map<EngagementSourceId, EngagementRecord>();
 
 function defenseTargetForSource(sourceId: number | string) {
   return targetForSource(sourceId, missiles, airDefenseTargets);
@@ -495,7 +518,9 @@ function synchronizeAirDefenseTargets() {
         displayName: contact.name,
       });
       airDefenseTargets.set(contact.entity.id, target);
-      log(`AIR THREAT REGISTERED / ${contact.name} / ${contact.entity.kind.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`);
+      log(
+        `AIR THREAT REGISTERED / ${contact.name} / ${contact.entity.kind.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`,
+      );
     }
     target.phase = contact.phase;
   }
@@ -563,13 +588,14 @@ let chaffSerial = 0;
 const WORLD_UNITS_PER_KM = 10,
   RADAR_PIXELS_PER_WORLD_UNIT = 0.14;
 function defensiveShotRequirement(missile: DefenseTarget, _quality: number) {
+  const targetId = defenseSourceForTarget(missile);
   if (missile.entity?.kind === "aircraft") {
-    const state = engagements.get(missile);
+    const state = engagements.get(targetId);
     if (!state) return 1;
     if (state.pending > 0 || elapsed - state.lastResolution < 1.5) return 0;
     return state.shots < 2 ? 1 : 0;
   }
-  const state = engagements.get(missile);
+  const state = engagements.get(targetId);
   if (!state) return doctrine === "SINGLE" ? 1 : 2;
   if (doctrine === "SSLS") {
     if (state.shots < 2) return 2;
@@ -585,16 +611,18 @@ function defensiveShotRequirement(missile: DefenseTarget, _quality: number) {
     return 0;
   return doctrine === "SINGLE" ? 1 : 2;
 }
-function recordEngagementLaunch(target: DefenseTarget) {
-  recordLaunch(engagements, target);
-}
 function settleEngagement(
   interceptor: Interceptor,
   result: "hit" | "miss" | "cancel",
 ) {
   if (interceptor.mesh.userData.engagementSettled) return;
   interceptor.mesh.userData.engagementSettled = true;
-  const state = resolveShot(engagements, interceptor.target, result, elapsed);
+  const state = resolveShot(
+    engagements,
+    defenseSourceForTarget(interceptor.target),
+    result,
+    elapsed,
+  );
   if (!state) return;
   if (
     doctrine === "SSLS" &&
@@ -726,7 +754,8 @@ function assessPlatformFirePlan(plan: PlatformFirePlan) {
     )?.salvoDoctrine,
     weapons = platformFirePlanWeapons(plan),
     resolvedWeapons = weapons.filter(
-      (missile) => missile.platformLaunch?.released && missile.phase === "destroyed",
+      (missile) =>
+        missile.platformLaunch?.released && missile.phase === "destroyed",
     ).length,
     actualHits = weapons.filter(
       (missile) => missile.mesh.userData.platformImpact === true,
@@ -1084,7 +1113,6 @@ function launchInterceptor(
   g.userData.launcherLabel = launcherLabel;
   g.userData.launchPoint = launchPoint;
   interceptors.push(interceptor);
-  recordEngagementLaunch(target);
   const launchRange =
     target.mesh.position.distanceTo(defender.position) / WORLD_UNITS_PER_KM;
   log(
@@ -1133,6 +1161,7 @@ function disableVlsCell(cell: VlsCellState) {
   else if (cell.phase === "closing" && cell.closeTo === "ready")
     changeVlsCellAmmo(cell, -1);
   if (cell.pending) {
+    cancelAuthorizedLaunch(cell.pending);
     cell.pending = null;
   }
   if (roundLoaded) bank.trappedRounds++;
@@ -1196,7 +1225,7 @@ function applyVlsBankDamage(bankName: VlsCellState["bank"], health: number) {
     `MK 41 ${bankName} DAMAGE ISOLATION / ${disabled} CELLS DISABLED / ${bank.trappedRounds} ROUNDS TRAPPED`,
   );
 }
-function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
+function reserveInterceptorLauncher(target: DefenseTarget, weapon: WeaponType) {
   const launcherConfig = activeShip.launcher;
   if (!launcherConfig.compatibleWeapons.includes(weapon)) {
     log(
@@ -1281,6 +1310,20 @@ function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
   );
   return true;
 }
+function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
+  const targetId = defenseSourceForTarget(target);
+  return !!authorizeLaunch(engagements, targetId, () =>
+    reserveInterceptorLauncher(target, weapon),
+  );
+}
+function cancelAuthorizedLaunch(request: LauncherRequest) {
+  resolveShot(
+    engagements,
+    defenseSourceForTarget(request.target),
+    "cancel",
+    elapsed,
+  );
+}
 function updateMk10Launchers(dt: number) {
   if (activeShip.launcher.kind !== "mk10") return;
   const config = activeShip.launcher,
@@ -1296,6 +1339,7 @@ function updateMk10Launchers(dt: number) {
       request = launcher.pending;
     if (request && health <= 0.05) {
       changeAmmo(request.weapon, 1);
+      cancelAuthorizedLaunch(request);
       launcher.pending = null;
       launcher.reloadRail = -1;
       launcher.phase = "returning";
@@ -1309,7 +1353,9 @@ function updateMk10Launchers(dt: number) {
       launcher.pending.target.phase === "destroyed" &&
       launcher.phase === "slewing"
     ) {
-      changeAmmo(launcher.pending.weapon, 1);
+      const cancelled = launcher.pending;
+      changeAmmo(cancelled.weapon, 1);
+      cancelAuthorizedLaunch(cancelled);
       launcher.pending = null;
       launcher.phase = "returning";
       launcher.phaseSince = elapsed;
@@ -1322,7 +1368,9 @@ function updateMk10Launchers(dt: number) {
         track = combatPicture.trackForTarget(trackId);
       if (!track) {
         if (elapsed - launcher.phaseSince > 4.5) {
-          changeAmmo(launcher.pending.weapon, 1);
+          const cancelled = launcher.pending;
+          changeAmmo(cancelled.weapon, 1);
+          cancelAuthorizedLaunch(cancelled);
           launcher.pending = null;
           launcher.phase = "returning";
           launcher.phaseSince = elapsed;
@@ -1612,7 +1660,9 @@ function updateVlsCells(dt: number) {
       bank = vlsBanks[cell.bank],
       sequenceInterval = config.sequenceInterval / (0.35 + 0.65 * health);
     if (cell.pending && cell.pending.target.phase === "destroyed") {
-      changeAmmo(cell.pending.weapon, 1);
+      const cancelled = cell.pending;
+      changeAmmo(cancelled.weapon, 1);
+      cancelAuthorizedLaunch(cancelled);
       cell.pending = null;
       cell.closeTo = "ready";
       cell.phase = "closing";
@@ -1622,6 +1672,7 @@ function updateVlsCells(dt: number) {
       );
     }
     if (cell.pending && health <= 0.05) {
+      cancelAuthorizedLaunch(cell.pending);
       cell.pending = null;
       cell.closeTo = "disabled";
       cell.phase = "closing";
@@ -1821,7 +1872,9 @@ function deployChaff(source: Missile) {
     serial: ++chaffSerial,
   });
   source.mesh.userData.chaffDeployed = true;
-  log(`${source.threatType} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`);
+  log(
+    `${source.threatType} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`,
+  );
 }
 function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
   const platform = missile.target;
@@ -2167,7 +2220,7 @@ function createPlatformDamage(
     localImpact
       ? localImpact.clone().setY(Math.max(2.2, localImpact.y))
       : new THREE.Vector3(
-          THREE.MathUtils.clamp((serial % 3 - 1) * 12, -20, 20),
+          THREE.MathUtils.clamp(((serial % 3) - 1) * 12, -20, 20),
           5.2 + (serial % 2) * 1.8,
           serial % 2 ? 3.6 : -3.6,
         ),
@@ -2348,8 +2401,7 @@ function damageSubsystem(
         ? damageFixedSensorFace(approachBearing, amount)
         : -1,
     faceModels = defender.userData.sensorFaceModels as
-      | THREE.Group[]
-      | undefined,
+      THREE.Group[] | undefined,
     side = Math.sin((shipDamageEffects.length + 1) * 4.17) >= 0 ? 1 : -1,
     visualPosition =
       sensorFace >= 0 && faceModels?.[sensorFace]
@@ -2372,6 +2424,7 @@ function damageSubsystem(
       const launcher = mk10Launchers[id === "aftLauncher" ? 0 : 1];
       if (launcher?.pending) {
         changeAmmo(launcher.pending.weapon, 1);
+        cancelAuthorizedLaunch(launcher.pending);
         launcher.pending = null;
       }
       if (launcher) {
@@ -2508,7 +2561,11 @@ const phaseEl = document.querySelector("#phase")!,
   ewState = document.querySelector("#ewState")!,
   qualityFill = document.querySelector("#qualityFill") as HTMLElement;
 
-function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number) {
+function updateRaidCard(
+  liveAir: number,
+  reserveAir: number,
+  maxAirRange: number,
+) {
   if (!enemyPlatform) {
     raidIndex.textContent = "AIR";
     raidTitle.textContent = "RAID STATUS";
@@ -2575,8 +2632,7 @@ function updateRaidCard(liveAir: number, reserveAir: number, maxAirRange: number
         ? "OPFOR FC READY"
         : `OPFOR FC BUILD ${Math.max(0, enemyRequiredAge - enemyTrackAge).toFixed(1)}s`;
   else if (enemyReserved > 0) enemyFireState = "OPFOR TRACK BUILD";
-  targetState.textContent =
-    `HARP ${surfaceStrikeAmmo}/${strikeMagazine} / ${bda} / ${enemyFireState}`;
+  targetState.textContent = `HARP ${surfaceStrikeAmmo}/${strikeMagazine} / ${bda} / ${enemyFireState}`;
   targetState.setAttribute("data-opfor-fire-state", enemyFireState);
 }
 const targetMarker = document.querySelector("#targetMarker") as HTMLElement,
@@ -2595,7 +2651,8 @@ subsystemPanel.innerHTML = `<header><b>DAMAGE CONTROL</b><span id="damageSummary
 document.body.appendChild(subsystemPanel);
 const airStatusPanel = document.createElement("section");
 airStatusPanel.className = "air-status";
-airStatusPanel.innerHTML = "<b>JOINT AIR PICTURE</b><span>AIR OPERATIONS STANDBY</span>";
+airStatusPanel.innerHTML =
+  "<b>JOINT AIR PICTURE</b><span>AIR OPERATIONS STANDBY</span>";
 document.body.appendChild(airStatusPanel);
 updateSubsystemPanel();
 const resultPanel = document.createElement("div");
@@ -2606,9 +2663,9 @@ let placementMode: false | "enemy" | "ship" = false;
 const sandbox = document.createElement("div");
 sandbox.style.cssText =
   "position:fixed;inset:0;margin:auto;width:470px;height:430px;background:#071923f5;border:1px solid #4ac0b8;color:#d5edf0;z-index:30;padding:28px;font:12px Arial;letter-spacing:1px";
-const threatOptions = THREAT_DEFINITIONS
-  .map((definition) => `<option>${definition.id}</option>`)
-  .join("");
+const threatOptions = THREAT_DEFINITIONS.map(
+  (definition) => `<option>${definition.id}</option>`,
+).join("");
 sandbox.innerHTML = `<div style="font-size:20px;letter-spacing:3px;margin-bottom:22px">SANDBOX SCENARIO</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><label>MISSILE TYPE<select id="sbType">${threatOptions}</select></label><label>MISSILE COUNT<input id="sbCount" type="number" min="1" max="24" value="6"></label><label>LAUNCH INTERVAL (s)<input id="sbInterval" type="number" min="0" max="20" step="0.5" value="1"></label><label>ALTITUDE (50 m/unit)<input id="sbAltitude" type="number" min="0.12" max="500" step="0.1" value="1.2"></label><label>CENTER X (10 = 1 KM)<input id="sbX" type="number" min="-800" max="800" value="0"></label><label>CENTER Z (10 = 1 KM)<input id="sbZ" type="number" min="-1200" max="-80" value="-600"></label><label>FORMATION SPREAD<input id="sbSpread" type="number" min="0" max="500" value="150"></label><label>START WEAPON<select id="sbWeapon"><option>RIM-67</option><option>SM-2MR</option><option>SM-2ER</option></select></label></div><button id="sbStart" style="margin-top:28px;width:100%;border:1px solid #4ac0b8;background:#0b2830;color:#bce7e5;padding:11px;cursor:pointer">START EXERCISE</button>`;
 (sandbox.querySelector("#sbType") as HTMLSelectElement).value =
   DEFAULT_THREAT_ID;
@@ -2647,21 +2704,33 @@ function numberInput(id: string) {
 }
 const airScenarioField = document.createElement("label");
 airScenarioField.className = "sandbox-toggle";
-airScenarioField.innerHTML = '<input id="sbAirCombat" type="checkbox" checked> JOINT AIR OPERATIONS / F-14A + TU-16K + A-6E';
+airScenarioField.innerHTML =
+  '<input id="sbAirCombat" type="checkbox" checked> JOINT AIR OPERATIONS / F-14A + TU-16K + A-6E';
 sandbox.insertBefore(airScenarioField, sandbox.querySelector("#sbStart"));
-const airScenarioInput = airScenarioField.querySelector("input") as HTMLInputElement;
+const airScenarioInput = airScenarioField.querySelector(
+  "input",
+) as HTMLInputElement;
 const airPresetField = document.createElement("label");
 airPresetField.className = "sandbox-field";
-airPresetField.innerHTML = `<span>AIR PRESET</span><select id="sbAirPreset">${Object.entries(AIR_SCENARIO_PRESETS).map(([id, preset]) => `<option value="${id}">${preset.label} / ${preset.description}</option>`).join("")}</select>`;
+airPresetField.innerHTML = `<span>AIR PRESET</span><select id="sbAirPreset">${Object.entries(
+  AIR_SCENARIO_PRESETS,
+)
+  .map(
+    ([id, preset]) =>
+      `<option value="${id}">${preset.label} / ${preset.description}</option>`,
+  )
+  .join("")}</select>`;
 sandbox.insertBefore(airPresetField, sandbox.querySelector("#sbStart"));
-const airPresetInput = airPresetField.querySelector("select") as HTMLSelectElement;
+const airPresetInput = airPresetField.querySelector(
+  "select",
+) as HTMLSelectElement;
 
 function airScenarioContext() {
   const blueVelocity = new THREE.Vector3(
-      Math.cos(defender.rotation.y) * shipSpeedKnots * 0.005144,
-      0,
-      -Math.sin(defender.rotation.y) * shipSpeedKnots * 0.005144,
-    );
+    Math.cos(defender.rotation.y) * shipSpeedKnots * 0.005144,
+    0,
+    -Math.sin(defender.rotation.y) * shipSpeedKnots * 0.005144,
+  );
   const redShip: TargetableEntity | null = enemyPlatform
     ? createShipTarget({
         id: "red-surface-ship",
@@ -2672,7 +2741,10 @@ function airScenarioContext() {
         alive: !enemyPlatform.destroyed,
         applyDamage: (damage) => {
           if (!enemyPlatform) return;
-          enemyPlatform.hullIntegrity = Math.max(0, enemyPlatform.hullIntegrity - damage);
+          enemyPlatform.hullIntegrity = Math.max(
+            0,
+            enemyPlatform.hullIntegrity - damage,
+          );
           if (enemyPlatform.hullIntegrity <= 0) enemyPlatform.destroyed = true;
         },
       })
@@ -2691,15 +2763,23 @@ function airScenarioContext() {
       createExplosion(hitPoint.clone());
       flashCombat("impact");
       const localImpact = defender.worldToLocal(hitPoint.clone()),
-        zone = activeShip.damageModel.zones.find(
-          (candidate) => localImpact.x > candidate.minX,
-        ) ?? activeShip.damageModel.zones[activeShip.damageModel.zones.length - 1],
+        zone =
+          activeShip.damageModel.zones.find(
+            (candidate) => localImpact.x > candidate.minX,
+          ) ??
+          activeShip.damageModel.zones[activeShip.damageModel.zones.length - 1],
         primary = zone.systems[airShipHits % zone.systems.length];
-      damageSubsystem(primary, damage * 0.62, false, Math.atan2(-localImpact.z, localImpact.x));
+      damageSubsystem(
+        primary,
+        damage * 0.62,
+        false,
+        Math.atan2(-localImpact.z, localImpact.x),
+      );
       log(
         `AIR-LAUNCHED MISSILE IMPACT / ${damage.toFixed(0)}% DAMAGE / ${subsystems[primary].label} PRIMARY / HULL ${hullIntegrity.toFixed(0)}%`,
       );
-      phaseEl.textContent = hullIntegrity > 0 ? "DAMAGE CONTROL" : "SHIP DISABLED";
+      phaseEl.textContent =
+        hullIntegrity > 0 ? "DAMAGE CONTROL" : "SHIP DISABLED";
     },
   });
   return {
@@ -2725,11 +2805,7 @@ function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
   );
   platform.subsystemHealth.set(
     "bazalt-canisters",
-    THREE.MathUtils.clamp(
-      numberInput("#sbOpforStrikeLauncherHealth"),
-      0,
-      100,
-    ),
+    THREE.MathUtils.clamp(numberInput("#sbOpforStrikeLauncherHealth"), 0, 100),
   );
   platform.subsystemHealth.set(
     "strike-control",
@@ -2745,11 +2821,7 @@ function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
   );
   platform.subsystemHealth.set(
     "damage-control",
-    THREE.MathUtils.clamp(
-      numberInput("#sbOpforDamageControlHealth"),
-      0,
-      100,
-    ),
+    THREE.MathUtils.clamp(numberInput("#sbOpforDamageControlHealth"), 0, 100),
   );
 }
 const pickPlacement = document.createElement("button");
@@ -2929,18 +3001,22 @@ shipSelect.onchange = () => {
     "100";
   (sandbox.querySelector("#sbLauncherAftHealth") as HTMLInputElement).value =
     "100";
-  (sandbox.querySelector("#sbOpforPointDefenseHealth") as HTMLInputElement).value =
-    "100";
-  (sandbox.querySelector("#sbOpforStrikeLauncherHealth") as HTMLInputElement).value =
-    "100";
-  (sandbox.querySelector("#sbOpforFireControlHealth") as HTMLInputElement).value =
-    "100";
+  (
+    sandbox.querySelector("#sbOpforPointDefenseHealth") as HTMLInputElement
+  ).value = "100";
+  (
+    sandbox.querySelector("#sbOpforStrikeLauncherHealth") as HTMLInputElement
+  ).value = "100";
+  (
+    sandbox.querySelector("#sbOpforFireControlHealth") as HTMLInputElement
+  ).value = "100";
   (sandbox.querySelector("#sbOpforEcmHealth") as HTMLInputElement).value =
     "100";
   (sandbox.querySelector("#sbOpforDecoyHealth") as HTMLInputElement).value =
     "100";
-  (sandbox.querySelector("#sbOpforDamageControlHealth") as HTMLInputElement).value =
-    "100";
+  (
+    sandbox.querySelector("#sbOpforDamageControlHealth") as HTMLInputElement
+  ).value = "100";
 };
 for (const [label, id, value, max] of [
   ["RIM-67 MAGAZINE", "sbRim", String(activeShip.ammo.rim67), "48"],
@@ -3011,8 +3087,7 @@ for (const [label, id] of [
   sandboxGrid.appendChild(field);
 }
 const wave2Type = document.createElement("label");
-wave2Type.innerHTML =
-  `SECOND WAVE TYPE<select id="sbType2"><option value="NONE">NONE</option>${threatOptions}</select>`;
+wave2Type.innerHTML = `SECOND WAVE TYPE<select id="sbType2"><option value="NONE">NONE</option>${threatOptions}</select>`;
 const wave2Select = wave2Type.querySelector("select") as HTMLSelectElement;
 wave2Select.style.cssText =
   "display:block;width:100%;margin-top:6px;background:#0a252d;border:1px solid #315f63;color:#d5edf0;padding:7px";
@@ -3039,7 +3114,8 @@ sandbox.style.maxHeight = "calc(100vh - 48px)";
 sandbox.style.overflowY = "auto";
 sandbox.style.boxSizing = "border-box";
 const presets = document.createElement("div");
-presets.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px";
+presets.style.cssText =
+  "display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px";
 sandbox.insertBefore(presets, patternWrap);
 function presetButton(
   text: string,
@@ -3207,13 +3283,11 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     cz = numberInput("#sbZ"),
     spread = numberInput("#sbSpread");
   const platformSelection = platformSelect.value as
-    | EnemyPlatformType
-    | "AIRBORNE";
+    EnemyPlatformType | "AIRBORNE";
   let count = requestedCount;
   if (platformSelection === "AIRBORNE") {
     for (let index = 0; index < count; index++) {
-      const offset =
-        count === 1 ? 0 : (index / (count - 1) - 0.5) * spread;
+      const offset = count === 1 ? 0 : (index / (count - 1) - 0.5) * spread;
       addMissile(
         new THREE.Vector3(
           cx + offset,
@@ -3287,9 +3361,16 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   if (airCombat.enabled) {
     const context = airScenarioContext();
     const presetId = airPresetInput.value as AirScenarioPresetId;
-    airCombat.reset(context.blueShip, context.redShip, airScenarioSpawns(presetId));
-    airCombat.countermeasuresEnabled = new URLSearchParams(location.search).get("airCountermeasures") !== "off";
-    log(`AIR OPERATIONS / ${AIR_SCENARIO_PRESETS[presetId].description.toUpperCase()}`);
+    airCombat.reset(
+      context.blueShip,
+      context.redShip,
+      airScenarioSpawns(presetId),
+    );
+    airCombat.countermeasuresEnabled =
+      new URLSearchParams(location.search).get("airCountermeasures") !== "off";
+    log(
+      `AIR OPERATIONS / ${AIR_SCENARIO_PRESETS[presetId].description.toUpperCase()}`,
+    );
   }
   updateMaterialDiagnostics();
   selectedTargetId = 1;
@@ -3416,10 +3497,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
       ciwsRounds = Math.max(0, Math.min(6000, numberInput("#sbCiws")));
       surfaceStrikeAmmo = Math.max(
         0,
-        Math.min(
-          surfaceHardpointState.size,
-          numberInput("#sbHarpoon"),
-        ),
+        Math.min(surfaceHardpointState.size, numberInput("#sbHarpoon")),
       );
       maxSamChannels = Math.max(1, Math.min(8, numberInput("#sbChannels")));
       maxIlluminators = Math.max(
@@ -3880,11 +3958,13 @@ function finishMission(victory: boolean, outcomeOverride?: string) {
           Math.max(0, elapsed - 20) * 5,
       ),
     ),
-    outcome = outcomeOverride ?? (victory
-      ? leakers === 0
-        ? "AIRSPACE SECURED"
-        : `RAID SURVIVED / ${leakers} LEAKER${leakers === 1 ? "" : "S"}`
-      : `${activeShip.name} DISABLED`);
+    outcome =
+      outcomeOverride ??
+      (victory
+        ? leakers === 0
+          ? "AIRSPACE SECURED"
+          : `RAID SURVIVED / ${leakers} LEAKER${leakers === 1 ? "" : "S"}`
+        : `${activeShip.name} DISABLED`);
   showAar(outcome, score);
   augmentAarSubsystemSummary();
 }
@@ -3917,9 +3997,7 @@ const radarButton = controlButton("RADAR: ACTIVE", () => {
 const opforRadarButton = controlButton("OPFOR RADAR: ACTIVE", () => {
   opforRadarEnabled = !opforRadarEnabled;
   opforRadarButton.textContent = `OPFOR RADAR: ${opforRadarEnabled ? "ACTIVE" : "SILENT"}`;
-  log(
-    `OPFOR EMCON / RADAR ${opforRadarEnabled ? "EMITTING" : "SILENT"}`,
-  );
+  log(`OPFOR EMCON / RADAR ${opforRadarEnabled ? "EMITTING" : "SILENT"}`);
 });
 function slewSearchToSelected() {
   const track = combatPicture.trackForTarget(selectedTargetId);
@@ -3974,9 +4052,7 @@ const ecmButton = controlButton("OPFOR ECM: ON", () => {
 const platformDecoyButton = controlButton("OPFOR DECOYS: AUTO", () => {
   platformDecoysEnabled = !platformDecoysEnabled;
   platformDecoyButton.textContent = `OPFOR DECOYS: ${platformDecoysEnabled ? "AUTO" : "HOLD"}`;
-  log(
-    `OPFOR COUNTERMEASURES / ${platformDecoysEnabled ? "AUTO" : "HOLD"}`,
-  );
+  log(`OPFOR COUNTERMEASURES / ${platformDecoysEnabled ? "AUTO" : "HOLD"}`);
 });
 const shipEcmButton = controlButton("SHIP ECM: AUTO", () => {
   shipEcmEnabled = !shipEcmEnabled;
@@ -3989,7 +4065,9 @@ const srbocButton = controlButton("SRBOC: AUTO", () => {
 const surfaceAutoButton = controlButton("SURFACE STRIKE: AUTO", () => {
   autoSurfaceStrike = !autoSurfaceStrike;
   surfaceAutoButton.textContent = `SURFACE STRIKE: ${autoSurfaceStrike ? "AUTO" : "HOLD"}`;
-  log(`SURFACE STRIKE DOCTRINE / ${autoSurfaceStrike ? "AUTO" : "WEAPONS HOLD"}`);
+  log(
+    `SURFACE STRIKE DOCTRINE / ${autoSurfaceStrike ? "AUTO" : "WEAPONS HOLD"}`,
+  );
 });
 controlButton("LAUNCH HARPOON", () => planSurfaceStrike(true));
 const weaponButton = controlButton(`WEAPON: ${selectedWeapon}`, () => {
@@ -4133,9 +4211,15 @@ function updateShipManeuver(dt: number) {
       .sort(
         (a, b) =>
           a.position.distanceTo(defender.position) /
-            Math.max(1, defenseTargetForSource(a.sourceId)?.velocity.length() ?? 1) -
+            Math.max(
+              1,
+              defenseTargetForSource(a.sourceId)?.velocity.length() ?? 1,
+            ) -
           b.position.distanceTo(defender.position) /
-            Math.max(1, defenseTargetForSource(b.sourceId)?.velocity.length() ?? 1),
+            Math.max(
+              1,
+              defenseTargetForSource(b.sourceId)?.velocity.length() ?? 1,
+            ),
       ),
     threat = tracks[0],
     threatRange = threat?.position.distanceTo(defender.position) ?? Infinity;
@@ -4205,10 +4289,7 @@ function updateShipManeuver(dt: number) {
         if (range > desiredRange + platform.standoffTolerance) {
           shipDesiredHeading = headingFor(axis);
           shipManeuverMode = "close";
-        } else if (
-          range <
-          desiredRange - platform.standoffTolerance
-        ) {
+        } else if (range < desiredRange - platform.standoffTolerance) {
           shipDesiredHeading = headingFor(axis.multiplyScalar(-1));
           shipManeuverMode = "withdraw";
         } else {
@@ -4280,9 +4361,8 @@ function updateShipManeuver(dt: number) {
   wakeLineMat.opacity = 0.08 + (0.28 * shipSpeedKnots) / designSpeed;
   canvas.dataset.shipManeuverMode = shipManeuverMode;
   canvas.dataset.shipCommandedSpeedKnots = shipCommandedSpeedKnots.toFixed(2);
-  canvas.dataset.shipDesiredHeadingDeg = THREE.MathUtils.radToDeg(
-    shipDesiredHeading,
-  ).toFixed(2);
+  canvas.dataset.shipDesiredHeadingDeg =
+    THREE.MathUtils.radToDeg(shipDesiredHeading).toFixed(2);
 }
 function updateShipStatus() {
   const active =
@@ -4471,8 +4551,7 @@ function updateShipWeaponVisuals(dt: number) {
   const faceConfig = activeShip.fixedSensorFaces,
     faces = fixedSensorFaceHealth(),
     faceModels = defender.userData.sensorFaceModels as
-      | THREE.Group[]
-      | undefined;
+      THREE.Group[] | undefined;
   if (faceConfig && faces && faceModels) {
     faceModels.forEach((model, index) => {
       const material = (model.userData.panel as THREE.Mesh)
@@ -4558,8 +4637,7 @@ function updateShipWeaponVisuals(dt: number) {
       );
     else {
       const pivot = mount.model.userData.elevationPivot as
-        | THREE.Group
-        | undefined;
+        THREE.Group | undefined;
       if (pivot)
         pivot.rotation.z = THREE.MathUtils.lerp(
           pivot.rotation.z,
@@ -4871,7 +4949,9 @@ setInterval(() => {
       live - activeAir.length,
       activeAir.length
         ? Math.max(
-            ...activeAir.map((m) => m.mesh.position.distanceTo(defender.position)),
+            ...activeAir.map((m) =>
+              m.mesh.position.distanceTo(defender.position),
+            ),
           )
         : 0,
     );
@@ -5110,7 +5190,9 @@ setInterval(() => {
   }
   radarCtx.globalAlpha = 1;
 }, 100);
-function surfaceTargetingSolution(strike: NonNullable<ShipDefinition["surfaceStrike"]>) {
+function surfaceTargetingSolution(
+  strike: NonNullable<ShipDefinition["surfaceStrike"]>,
+) {
   const direct = surfacePicture.trackForTarget(1);
   if (
     direct &&
@@ -5255,9 +5337,7 @@ function planSurfaceStrike(manual = false) {
         ),
       plannedArrivalAt:
         commonTerminalAt +
-        (count > 1
-          ? (index / (count - 1) - 0.5) * strike.arrivalWindow
-          : 0),
+        (count > 1 ? (index / (count - 1) - 0.5) * strike.arrivalWindow : 0),
     });
     launchAt += strike.minimumInterval;
   }
@@ -5300,9 +5380,7 @@ function updateSurfaceCombat(
     defender.position,
     aspectHealth,
   );
-  surfacePicture
-    .drainEvents()
-    .forEach((event) => log(`SURFACE ${event}`));
+  surfacePicture.drainEvents().forEach((event) => log(`SURFACE ${event}`));
   const track = surfacePicture.trackForTarget(1);
   const strike = activeShip.surfaceStrike;
   surfaceEsmCue.age += dt;
@@ -5323,8 +5401,7 @@ function updateSurfaceCombat(
         trueBearing + bearingError * Math.sin(elapsed * 0.31 + 1.1),
       measuredRange =
         trueRange *
-        (1 +
-          (0.18 + (1 - esmHealth) * 0.2) * Math.sin(elapsed * 0.19));
+        (1 + (0.18 + (1 - esmHealth) * 0.2) * Math.sin(elapsed * 0.19));
     surfaceEsmCue.position
       .copy(defender.position)
       .add(
@@ -5502,16 +5579,14 @@ function updateSurfaceCombat(
       log(
         `RGM-84 HARPOON ${missile.id} TARGET ACQUIRED / ${(event.range / 10).toFixed(1)} km / OFF-BORESIGHT ${event.offBoresightDeg.toFixed(1)} DEG`,
       );
-    else if (event.kind === "miss")
-      {
-        surfaceMisses++;
-        nextSurfaceAssessment = Math.max(
-          nextSurfaceAssessment,
-          elapsed + strike.assessmentDelay,
-        );
-        log(`HARPOON ${missile.id} MISS / ${event.reason}`);
-      }
-    else if (event.kind === "platform-track")
+    else if (event.kind === "miss") {
+      surfaceMisses++;
+      nextSurfaceAssessment = Math.max(
+        nextSurfaceAssessment,
+        elapsed + strike.assessmentDelay,
+      );
+      log(`HARPOON ${missile.id} MISS / ${event.reason}`);
+    } else if (event.kind === "platform-track")
       log(
         `${missile.target.definition.name} INCOMING TRACK / HARPOON ${missile.id} / TQ ${Math.round(event.quality * 100)}% / ${(event.range / 10).toFixed(1)} km`,
       );
@@ -5543,18 +5618,16 @@ function updateSurfaceCombat(
       log(
         `HARPOON ${missile.id} PENETRATION / ${event.zone} / LOCAL X ${event.localImpact.x.toFixed(1)} Z ${event.localImpact.z.toFixed(1)} / FUSE ${event.fuseDelay.toFixed(2)}s`,
       );
-    else if (event.kind === "soft-kill")
-      {
-        surfaceSoftKills++;
-        nextSurfaceAssessment = Math.max(
-          nextSurfaceAssessment,
-          elapsed + strike.assessmentDelay,
-        );
-        log(
+    else if (event.kind === "soft-kill") {
+      surfaceSoftKills++;
+      nextSurfaceAssessment = Math.max(
+        nextSurfaceAssessment,
+        elapsed + strike.assessmentDelay,
+      );
+      log(
         `${missile.target.definition.name} SOFT KILL / HARPOON ${missile.id} / ${event.mode} / PK ${Math.round(event.pk * 100)}%`,
-        );
-      }
-    else if (event.kind === "point-defense") {
+      );
+    } else if (event.kind === "point-defense") {
       surfacePointDefenseKills++;
       nextSurfaceAssessment = Math.max(
         nextSurfaceAssessment,
@@ -5574,7 +5647,9 @@ function updateSurfaceCombat(
         nextSurfaceAssessment,
         elapsed + strike.assessmentDelay,
       );
-      createExplosion(event.impactPoint.clone().add(new THREE.Vector3(0, 2, 0)));
+      createExplosion(
+        event.impactPoint.clone().add(new THREE.Vector3(0, 2, 0)),
+      );
       createPlatformDamage(
         missile.target,
         event.damage,
@@ -5633,9 +5708,7 @@ function updateSurfaceCombat(
   canvas.dataset.surfaceStrikeQueued = String(surfaceLaunchQueue.length);
   canvas.dataset.surfaceHits = String(surfaceHits);
   canvas.dataset.surfaceSoftKills = String(surfaceSoftKills);
-  canvas.dataset.surfacePointDefenseKills = String(
-    surfacePointDefenseKills,
-  );
+  canvas.dataset.surfacePointDefenseKills = String(surfacePointDefenseKills);
   canvas.dataset.surfaceMisses = String(surfaceMisses);
   canvas.dataset.surfaceProgressiveDamage = surfaceProgressiveDamage.toFixed(2);
   canvas.dataset.surfaceAssessmentRemaining = Math.max(
@@ -5670,7 +5743,9 @@ function updateSurfaceCombat(
     .join(",");
   canvas.dataset.surfaceStrikeRanges = liveSurfaceStrikes
     .map((missile) =>
-      missile.mesh.position.distanceTo(missile.target.model.position).toFixed(1),
+      missile.mesh.position
+        .distanceTo(missile.target.model.position)
+        .toFixed(1),
     )
     .join(",");
   canvas.dataset.surfaceStrikeClosest = liveSurfaceStrikes
@@ -5693,9 +5768,7 @@ function updateSurfaceCombat(
     .join(",");
   canvas.dataset.surfaceStrikeCommandErrors = liveSurfaceStrikes
     .map((missile) =>
-      missile.commandPoint
-        .distanceTo(missile.target.model.position)
-        .toFixed(1),
+      missile.commandPoint.distanceTo(missile.target.model.position).toFixed(1),
     )
     .join(",");
   canvas.dataset.surfaceStrikeRouteOffsets = liveSurfaceStrikes
@@ -5720,7 +5793,9 @@ function updateSurfaceCombat(
   canvas.dataset.surfaceStrikePointDefensePending = liveSurfaceStrikes
     .map((missile) =>
       missile.pendingPointDefense
-        ? Math.max(0, missile.pendingPointDefense.resolveAt - elapsed).toFixed(2)
+        ? Math.max(0, missile.pendingPointDefense.resolveAt - elapsed).toFixed(
+            2,
+          )
         : "none",
     )
     .join(",");
@@ -5742,9 +5817,7 @@ function updateSurfaceCombat(
         incomingTrack.quality >= platformDefense.minimumTrackQuality &&
         elapsed - incomingTrack.lastUpdate <= platformDefense.trackMemory;
       if (!valid) return incomingTrack.detectionLogged ? "stale" : "searching";
-      return elapsed >= incomingTrack.fireControlReadyAt
-        ? "ready"
-        : "reaction";
+      return elapsed >= incomingTrack.fireControlReadyAt ? "ready" : "reaction";
     })
     .join(",");
   canvas.dataset.platformIncomingTrackQualities = incomingDefenseTracks
@@ -5938,20 +6011,20 @@ function updateCombat(dt: number) {
     radarEnabled
       ? [
           ...missiles
-          .map((m, i) => ({ m, i }))
-          .filter(
-            (x) =>
-              elapsed >= x.m.launchAt &&
-              x.m.phase !== "destroyed" &&
-              (!x.m.platformLaunch || x.m.platformLaunch.released),
-          )
-          .map((x) => ({
-            id: x.i + 1,
-            position: x.m.mesh.position,
-            velocity: x.m.velocity,
-            altitude: x.m.mesh.position.y * 50,
-            rcs: x.m.rcs,
-          })),
+            .map((m, i) => ({ m, i }))
+            .filter(
+              (x) =>
+                elapsed >= x.m.launchAt &&
+                x.m.phase !== "destroyed" &&
+                (!x.m.platformLaunch || x.m.platformLaunch.released),
+            )
+            .map((x) => ({
+              id: x.i + 1,
+              position: x.m.mesh.position,
+              velocity: x.m.velocity,
+              altitude: x.m.mesh.position.y * 50,
+              rcs: x.m.rcs,
+            })),
           ...[...airDefenseTargets.entries()]
             .filter(([, target]) => target.phase !== "destroyed")
             .map(([id, target]) => ({
@@ -5992,12 +6065,7 @@ function updateCombat(dt: number) {
   canvas.dataset.radarScanMode = primaryDefinition.scanMode ?? "mechanical";
   canvas.dataset.radarPrimaryTracks = String(primaryTracks.length);
   canvas.dataset.radarBackgroundTracks = String(outsideFocus);
-  updateSurfaceCombat(
-    dt,
-    primarySensor,
-    secondarySensor,
-    aspectHealth,
-  );
+  updateSurfaceCombat(dt, primarySensor, secondarySensor, aspectHealth);
   updateShipManeuver(dt);
   if (activeShip.launcher.kind === "mk10") updateMk10Launchers(dt);
   else updateVlsCells(dt);
@@ -6324,8 +6392,7 @@ function updateCombat(dt: number) {
           defenseSourceSeed(trackId),
           Math.floor(elapsed * 2),
           2,
-        ) <
-          decoyProbability,
+        ) < decoyProbability,
       ecmStrength =
         ecmEnabled && i.weapon.startsWith("SM-2")
           ? THREE.MathUtils.clamp(range / 320, 0, 0.65)
@@ -6383,7 +6450,8 @@ function updateCombat(dt: number) {
               seekerBlend,
             )
         : i.commandPoint.clone();
-    const seaSkimmer = incomingProfiles[i.target.threatType].trajectory === "sea-skimmer",
+    const seaSkimmer =
+        incomingProfiles[i.target.threatType].trajectory === "sea-skimmer",
       estimatedLaunchRange = Math.min(
         profile.maxRange,
         range + i.distanceTraveled,
@@ -6418,8 +6486,7 @@ function updateCombat(dt: number) {
     else if (!terminal) aim.y += Math.min(34, range * 0.16);
     const guidanceDirection = aim.sub(i.mesh.position).normalize(),
       verticalDirection = i.mesh.userData.verticalDirection as
-        | THREE.Vector3
-        | undefined,
+        THREE.Vector3 | undefined,
       verticalBlend = i.mesh.userData.vlsLaunch
         ? THREE.MathUtils.smoothstep(
             i.age,
@@ -6680,8 +6747,8 @@ function updateCombat(dt: number) {
     hullIntegrity > 0 &&
     launchSystemIdle &&
     surfaceLaunchQueue.length === 0 &&
-    surfaceStrikeMissiles.every((m) => m.phase === "destroyed")
-    && (!airCombat.enabled || !airCombat.hasActiveCombat())
+    surfaceStrikeMissiles.every((m) => m.phase === "destroyed") &&
+    (!airCombat.enabled || !airCombat.hasActiveCombat())
   ) {
     interceptors.forEach((i) => {
       i.mesh.visible = false;
@@ -6696,13 +6763,11 @@ function updateCombat(dt: number) {
       );
     else if (enemyPlatform.casualties.length > 0) {
       phaseEl.textContent = "DAMAGE ASSESSMENT";
-    }
-    else if (platformFirePlan && !platformFirePlan.completed) {
+    } else if (platformFirePlan && !platformFirePlan.completed) {
       phaseEl.textContent = platformFirePlan.assessmentPending
         ? "OPFOR BATTLE DAMAGE ASSESSMENT"
         : "OPFOR FIRE PLAN ACTIVE";
-    }
-    else if (
+    } else if (
       surfaceStrikeAmmo === 0 ||
       !shipSurfaceHardpoints(defender).some(
         (hardpoint) => surfaceHardpointState.get(hardpoint.id) === "ready",
@@ -6735,8 +6800,7 @@ function cancelPendingPlatformLaunch(missile: Missile, reason: string) {
 function cancelPlatformLaunchesAgainstDisabledShip() {
   return missiles.reduce(
     (count, missile) =>
-      count +
-      Number(cancelPendingPlatformLaunch(missile, "TARGET DISABLED")),
+      count + Number(cancelPendingPlatformLaunch(missile, "TARGET DISABLED")),
     0,
   );
 }
@@ -6750,23 +6814,24 @@ function initializePlatformWaveArrivalPlan(missile: Missile) {
     track = platform.targetTrack;
   if (!doctrine || !track.valid || track.source !== "radar") return;
   const waveMissiles = missiles
-    .filter(
-      (candidate) =>
-        candidate.platformLaunch?.reservation.platform === platform &&
-        candidate.platformLaunch.reservation.firePlanWave === wave,
-    )
-    .sort(
-      (a, b) =>
-        (a.platformLaunch?.reservation.firePlanOrdinal ?? 0) -
-        (b.platformLaunch?.reservation.firePlanOrdinal ?? 0),
-    ),
+      .filter(
+        (candidate) =>
+          candidate.platformLaunch?.reservation.platform === platform &&
+          candidate.platformLaunch.reservation.firePlanWave === wave,
+      )
+      .sort(
+        (a, b) =>
+          (a.platformLaunch?.reservation.firePlanOrdinal ?? 0) -
+          (b.platformLaunch?.reservation.firePlanOrdinal ?? 0),
+      ),
     observedRange = platform.model.position.distanceTo(track.position),
     finalReleaseAt =
       elapsed +
       Math.max(0, waveMissiles.length - 1) * launch.reservation.releaseInterval,
     commonArrivalAt =
       finalReleaseAt +
-      observedRange / Math.max(0.1, incomingProfiles[missile.threatType].cruiseSpeed);
+      observedRange /
+        Math.max(0.1, incomingProfiles[missile.threatType].cruiseSpeed);
   for (const [ordinal, waveMissile] of waveMissiles.entries()) {
     const waveLaunch = waveMissile.platformLaunch;
     if (!waveLaunch) continue;
@@ -6892,7 +6957,8 @@ function updateIncomingMissile(m: Missile, dt: number) {
           `${platform.definition.name} ${targeting.passive ? "PASSIVE TARGETING READY" : "FIRE CONTROL READY"} / ${weaponSlot.displayName} / TQ ${Math.round(trackQuality * 100)}% / TRACK AGE ${trackAge.toFixed(1)}s`,
         );
       }
-      const nextRelease = platform.weaponSlotNextRelease.get(weaponSlot.id) ?? 0;
+      const nextRelease =
+        platform.weaponSlotNextRelease.get(weaponSlot.id) ?? 0;
       if (elapsed + 1e-6 < nextRelease) {
         m.launchAt = nextRelease;
         m.mesh.visible = false;
@@ -6935,8 +7001,8 @@ function updateIncomingMissile(m: Missile, dt: number) {
     );
     platformLaunch.reservation.platform.model.userData.platformLaunchEffects =
       Number(
-        platformLaunch.reservation.platform.model.userData.platformLaunchEffects ??
-          0,
+        platformLaunch.reservation.platform.model.userData
+          .platformLaunchEffects ?? 0,
       ) + 1;
     platformLaunch.reservation.platform.weaponSlotNextRelease.set(
       platformLaunch.reservation.weaponSlot.id,
@@ -7259,10 +7325,10 @@ function updateIncomingMissile(m: Missile, dt: number) {
       ? !terminalSeekerValid
         ? "ACTIVE SEARCH"
         : deceived
-        ? "FALSE TARGET"
-        : popUpActive
-          ? "ACTIVE / POP-UP"
-          : "ACTIVE"
+          ? "FALSE TARGET"
+          : popUpActive
+            ? "ACTIVE / POP-UP"
+            : "ACTIVE"
       : platformLaunch
         ? platformLaunch.datalinkValid
           ? "SHIP GUIDED"
@@ -7277,8 +7343,8 @@ function updateIncomingMissile(m: Missile, dt: number) {
       platformLaunch && !platformLaunch.terminalSeekerAcquired
         ? platformLaunch.commandPoint
         : deceived && shipChaff
-        ? shipChaff.position
-        : defender.position.clone().add(ecmOffset),
+          ? shipChaff.position
+          : defender.position.clone().add(ecmOffset),
     aimPoint = aimBase
       .clone()
       .add(m.aimOffset)
@@ -7407,8 +7473,8 @@ function updateIncomingMissile(m: Missile, dt: number) {
       ? m.platformLaunch.terminalSeekerAcquired
         ? "terminal-autonomous"
         : m.platformLaunch.datalinkValid
-        ? "valid"
-        : "lost"
+          ? "valid"
+          : "lost"
       : "airborne";
     canvas.dataset.platformCommandError = m.platformLaunch
       ? m.platformLaunch.commandPoint.distanceTo(defender.position).toFixed(2)
@@ -7595,7 +7661,8 @@ function tick(now: number) {
         const airContext = airScenarioContext();
         airCombat.update(elapsed, 0.05, airContext);
         synchronizeAirDefenseTargets();
-        for (const event of airCombat.drainEvents()) log(`AIR OODA / ${event.text}`);
+        for (const event of airCombat.drainEvents())
+          log(`AIR OODA / ${event.text}`);
       }
       updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
@@ -7664,8 +7731,9 @@ function tick(now: number) {
             (b.platformLaunch!.reservation.firePlanOrdinal ?? 0),
       );
     canvas.dataset.enemyPlatformArrivalPlans = timedPlatformWeapons
-      .map((missile) =>
-        missile.platformLaunch!.plannedArrivalAt?.toFixed(2) ?? "pending",
+      .map(
+        (missile) =>
+          missile.platformLaunch!.plannedArrivalAt?.toFixed(2) ?? "pending",
       )
       .join(",");
     canvas.dataset.enemyPlatformTerminalTimes = timedPlatformWeapons
@@ -7677,9 +7745,9 @@ function tick(now: number) {
       .join(",");
     canvas.dataset.enemyPlatformSpeedDeviations = timedPlatformWeapons
       .map((missile) =>
-        Number(missile.mesh.userData.platformMaximumSpeedDeviation ?? 0).toFixed(
-          3,
-        ),
+        Number(
+          missile.mesh.userData.platformMaximumSpeedDeviation ?? 0,
+        ).toFixed(3),
       )
       .join(",");
     canvas.dataset.enemyPlatformCanceled = String(
@@ -7701,7 +7769,8 @@ function tick(now: number) {
       }),
     ).toFixed(2);
     const platformAssessment = platformFirePlan
-      ? platformFirePlan.lastAssessment ?? assessPlatformFirePlan(platformFirePlan)
+      ? (platformFirePlan.lastAssessment ??
+        assessPlatformFirePlan(platformFirePlan))
       : null;
     canvas.dataset.enemyPlatformFirePlanWave = String(
       platformFirePlan?.wave ?? 0,
@@ -7727,10 +7796,10 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformResolvedWeapons = String(
       platformAssessment?.resolvedWeapons ?? 0,
     );
-    canvas.dataset.enemyPlatformAssessmentPending = platformFirePlan
-      ?.assessmentPending
-      ? Math.max(0, platformFirePlan.assessmentReadyAt - elapsed).toFixed(2)
-      : "0.00";
+    canvas.dataset.enemyPlatformAssessmentPending =
+      platformFirePlan?.assessmentPending
+        ? Math.max(0, platformFirePlan.assessmentReadyAt - elapsed).toFixed(2)
+        : "0.00";
     canvas.dataset.enemyPlatformFirePlanComplete = platformFirePlan?.completed
       ? "true"
       : "false";
@@ -7757,8 +7826,11 @@ function tick(now: number) {
         (hardpoint) => hardpoint.cover?.visible !== false,
       ).length,
     );
-    canvas.dataset.enemyPlatformSpeedKnots = enemyPlatform.speedKnots.toFixed(2);
-    canvas.dataset.enemyPlatformVelocity = enemyPlatform.velocity.length().toFixed(4);
+    canvas.dataset.enemyPlatformSpeedKnots =
+      enemyPlatform.speedKnots.toFixed(2);
+    canvas.dataset.enemyPlatformVelocity = enemyPlatform.velocity
+      .length()
+      .toFixed(4);
     canvas.dataset.enemyPlatformManeuverMode = enemyPlatform.maneuverMode;
     canvas.dataset.enemyPlatformCommandedSpeedKnots =
       enemyPlatform.commandedSpeedKnots.toFixed(2);
@@ -7830,7 +7902,8 @@ function tick(now: number) {
   );
   canvas.dataset.ksrMaximumSpeed = air.ksrMaximumSpeed.toFixed(2);
   const airDefenseTracks = [...combatPicture.tracks.values()].filter(
-      (track) => defenseTargetForSource(track.sourceId)?.entity?.kind === "missile",
+      (track) =>
+        defenseTargetForSource(track.sourceId)?.entity?.kind === "missile",
     ).length,
     airDefenseAircraftTracks = [...combatPicture.tracks.values()].filter(
       (track) =>
@@ -7854,9 +7927,19 @@ function tick(now: number) {
     [...airDefenseTargets.values()].reduce(
       (count, target) =>
         count +
-        ["age", "history", "path", "speedFactor", "launchAt", "aimOffset", "bank", "externalAirEntityId", "externalAirCategory", "externalAirMissileId", "externalDisplayName"].filter(
-          (field) => field in target,
-        ).length,
+        [
+          "age",
+          "history",
+          "path",
+          "speedFactor",
+          "launchAt",
+          "aimOffset",
+          "bank",
+          "externalAirEntityId",
+          "externalAirCategory",
+          "externalAirMissileId",
+          "externalDisplayName",
+        ].filter((field) => field in target).length,
       0,
     ),
   );
@@ -7908,7 +7991,10 @@ function tick(now: number) {
     .map((event) => event.text)
     .join("|");
   canvas.dataset.airSeekerEventLog = airCombat.events
-    .filter((event) => event.kind === "detect" && event.text.includes("SEEKER ACQUIRED"))
+    .filter(
+      (event) =>
+        event.kind === "detect" && event.text.includes("SEEKER ACQUIRED"),
+    )
     .map((event) => event.text)
     .join("|");
   canvas.dataset.airWeaponHitLog = airCombat.events
@@ -7941,25 +8027,40 @@ function tick(now: number) {
         `${missile.id}:${missile.releaseAge.toFixed(2)}:${missile.ignitionDelay.toFixed(2)}`,
     )
     .join("|");
-  const airStates = airCombat.aircraft.map((aircraft) =>
-    `${aircraft.id}:${aircraft.state}:${aircraft.position.y.toFixed(1)}:${aircraft.velocity.length().toFixed(1)}`,
+  const airStates = airCombat.aircraft.map(
+    (aircraft) =>
+      `${aircraft.id}:${aircraft.state}:${aircraft.position.y.toFixed(1)}:${aircraft.velocity.length().toFixed(1)}`,
   );
   canvas.dataset.aircraftStates = airStates.join(",");
   canvas.dataset.airWeaponPhases = airCombat.missiles
-    .map((missile) => `${missile.definition.name}:${missile.phase}:${missile.seekerAcquired}`)
+    .map(
+      (missile) =>
+        `${missile.definition.name}:${missile.phase}:${missile.seekerAcquired}`,
+    )
     .join(",");
   airStatusPanel.style.display = airCombat.enabled ? "block" : "none";
   const airRows = airCombat.aircraft
     .map((aircraft) => {
-      const bestTrack = Math.max(0, ...[...aircraft.tracks.values()].map((track) => track.quality));
-      const fuel = Math.round((aircraft.fuel / aircraft.definition.flight.fuelSeconds) * 100);
-      const ammo = [...aircraft.ammo.values()].reduce((sum, count) => sum + count, 0);
-      const structure = Math.round(aircraft.subsystemHealth.get("structure") ?? 0);
-      const damage = aircraft.side === "blue"
-        ? `STR ${structure}%`
-        : aircraft.state === "disabled" || aircraft.state === "crashed"
-          ? "KILL CONFIRMED"
-          : "BDA UNKNOWN";
+      const bestTrack = Math.max(
+        0,
+        ...[...aircraft.tracks.values()].map((track) => track.quality),
+      );
+      const fuel = Math.round(
+        (aircraft.fuel / aircraft.definition.flight.fuelSeconds) * 100,
+      );
+      const ammo = [...aircraft.ammo.values()].reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      const structure = Math.round(
+        aircraft.subsystemHealth.get("structure") ?? 0,
+      );
+      const damage =
+        aircraft.side === "blue"
+          ? `STR ${structure}%`
+          : aircraft.state === "disabled" || aircraft.state === "crashed"
+            ? "KILL CONFIRMED"
+            : "BDA UNKNOWN";
       return `<small>${aircraft.definition.id} ${aircraft.formationIndex + 1} / ${aircraft.mission.toUpperCase()} / ${aircraft.formationStatus.toUpperCase()} ${Number.isFinite(aircraft.formationError) ? aircraft.formationError.toFixed(0) : "LOST"} / TQ ${Math.round(bestTrack * 100)}% / FUEL ${fuel}% / WPN ${ammo} / ${damage}</small>`;
     })
     .join("<br>");
@@ -7995,8 +8096,7 @@ function tick(now: number) {
     }
     const pulse = 0.88 + Math.sin(elapsed * 19 + index * 1.7) * 0.12;
     const particleTrail = m.mesh.userData.particleTrail as
-      | ThreatParticleTrail
-      | undefined;
+      ThreatParticleTrail | undefined;
     if (particleTrail) {
       updateThreatParticleTrail(
         particleTrail,

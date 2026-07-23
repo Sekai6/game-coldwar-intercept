@@ -35,8 +35,8 @@ import {
 import { updateAntiShipGuidance } from "../anti-ship-guidance";
 import { radarCountermeasureContest } from "../radar-countermeasures";
 import {
+  commitEngagementAuthorization,
   hasCommittedEngagement,
-  recordEngagement,
   resolveEngagement,
 } from "../defense/engagement.js";
 import { opposingSides } from "../defense/allegiance.js";
@@ -540,16 +540,23 @@ export class AirCombatSystem {
         : undefined;
     if (!weapon || !hardpoint || (a.subsystemHealth.get("weapons") ?? 0) <= 5)
       return false;
-    hardpoint.state = "reserved";
-    hardpoint.targetId = target.id;
-    hardpoint.commandPoint
-      .copy(track.position)
-      .addScaledVector(track.velocity, weapon.datalinkInterval);
-    hardpoint.commandVelocity.copy(track.velocity);
-    hardpoint.trackQuality = track.quality;
-    hardpoint.releaseAt = time + hardpoint.releaseDelay;
-    hardpoint.state = "releasing";
-    recordEngagement(a.engagements, target.id);
+    const authorization = commitEngagementAuthorization({
+      engagements: a.engagements,
+      target: target.id,
+      authorize: () => {
+        hardpoint.state = "reserved";
+        hardpoint.targetId = target.id;
+        hardpoint.commandPoint
+          .copy(track.position)
+          .addScaledVector(track.velocity, weapon.datalinkInterval);
+        hardpoint.commandVelocity.copy(track.velocity);
+        hardpoint.trackQuality = track.quality;
+        hardpoint.releaseAt = time + hardpoint.releaseDelay;
+        hardpoint.state = "releasing";
+        return true;
+      },
+    });
+    if (!authorization) return false;
     this.emit(
       time,
       "maneuver",
@@ -596,9 +603,9 @@ export class AirCombatSystem {
             },
             definition: weapon,
             model,
-          shooterId: aircraft.id,
-          targetId: hardpoint.targetId,
-          engagementTargetId: hardpoint.targetId,
+            shooterId: aircraft.id,
+            targetId: hardpoint.targetId,
+            engagementTargetId: hardpoint.targetId,
             age: 0,
             phase: "boost",
             commandPoint: hardpoint.commandPoint.clone(),
@@ -978,8 +985,7 @@ export class AirCombatSystem {
     );
     a.model.rotateZ(-a.bank);
     const wings = a.model.userData.variableWings as
-      | THREE.Object3D[]
-      | undefined;
+      THREE.Object3D[] | undefined;
     if (wings) {
       const sweep = THREE.MathUtils.lerp(
         0.28,

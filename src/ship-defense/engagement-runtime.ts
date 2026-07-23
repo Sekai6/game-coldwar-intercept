@@ -1,12 +1,29 @@
-import type { EngagementState, MissilePhase } from "../combat-types";
-import type { DefenseObservation, ObservedTargetKind, VectorObservation } from "../defense/targeting";
-import { recordEngagement, resolveEngagement } from "../defense/engagement.js";
+import type { MissilePhase } from "../combat-types";
+import type {
+  DefenseObservation,
+  ObservedTargetKind,
+  VectorObservation,
+} from "../defense/targeting";
+import {
+  commitEngagementAuthorization,
+  resolveEngagement,
+  type EngagementRecord,
+} from "../defense/engagement.js";
 
-export function recordLaunch<T>(engagements: Map<T, EngagementState>, target: T): EngagementState {
-  return recordEngagement(engagements, target);
+export function authorizeLaunch<T>(
+  engagements: Map<T, EngagementRecord>,
+  target: T,
+  authorize: () => boolean,
+): EngagementRecord | undefined {
+  return commitEngagementAuthorization({ engagements, target, authorize });
 }
 
-export function resolveShot<T>(engagements: Map<T, EngagementState>, target: T, result: "hit" | "miss" | "cancel", time: number): EngagementState | undefined {
+export function resolveShot<T>(
+  engagements: Map<T, EngagementRecord>,
+  target: T,
+  result: "hit" | "miss" | "cancel",
+  time: number,
+): EngagementRecord | undefined {
   return resolveEngagement(engagements, target, result, time);
 }
 

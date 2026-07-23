@@ -8,7 +8,7 @@ import {
   targetForSource,
 } from "../dist-test/ship-defense/defense-targets.js";
 import {
-  recordLaunch,
+  authorizeLaunch,
   resolveShot,
   threatScore,
 } from "../dist-test/ship-defense/engagement-runtime.js";
@@ -22,8 +22,18 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-assert(opposingSides({ side: "blue" }, { side: "red" }), "opposing sides were not hostile");
-assert(!opposingSides({ side: "red" }, { side: "red" }), "same side was treated as hostile");
+assert(
+  opposingSides({ side: "blue" }, { side: "red" }),
+  "opposing sides were not hostile",
+);
+assert(
+  opposingSides({ side: "red" }, { side: "blue" }),
+  "reversed defender roles were not hostile",
+);
+assert(
+  !opposingSides({ side: "red" }, { side: "red" }),
+  "same side was treated as hostile",
+);
 
 const mesh = new THREE.Group();
 mesh.position.set(100, 0, 0);
@@ -49,22 +59,56 @@ const adapted = adaptTargetableEntity(entity, mesh, {
   threatType: "P-500",
   displayName: "generic aircraft",
 });
-assert(adapted.entity === entity && adapted.velocity === entity.velocity && adapted.rcs === 4, "generic entity adapter failed");
+assert(
+  adapted.entity === entity &&
+    adapted.velocity === entity.velocity &&
+    adapted.rcs === 4,
+  "generic entity adapter failed",
+);
 const legacy = { ...missile, entity: undefined };
 const entities = new Map([["air-weapon-1", missile]]);
 
-assert(targetForSource("air-weapon-1", [legacy], entities) === missile, "entity source lookup failed");
-assert(targetForSource(1, [legacy], entities) === legacy, "legacy source lookup failed");
-assert(sourceForTarget(missile, [legacy]) === "air-weapon-1", "entity reverse lookup failed");
+assert(
+  targetForSource("air-weapon-1", [legacy], entities) === missile,
+  "entity source lookup failed",
+);
+assert(
+  targetForSource(1, [legacy], entities) === legacy,
+  "legacy source lookup failed",
+);
+assert(
+  sourceForTarget(missile, [legacy]) === "air-weapon-1",
+  "entity reverse lookup failed",
+);
 assert(sourceForTarget(legacy, [legacy]) === 1, "legacy reverse lookup failed");
-assert(allTargets([legacy], entities).length === 2, "target aggregation failed");
-assert(sourceSeed("track-a") === sourceSeed("track-a"), "source seed is not deterministic");
+assert(
+  allTargets([legacy], entities).length === 2,
+  "target aggregation failed",
+);
+assert(
+  sourceSeed("track-a") === sourceSeed("track-a"),
+  "source seed is not deterministic",
+);
 
 const engagements = new Map();
-recordLaunch(engagements, missile);
-recordLaunch(engagements, missile);
-const resolved = resolveShot(engagements, missile, "miss", 12);
-assert(resolved?.shots === 2 && resolved.pending === 1 && resolved.misses === 1, "engagement accounting failed");
+const targetId = sourceForTarget(missile, [legacy]);
+const rejected = authorizeLaunch(engagements, targetId, () => false);
+assert(
+  !rejected && engagements.size === 0,
+  "rejected authorization polluted engagement ledger",
+);
+authorizeLaunch(engagements, targetId, () => true);
+authorizeLaunch(engagements, targetId, () => true);
+const resolved = resolveShot(engagements, targetId, "miss", 12);
+assert(
+  resolved?.shots === 2 && resolved.pending === 1 && resolved.misses === 1,
+  "engagement accounting failed",
+);
+const cancelled = resolveShot(engagements, targetId, "cancel", 13);
+assert(
+  cancelled?.pending === 0 && cancelled.misses === 1,
+  "authorized launch cancellation failed",
+);
 const observation = {
   id: missile.entity.id,
   kind: "missile",
@@ -73,15 +117,45 @@ const observation = {
   quality: 0.8,
   updatedAt: 0,
 };
-assert(threatScore(observation, "terminal", "missile", new THREE.Vector3(), 40) > 200, "terminal missile scoring failed");
+assert(
+  threatScore(observation, "terminal", "missile", new THREE.Vector3(), 40) >
+    200,
+  "terminal missile scoring failed",
+);
 
 assert(Math.abs(moveToward(0, 2, 0.5) - 0.5) < 1e-9, "linear slew failed");
-assert(Math.abs(moveAngle(Math.PI - 0.1, -Math.PI + 0.1, 0.05) - (Math.PI - 0.05)) < 1e-9, "wrapped angle slew failed");
+assert(
+  Math.abs(moveAngle(Math.PI - 0.1, -Math.PI + 0.1, 0.05) - (Math.PI - 0.05)) <
+    1e-9,
+  "wrapped angle slew failed",
+);
 const armA = new THREE.Group();
 const armB = new THREE.Group();
 const launcher = { elevation: 0, model: new THREE.Group() };
 launcher.model.userData.arms = [armA, armB];
 setMk10Elevation(launcher, 0.4);
-assert(launcher.elevation === 0.4 && armA.rotation.z === 0.4 && armB.rotation.z === 0.4, "Mk 10 elevation sync failed");
+assert(
+  launcher.elevation === 0.4 &&
+    armA.rotation.z === 0.4 &&
+    armB.rotation.z === 0.4,
+  "Mk 10 elevation sync failed",
+);
 
-console.log(JSON.stringify({ targets: 2, shots: resolved.shots, score: threatScore(observation, "terminal", "missile", new THREE.Vector3(), 40), elevation: launcher.elevation }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      targets: 2,
+      shots: resolved.shots,
+      score: threatScore(
+        observation,
+        "terminal",
+        "missile",
+        new THREE.Vector3(),
+        40,
+      ),
+      elevation: launcher.elevation,
+    },
+    null,
+    2,
+  ),
+);

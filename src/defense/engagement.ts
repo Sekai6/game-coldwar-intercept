@@ -23,6 +23,21 @@ export function recordEngagement<T>(
   return state;
 }
 
+export type EngagementAuthorization<T> = {
+  engagements: Map<T, EngagementRecord>;
+  target: T;
+  authorize: () => boolean;
+};
+
+export function commitEngagementAuthorization<T>({
+  engagements,
+  target,
+  authorize,
+}: EngagementAuthorization<T>): EngagementRecord | undefined {
+  if (!authorize()) return undefined;
+  return recordEngagement(engagements, target);
+}
+
 export function resolveEngagement<T>(
   engagements: Map<T, EngagementRecord>,
   target: T,
