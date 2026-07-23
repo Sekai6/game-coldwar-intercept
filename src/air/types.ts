@@ -165,6 +165,7 @@ export interface AirMissileInstance extends CombatEntity {
   softKillResolved?: boolean;
   ignitionDelay: number;
   releaseAge: number;
+  nextSeekerAttempt: number;
 }
 
 export interface AirDecoyInstance extends CombatEntity {
