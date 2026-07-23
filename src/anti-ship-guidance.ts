@@ -35,6 +35,7 @@ export function updateAntiShipGuidance(input: {
   dt: number;
   seekerCaptureProbability?: number;
   seekerSample?: number;
+  seaClutterFactor?: number;
 }) {
   const { state, config } = input;
   state.age += input.dt;
@@ -48,13 +49,14 @@ export function updateAntiShipGuidance(input: {
         ? "terminal"
         : "midcourse";
   const terminal = state.phase === "terminal";
+  const seaClutterFactor = input.seaClutterFactor ?? (config.terminalAltitude < 1 ? 0.84 : 0.94);
+  const captureProbability = THREE.MathUtils.clamp(input.seekerCaptureProbability ?? 1, 0, 1) * THREE.MathUtils.clamp(seaClutterFactor, 0, 1);
   let acquiredNow = false;
   if (terminal && !state.seekerAcquired && targetRange <= config.seekerRange) {
     const offBoresight = input.velocity
       .clone()
       .normalize()
       .angleTo(input.targetPosition.clone().sub(input.position).normalize());
-    const captureProbability = THREE.MathUtils.clamp(input.seekerCaptureProbability ?? 1, 0, 1);
     const sample = input.seekerSample ?? 0;
     if (offBoresight <= THREE.MathUtils.degToRad(config.seekerFovDeg / 2) && sample < captureProbability) {
       state.seekerAcquired = true;
@@ -101,7 +103,8 @@ export function updateAntiShipGuidance(input: {
     desiredAltitude,
     commandRange,
     targetRange,
-    captureProbability: input.seekerCaptureProbability ?? 1,
+    captureProbability,
+    seaClutterFactor,
     acquiredNow,
   };
 }

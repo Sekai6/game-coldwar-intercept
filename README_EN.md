@@ -106,7 +106,7 @@ Air-to-air and air-to-ship proximity/hit resolution now uses the same `Targetabl
 
 `npm run verify:air-intercept` uses the generic `airCountermeasures=off` verification preset and requires Phoenix active-seeker acquisition followed by a physical hit on a Tu-16K. The default joint scenario keeps ECM and physical chaff enabled to verify contested acquisition and soft-kill competition.
 
-KSR-5 and AGM-84A terminal active search is no longer a deterministic range gate: after the field-of-view check, capture uses a deterministic probability sample from target RCS, ECM strength, and burn-through state; an unsuccessful attempt continues toward the last command point.
+KSR-5 and AGM-84A terminal active search is no longer a deterministic range gate: after the field-of-view check, capture uses a deterministic probability sample from target RCS, ECM strength, burn-through state, and a low-terminal-altitude sea-clutter factor; an unsuccessful attempt continues toward the last command point.
 
 `AirCombatSystem.updateMissile()` is now a stage orchestrator instead of one compressed branch block. Release coast, target-loss continuation, midcourse datalink, decoy filtering, seeker capture, semi-active illumination, aim competition, kinematic integration, and fuze resolution have separate methods; anti-ship weapons remain on the shared dedicated anti-ship guidance path.
 
