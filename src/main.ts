@@ -7589,6 +7589,16 @@ function tick(now: number) {
   canvas.dataset.airMissionStates = airCombat.aircraft
     .map((aircraft) => `${aircraft.id}:${aircraft.mission}`)
     .join(",");
+  canvas.dataset.airThrustStates = airCombat.aircraft
+    .map(
+      (aircraft) =>
+        `${aircraft.id}:${aircraft.thrustMode}:${aircraft.afterburnerRemaining.toFixed(1)}:${aircraft.infraredSignature.toFixed(2)}`,
+    )
+    .join("|");
+  canvas.dataset.airThrustEventLog = airCombat.events
+    .filter((event) => event.kind === "maneuver" && event.text.includes("THRUST"))
+    .map((event) => `${event.time.toFixed(2)}:${event.text}`)
+    .join("|");
   canvas.dataset.airEscortAssignments = airCombat.aircraft
     .filter((aircraft) => aircraft.mission === "escort")
     .map((aircraft) => `${aircraft.id}->${aircraft.protectedId ?? "none"}`)
@@ -7677,7 +7687,10 @@ function tick(now: number) {
           : aircraft.state === "disabled" || aircraft.state === "crashed"
             ? "KILL CONFIRMED"
             : "BDA UNKNOWN";
-      return `<small>${aircraft.definition.id} ${aircraft.formationIndex + 1} / ${aircraft.mission.toUpperCase()} / ${aircraft.formationStatus.toUpperCase()} ${Number.isFinite(aircraft.formationError) ? aircraft.formationError.toFixed(0) : "LOST"} / TQ ${Math.round(bestTrack * 100)}% / FUEL ${fuel}% / WPN ${ammo} / ${damage}</small>`;
+      const afterburner = aircraft.definition.flight.thrust.afterburnerAvailable
+        ? ` / AB ${aircraft.afterburnerRemaining.toFixed(0)}s`
+        : "";
+      return `<small>${aircraft.definition.id} ${aircraft.formationIndex + 1} / ${aircraft.mission.toUpperCase()} / ${aircraft.thrustMode.toUpperCase()}${afterburner} / ${aircraft.formationStatus.toUpperCase()} ${Number.isFinite(aircraft.formationError) ? aircraft.formationError.toFixed(0) : "LOST"} / TQ ${Math.round(bestTrack * 100)}% / FUEL ${fuel}% / WPN ${ammo} / ${damage}</small>`;
     })
     .join("<br>");
   airStatusPanel.innerHTML = `<b>JOINT AIR PICTURE</b><span>BLUE <strong>${air.blueLive}</strong> / RED <strong>${air.redLive}</strong> / WEAPONS ${air.activeMissiles}</span><br><span>CHAFF ${air.chaff} / FLARES ${air.flares} / SMOKE ${airVisuals.smoking} / FIRE ${airVisuals.burning}</span><br>${airRows}`;

@@ -1047,6 +1047,7 @@ export class AirCombatSystem {
       missileTti = incoming ? incoming.warning.position.distanceTo(a.position) /
         Math.max(1, incoming.warning.velocity.length()) : null,
       climbDemand = a.desiredDirection.y - a.heading.y;
+    const previousThrustMode = a.thrustMode;
     a.thrustMode = selectThrustMode({
       mission: a.mission,
       state: a.state,
@@ -1059,6 +1060,13 @@ export class AirCombatSystem {
       speedRatio: a.velocity.length() / a.definition.flight.maxSpeed,
       climbDemand,
     });
+    if (a.thrustMode !== previousThrustMode) {
+      this.emit(
+        time,
+        "maneuver",
+        `${a.definition.id} THRUST ${previousThrustMode.toUpperCase()} -> ${a.thrustMode.toUpperCase()}`,
+      );
+    }
     const fc = (a.subsystemHealth.get("flight-control") ?? 0) / 100,
       eng =
         ((a.subsystemHealth.get("left-engine") ?? 0) +
