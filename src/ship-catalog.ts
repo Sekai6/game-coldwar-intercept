@@ -47,7 +47,7 @@ export const LONG_BEACH_METADATA: Omit<ShipDefinition, "build"> = {
     routeLateralOffset: 34,
     routeJoinRange: 190,
     arrivalWindow: 2.4,
-    maximumSpeedCompensation: 0.12,
+    maximumSpeedCompensation: 0.24,
     damage: 34,
     fuseDelay: 0.32,
     salvoSize: 4,

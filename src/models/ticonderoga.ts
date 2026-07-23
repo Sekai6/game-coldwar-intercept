@@ -762,7 +762,7 @@ export const TICONDEROGA_METADATA: Omit<ShipDefinition, "build"> = {
     routeLateralOffset: 38,
     routeJoinRange: 210,
     arrivalWindow: 2,
-    maximumSpeedCompensation: 0.14,
+    maximumSpeedCompensation: 0.24,
     damage: 34,
     fuseDelay: 0.32,
     salvoSize: 4,

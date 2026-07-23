@@ -65,6 +65,8 @@ The simulation is organized around capabilities rather than ship-name checks.
 6. Joint mission completion waits for active air weapons and aircraft still executing combat orders. Anti-ship aircraft transition to `egress` after releasing their mission weapon; CAP transitions to `return` only after hostile aircraft and hostile air weapons are gone.
 7. Every AAR snapshot includes aircraft identity, side, 3D position, mission/state, structure health, air weapons, and physical chaff/flare objects. These are runtime snapshots, not reconstructed event-log estimates.
 8. Airborne radar factors live in `src/air/sensors.ts`: RCS fourth-root scaling, radar horizon, sensor precision, radar health, ECM range reduction, and burn-through all affect detection probability and track quality. Missile defense decisions consume short-lived warning tracks; an unobserved weapon cannot trigger maneuver or countermeasure deployment.
+9. `src/anti-ship-guidance.ts` owns the side-neutral boost/midcourse/terminal transition, command-track guidance, active-seeker FOV capture, altitude, speed, and turn envelope used by air-launched AGM-84A/KSR-5. Their envelopes are catalog data, not weapon-ID branches.
+10. `src/radar-countermeasures.ts` is shared by surface-launched Harpoon and air-launched anti-ship weapons. It computes fourth-power target/decoy signal competition, ECM interference, burn-through, and HOJ probability adjustment. Target-side launchers, point defense, and damage remain adapter-owned.
 
 ## Adding an incoming missile
 

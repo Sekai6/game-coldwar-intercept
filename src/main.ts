@@ -2755,7 +2755,22 @@ function airScenarioContext() {
         },
       }
     : null;
-  return { blueShip: blueShip as CombatEntity, redShip: redShip as CombatEntity | null };
+  return {
+    blueShip: blueShip as CombatEntity,
+    redShip: redShip as CombatEntity | null,
+    countermeasures: (targetId: string) => {
+      if (targetId !== blueShip.id) return null;
+      return {
+        ecmEnabled: shipEcmEnabled,
+        ecmStrength: 0.62,
+        ecmHealth: subsystemHealth("ecm"),
+        burnThroughRange: 72,
+        decoys: chaffClouds
+          .filter((cloud) => cloud.side === "ship" && cloud.rcs > 0.1)
+          .map((cloud) => ({ position: cloud.position, rcs: cloud.rcs })),
+      };
+    },
+  };
 }
 function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
   platform.subsystemHealth.set(
@@ -5263,7 +5278,7 @@ function planSurfaceStrike(manual = false) {
   const firstLaunchAt = launchAt;
   const directFlightTime = range / 5.8;
   const routeTimeAllowance = strike.routeLateralOffset / 18;
-  const commonArrivalAt =
+  const commonTerminalAt =
     firstLaunchAt + directFlightTime + routeTimeAllowance;
   const lineOfSight = track.position
     .clone()
@@ -5289,8 +5304,10 @@ function planSurfaceStrike(manual = false) {
             (0.72 + Math.floor(index / 2) * 0.28),
         ),
       plannedArrivalAt:
-        commonArrivalAt +
-        (count > 1 ? (index / (count - 1)) * strike.arrivalWindow : 0),
+        commonTerminalAt +
+        (count > 1
+          ? (index / (count - 1) - 0.5) * strike.arrivalWindow
+          : 0),
     });
     launchAt += strike.minimumInterval;
   }

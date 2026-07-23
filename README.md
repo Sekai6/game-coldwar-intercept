@@ -21,6 +21,8 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 机载雷达现在实际计算 RCS 四次方根、雷达地平线、传感器精度、系统健康、ECM 降距/降质和烧穿距离。飞机的导弹防御由短时告警航迹触发；未被 RWR/MAWS/近距目视条件发现的武器不会提前触发规避或干扰弹。`npm run verify:air-sensors` 串行验证 ECM、烧穿和告警包线。
 
+AGM-84A 与 KSR-5 已改用通用反舰制导核心：目录化助推/中段/末段包线、航迹指令点、主动导引头 FOV 捕获、速度、高度和转弯限制。空射武器与水面 Harpoon 共用 ECM、烧穿、目标/物理诱饵四次方信号竞争及 HOJ 修正。`npm run verify:anti-ship-guidance` 与 `npm run verify:radar-countermeasures` 提供纯逻辑验收。
+
 > [!IMPORTANT]
 > 项目使用真实舰船、雷达和武器名称建立时代背景，但全部性能数值均为游戏化缩放。它不是武器性能数据库、工程分析工具或训练系统，也不代表真实装备能力。
 

@@ -25,6 +25,14 @@ export interface AirWeaponDefinition {
   proximityRadius: number;
   countermeasureResistance: number;
   shipDefenseTemplate: EnemyType;
+  antiShipFlight?: {
+    boostAltitude: number;
+    cruiseAltitude: number;
+    terminalAltitude: number;
+    boostSpeedFactor: number;
+    cruiseSpeedFactor: number;
+    terminalTurnFactor: number;
+  };
 }
 
 export interface AirSensorDefinition {
@@ -129,6 +137,7 @@ export interface AirMissileInstance extends CombatEntity {
   nextDatalink: number;
   seekerAcquired: boolean;
   illuminationLostAt: number | null;
+  softKillResolved?: boolean;
 }
 
 export interface AirDecoyInstance extends CombatEntity {
@@ -142,6 +151,13 @@ export interface AirDecoyInstance extends CombatEntity {
 export interface AirScenarioContext {
   blueShip: CombatEntity;
   redShip: CombatEntity | null;
+  countermeasures?: (targetId: string) => {
+    ecmEnabled: boolean;
+    ecmStrength: number;
+    ecmHealth: number;
+    burnThroughRange: number;
+    decoys: readonly { position: THREE.Vector3; rcs: number }[];
+  } | null;
 }
 
 export type AirCombatEvent = {

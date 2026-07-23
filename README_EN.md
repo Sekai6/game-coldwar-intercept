@@ -80,6 +80,8 @@ Joint mission completion now waits for airborne weapons and aircraft still execu
 
 Airborne radar now applies RCS fourth-root scaling, radar horizon, sensor precision, system health, ECM range/quality loss, and burn-through distance. Aircraft missile defense consumes short-lived warning tracks; a weapon outside RWR/MAWS/visual warning conditions cannot trigger maneuver or countermeasure deployment. `npm run verify:air-sensors` checks ECM, burn-through, and warning envelopes without a browser.
 
+AGM-84A and KSR-5 now use a side-neutral anti-ship guidance core for catalog-defined boost/midcourse/terminal envelopes, command-track guidance, active-seeker FOV capture, speed, altitude, and turn limits. Air-launched weapons and surface Harpoon share the same fourth-power target/physical-decoy signal contest, ECM, burn-through, and HOJ adjustment. `npm run verify:anti-ship-guidance` and `npm run verify:radar-countermeasures` are browser-free gates.
+
 The combat model is not a simple “target enters a circle and disappears on a dice roll.” Results emerge from an observable engagement chain:
 
 ```text

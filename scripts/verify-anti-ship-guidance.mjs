@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import * as THREE from "three";
+import { updateAntiShipGuidance } from "../dist-test/anti-ship-guidance.js";
+
+const config={boostSeconds:3,terminalRange:115,seekerRange:115,seekerFovDeg:50,boostAltitude:4.5,cruiseAltitude:.9,terminalAltitude:.12,boostSpeed:4.5,cruiseSpeed:5.8,terminalSpeed:6.2,midcourseTurnRateDeg:12,terminalTurnRateDeg:24};
+const state={age:0,phase:"boost",seekerAcquired:false};
+const position=new THREE.Vector3(0,4.5,0),velocity=new THREE.Vector3(0,0,-4),commandPoint=new THREE.Vector3(0,0,-300),commandVelocity=new THREE.Vector3(),targetPosition=new THREE.Vector3(0,0,-300),targetVelocity=new THREE.Vector3();
+let result=updateAntiShipGuidance({state,config,position,velocity,commandPoint,commandVelocity,targetPosition,targetVelocity,dt:1});
+assert.equal(state.phase,"boost");
+assert.equal(state.seekerAcquired,false);
+state.age=3;commandPoint.set(0,0,-100);targetPosition.set(0,0,-100);
+result=updateAntiShipGuidance({state,config,position,velocity,commandPoint,commandVelocity,targetPosition,targetVelocity,dt:.1});
+assert.equal(state.phase,"terminal");
+assert.equal(state.seekerAcquired,true);
+assert.equal(result.acquiredNow,true);
+assert.equal(result.desiredAltitude,.12);
+const offAxis={age:3,phase:"midcourse",seekerAcquired:false};
+updateAntiShipGuidance({state:offAxis,config,position:new THREE.Vector3(),velocity:new THREE.Vector3(0,0,-4),commandPoint:new THREE.Vector3(80,0,0),commandVelocity:new THREE.Vector3(),targetPosition:new THREE.Vector3(80,0,0),targetVelocity:new THREE.Vector3(),dt:.1});
+assert.equal(offAxis.seekerAcquired,false);
+console.log(JSON.stringify({phase:state.phase,acquired:state.seekerAcquired,terminalAltitude:result.desiredAltitude,offAxisAcquired:offAxis.seekerAcquired},null,2));

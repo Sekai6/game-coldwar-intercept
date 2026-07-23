@@ -15,6 +15,7 @@ import {
   updateThreatParticleTrail,
   type ThreatParticleTrail,
 } from "./visual/threat-particles";
+import { radarCountermeasureContest } from "./radar-countermeasures";
 
 export type SurfaceStrikePhase =
   | "boost"
@@ -555,36 +556,21 @@ export function updateSurfaceStrikeMissile(
     if (!ecmAvailable && !nearestDecoy) {
       missile.mesh.userData.seekerState = "ACTIVE / NO COUNTERMEASURES";
     } else {
-      const ecmInterference = ecmAvailable
-        ? THREE.MathUtils.clamp(
-            Math.pow(trueRange / Math.max(1, softKill.burnThroughRange), 2) *
-              softKill.ecmStrength *
-              ecmHealth,
-            0,
-            1,
-          )
-        : 0;
-      const targetPower =
-        missile.target.definition.radarCrossSection /
-        Math.pow(Math.max(1, trueRange), 4);
       const decoyRange = nearestDecoy
         ? nearestDecoy.position.distanceTo(missile.mesh.position)
         : Infinity;
-      const decoyPower = nearestDecoy
-        ? nearestDecoy.rcs / Math.pow(Math.max(1, decoyRange), 4)
-        : 0;
-      const decoyCapture =
-        decoyPower > 0 ? decoyPower / (decoyPower + targetPower) : 0;
-      const hojThreshold =
-        profile.homeOnJam?.minimumJammingStrength ?? Infinity;
-      const homeOnJam = ecmInterference >= hojThreshold;
-      const pk = THREE.MathUtils.clamp(
-        (decoyCapture * (0.52 + ecmInterference * 0.28) +
-          ecmInterference * 0.04) *
-          (homeOnJam ? 0.62 : 1),
-        0,
-        0.78,
-      );
+      const contest = radarCountermeasureContest({
+          targetRcs: missile.target.definition.radarCrossSection,
+          targetRange: trueRange,
+          decoyRcs: nearestDecoy?.rcs,
+          decoyRange,
+          ecmEnabled: ecmAvailable,
+          ecmStrength: softKill.ecmStrength,
+          ecmHealth,
+          burnThroughRange: softKill.burnThroughRange,
+          homeOnJamThreshold: profile.homeOnJam?.minimumJammingStrength,
+        }),
+        { ecmInterference, decoyCapture, homeOnJam, defeatProbability: pk } = contest;
       if (deterministicRoll(missile, 1) < pk) {
         missile.phase = "destroyed";
         missile.mesh.visible = false;
@@ -797,10 +783,13 @@ export function updateSurfaceStrikeMissile(
   const maxTurn = THREE.MathUtils.degToRad(terminal ? 32 : 11.5) * dt;
   const direction = current.lerp(aim, angle > 0 ? Math.min(1, maxTurn / angle) : 1).normalize();
   const baseCruiseSpeed = 5.8;
+  // Coordinate the routed cruise leg against the common terminal-entry clock.
   const remainingArrivalTime = missile.plannedArrivalAt - elapsed;
+  const lateralDistance = missile.routeOffset.length() * routeWeight;
+  const routedCommandRange = Math.hypot(commandRange, lateralDistance);
   const coordinatedCruiseSpeed = THREE.MathUtils.clamp(
-    commandRange / Math.max(1, remainingArrivalTime),
-    baseCruiseSpeed * (1 - missile.maximumSpeedCompensation * 0.35),
+    routedCommandRange / Math.max(1, remainingArrivalTime),
+    baseCruiseSpeed * (1 - missile.maximumSpeedCompensation),
     baseCruiseSpeed * (1 + missile.maximumSpeedCompensation),
   );
   const targetSpeed =

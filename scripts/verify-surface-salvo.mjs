@@ -5,7 +5,7 @@ const browser = await chromium.launch({
   executablePath:
     process.env.CHROME_PATH ??
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  args: ["--use-angle=swiftshader"],
+  args: ["--use-angle=swiftshader", "--renderer-process-limit=2"],
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
@@ -112,7 +112,7 @@ try {
       return (
         canvas?.dataset.surfaceEsmCue === "valid" &&
         canvas?.dataset.enemyPlatformTargetTrackSource === "esm" &&
-        canvas?.dataset.shipManeuverMode === "close" &&
+        canvas?.dataset.shipManeuverMode === "defensive-beam" &&
         canvas?.dataset.enemyPlatformManeuverMode === "close" &&
         Number(canvas?.dataset.surfaceStrikeWave ?? 0) >= 1 &&
         Number(canvas?.dataset.enemyPlatformFired ?? 0) >= 1
@@ -157,7 +157,7 @@ if (
   terminalSpread > 4 ||
   farRangeCue.ownCue !== "valid" ||
   farRangeCue.enemyTrackSource !== "esm" ||
-  farRangeCue.ownManeuver !== "close" ||
+  farRangeCue.ownManeuver !== "defensive-beam" ||
   farRangeCue.enemyManeuver !== "close" ||
   Number(farRangeCue.ownWave) < 1 ||
   Number(farRangeCue.enemyFired) < 1
