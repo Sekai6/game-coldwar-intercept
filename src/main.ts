@@ -71,6 +71,8 @@ import {
 } from "./surface-doctrine";
 import { pointDefenseCapability } from "./platforms/defense";
 import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
+import { AirCombatSystem } from "./air/runtime";
+import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
   AarEvent,
@@ -152,6 +154,7 @@ sun.shadow.camera.bottom = -250;
 scene.add(sun);
 const ocean = createOceanSurface();
 scene.add(ocean.object);
+const airCombat = new AirCombatSystem(scene);
 canvas.dataset.oceanBackend = ocean.backend;
 function updateMaterialDiagnostics() {
   let mappedMaterials = 0;
@@ -2442,7 +2445,7 @@ let dragging = false,
   el = 0.48,
   dist = 210,
   cinematic = false,
-  viewMode: 1 | 2 | 3 | 4 | 5 = 2;
+  viewMode: 1 | 2 | 3 | 4 | 5 | 6 = 2;
 let shipSpeedKnots = 0,
   shipDesiredHeading = 0,
   shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots,
@@ -2556,6 +2559,10 @@ const subsystemPanel = document.createElement("section");
 subsystemPanel.className = "subsystem-panel";
 subsystemPanel.innerHTML = `<header><b>DAMAGE CONTROL</b><span id="damageSummary">ALL SYSTEMS NOMINAL</span></header><div class="subsystem-grid">${subsystemRows()}</div>`;
 document.body.appendChild(subsystemPanel);
+const airStatusPanel = document.createElement("section");
+airStatusPanel.className = "air-status";
+airStatusPanel.innerHTML = "<b>JOINT AIR PICTURE</b><span>AIR OPERATIONS STANDBY</span>";
+document.body.appendChild(airStatusPanel);
 updateSubsystemPanel();
 const resultPanel = document.createElement("div");
 resultPanel.className = "result-panel aar-panel";
@@ -2603,6 +2610,49 @@ missiles.forEach((m) => {
 sandbox.className = "sandbox-panel";
 function numberInput(id: string) {
   return Number((sandbox.querySelector(id) as HTMLInputElement).value);
+}
+const airScenarioField = document.createElement("label");
+airScenarioField.className = "sandbox-toggle";
+airScenarioField.innerHTML = '<input id="sbAirCombat" type="checkbox" checked> JOINT AIR OPERATIONS / F-14A + TU-16K + A-6E';
+sandbox.insertBefore(airScenarioField, sandbox.querySelector("#sbStart"));
+const airScenarioInput = airScenarioField.querySelector("input") as HTMLInputElement;
+
+function airScenarioContext() {
+  const blueShip: TargetableEntity = {
+    id: "blue-surface-ship",
+    side: "blue",
+    kind: "ship",
+    position: defender.position,
+    velocity: new THREE.Vector3(
+      Math.cos(defender.rotation.y) * shipSpeedKnots * 0.005144,
+      0,
+      -Math.sin(defender.rotation.y) * shipSpeedKnots * 0.005144,
+    ),
+    radarCrossSection: activeShip.platform.radarRcs,
+    infraredSignature: 0.8,
+    alive: hullIntegrity > 0,
+    applyDamage: (damage) => {
+      hullIntegrity = Math.max(0, hullIntegrity - damage);
+    },
+  };
+  const redShip: TargetableEntity | null = enemyPlatform
+    ? {
+        id: "red-surface-ship",
+        side: "red",
+        kind: "ship",
+        position: enemyPlatform.model.position,
+        velocity: enemyPlatform.velocity,
+        radarCrossSection: enemyPlatform.definition.radarCrossSection,
+        infraredSignature: 0.8,
+        alive: !enemyPlatform.destroyed,
+        applyDamage: (damage) => {
+          if (!enemyPlatform) return;
+          enemyPlatform.hullIntegrity = Math.max(0, enemyPlatform.hullIntegrity - damage);
+          if (enemyPlatform.hullIntegrity <= 0) enemyPlatform.destroyed = true;
+        },
+      }
+    : null;
+  return { blueShip: blueShip as CombatEntity, redShip: redShip as CombatEntity | null };
 }
 function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
   platform.subsystemHealth.set(
@@ -3164,6 +3214,12 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     log(
       `ENEMY PLATFORM / ${definition.name} / ${definition.className} / ${count} FIRST-WAVE SLOTS RESERVED${platformFirePlan ? ` / ${platformFirePlan.authorizedWeapons} WEAPONS AUTHORIZED` : ""}`,
     );
+  }
+  airCombat.enabled = airScenarioInput.checked;
+  if (airCombat.enabled) {
+    const context = airScenarioContext();
+    airCombat.reset(context.blueShip, context.redShip);
+    log("JOINT AIR OPERATIONS / 2 x F-14A CAP / 2 x TU-16K RAID / 2 x A-6E STRIKE");
   }
   updateMaterialDiagnostics();
   selectedTargetId = 1;
@@ -4173,7 +4229,10 @@ function updateCamera() {
   let focus: THREE.Vector3;
   if (viewMode === 1)
     focus = defender.position.clone().add(new THREE.Vector3(0, 9, 0));
-  else if (viewMode === 5 && enemyPlatform)
+  else if (viewMode === 6) {
+    const airTarget = airCombat.focusTarget();
+    focus = airTarget?.position.clone() ?? defender.position.clone();
+  } else if (viewMode === 5 && enemyPlatform)
     focus = enemyPlatform.model.position
       .clone()
       .add(new THREE.Vector3(0, 10, 0));
@@ -7384,6 +7443,11 @@ function tick(now: number) {
         }
       }
       updateCombat(0.05);
+      if (airCombat.enabled) {
+        const airContext = airScenarioContext();
+        airCombat.update(elapsed, 0.05, airContext);
+        for (const event of airCombat.drainEvents()) log(`AIR OODA / ${event.text}`);
+      }
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
       updatePlatformFirePlan();
       captureAarSnapshot();
@@ -7593,6 +7657,32 @@ function tick(now: number) {
     canvas.dataset.enemyPlatformDesiredHeadingDeg = "0.00";
   }
   canvas.dataset.surfaceEsmCue = surfaceEsmCue.valid ? "valid" : "none";
+  const air = airCombat.diagnostics();
+  canvas.dataset.airCombatEnabled = String(airCombat.enabled);
+  canvas.dataset.aircraftTotal = String(air.aircraft);
+  canvas.dataset.aircraftLive = String(air.live);
+  canvas.dataset.aircraftBlueLive = String(air.blueLive);
+  canvas.dataset.aircraftRedLive = String(air.redLive);
+  canvas.dataset.airWeaponsLaunched = String(air.launches);
+  canvas.dataset.airWeaponsActive = String(air.activeMissiles);
+  canvas.dataset.airCombatHits = String(air.hits);
+  canvas.dataset.airCombatKills = String(air.kills);
+  canvas.dataset.airChaff = String(air.chaff);
+  canvas.dataset.airFlares = String(air.flares);
+  canvas.dataset.shipSamShots = String(air.shipSamShots);
+  canvas.dataset.airWeaponLaunchLog = airCombat.events
+    .filter((event) => event.kind === "launch")
+    .map((event) => event.text)
+    .join("|");
+  const airStates = airCombat.aircraft.map((aircraft) =>
+    `${aircraft.id}:${aircraft.state}:${aircraft.position.y.toFixed(1)}:${aircraft.velocity.length().toFixed(1)}`,
+  );
+  canvas.dataset.aircraftStates = airStates.join(",");
+  canvas.dataset.airWeaponPhases = airCombat.missiles
+    .map((missile) => `${missile.definition.name}:${missile.phase}:${missile.seekerAcquired}`)
+    .join(",");
+  airStatusPanel.style.display = airCombat.enabled ? "block" : "none";
+  airStatusPanel.innerHTML = `<b>JOINT AIR PICTURE</b><span>BLUE <strong>${air.blueLive}</strong> / RED <strong>${air.redLive}</strong> / WEAPONS ${air.activeMissiles}</span><br><span>CHAFF ${air.chaff} / FLARES ${air.flares} / SHIP SAM ${air.shipSamShots}</span>`;
   canvas.dataset.surfaceEsmCueQuality = surfaceEsmCue.quality.toFixed(3);
   canvas.dataset.surfaceEsmCueAge = Number.isFinite(surfaceEsmCue.age)
     ? surfaceEsmCue.age.toFixed(2)
@@ -7756,6 +7846,13 @@ addEventListener("keydown", (e) => {
     az = 0.78;
     el = 0.3;
     dist = 115;
+  }
+  if (e.key === "6") {
+    cinematic = false;
+    viewMode = 6;
+    az = 0.72;
+    el = 0.2;
+    dist = 38;
   }
   if (e.key.toLowerCase() === "c") cinematic = !cinematic;
 });

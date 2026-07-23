@@ -68,6 +68,14 @@
 
 NTU Intercept is a Three.js browser-based 3D combat sandbox. The player can select the Mk 10-equipped USS Long Beach (CGN-9) or the AEGIS/SPY-1B and Mk 41-equipped USS Lake Champlain (CG-57) against P-15 Termit, P-500, P-700, Kh-22, and RGM-84 Harpoon raids while managing the complete air-defense chain.
 
+### Joint Air Operations
+
+Enable `JOINT AIR OPERATIONS` in the scenario panel to add six independently simulated aircraft: a two-ship F-14A CAP, a two-ship Tu-16K maritime strike formation, and a two-ship A-6E strike formation. The F-14 carries AIM-54A, AIM-7F, and AIM-9L; the Tu-16K carries KSR-5; the A-6E carries AGM-84A Harpoon. Key `6` follows the current airborne weapon or aircraft.
+
+Each aircraft has three-dimensional point-mass flight, speed-dependent turn authority, stall recovery, fuel, formation following, noisy radar tracks, autonomous OODA decisions, ECM, physical chaff/flare objects, and separate structure, engines, radar, flight-control, and weapon-system health. Air weapons use midcourse command points and capability-defined terminal seekers. The defending ship also participates with a bounded four-shot SAM allocation. All figures are game-scaled.
+
+`npm run verify:joint-air` is the serial browser gate. It requires F-14/AIM-54, Tu-16/KSR-5, A-6/AGM-84, and shipboard SAM launches and writes `verification-joint-air.png` for visual inspection.
+
 The combat model is not a simple “target enters a circle and disappears on a dice roll.” Results emerge from an observable engagement chain:
 
 ```text
