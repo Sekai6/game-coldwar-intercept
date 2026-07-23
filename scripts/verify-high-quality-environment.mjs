@@ -22,10 +22,12 @@ try {
     sunIntensity: Number(canvas.dataset.environmentSunIntensity ?? 0),
     exposure: Number(canvas.dataset.environmentExposure ?? 0),
     shadowMode: canvas.dataset.environmentShadowMode ?? "",
+    highQualityOcean: canvas.dataset.highQualityOcean ?? "",
+    oceanBackend: canvas.dataset.oceanBackend ?? "",
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT") process.exitCode = 1;
+  if (errors.length || result.enabled !== "true" || result.clouds !== 16 || result.fogVolumes !== 0 || result.aircraft !== 4 || result.sunIntensity !== 3.45 || result.exposure !== 1.08 || result.shadowMode !== "PCF_SOFT" || result.highQualityOcean !== "true" || result.oceanBackend !== "webgl-hq-gerstner") process.exitCode = 1;
 } finally {
   await browser.close();
 }

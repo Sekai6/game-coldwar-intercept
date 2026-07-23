@@ -2897,6 +2897,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).onclick = () => {
   highQualityEnvironmentEnabled = highQualityEnvironmentInput.checked;
   highQualityEnvironment.setEnabled(highQualityEnvironmentEnabled);
+  ocean.setHighQuality(highQualityEnvironmentEnabled);
   renderer.toneMappingExposure = highQualityEnvironmentEnabled ? 1.08 : 1.08;
   bloomPass.strength = highQualityEnvironmentEnabled ? 0.48 : 0.42;
   bloomPass.radius = highQualityEnvironmentEnabled ? 0.42 : 0.38;
@@ -7591,6 +7592,7 @@ function tick(now: number) {
   canvas.dataset.environmentSunIntensity = sun.intensity.toFixed(2);
   canvas.dataset.environmentExposure = renderer.toneMappingExposure.toFixed(2);
   canvas.dataset.environmentShadowMode = renderer.shadowMap.type === THREE.PCFSoftShadowMap ? "PCF_SOFT" : "OTHER";
+  canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
   canvas.dataset.pureAirCombat = String(pureAirCombatStart);
@@ -7806,7 +7808,7 @@ function tick(now: number) {
   canvas.dataset.surfaceEsmCueAge = Number.isFinite(surfaceEsmCue.age)
     ? surfaceEsmCue.age.toFixed(2)
     : "infinity";
-  ocean.update(elapsed);
+  ocean.update(elapsed, camera.position);
   highQualityEnvironment.update(elapsed, camera.position);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
     ewThreat = missiles.some((m) => m.mesh.visible && m.phase === "terminal"),
