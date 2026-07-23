@@ -77,6 +77,8 @@ import { createAirShipBridge } from "./air/ship-bridge";
 import { initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
+import { recordLaunch, resolveShot } from "./ship-defense/engagement-runtime";
+import { createCiwsTracer } from "./ship-defense/defense-visuals";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -592,15 +594,7 @@ function defensiveShotRequirement(missile: DefenseTarget, _quality: number) {
   return doctrine === "SINGLE" ? 1 : 2;
 }
 function recordEngagementLaunch(target: DefenseTarget) {
-  const state = engagements.get(target) ?? {
-    shots: 0,
-    pending: 0,
-    misses: 0,
-    lastResolution: -Infinity,
-  };
-  state.shots++;
-  state.pending++;
-  engagements.set(target, state);
+  recordLaunch(engagements, target);
 }
 function settleEngagement(
   interceptor: Interceptor,
@@ -608,11 +602,8 @@ function settleEngagement(
 ) {
   if (interceptor.mesh.userData.engagementSettled) return;
   interceptor.mesh.userData.engagementSettled = true;
-  const state = engagements.get(interceptor.target);
+  const state = resolveShot(engagements, interceptor.target, result, elapsed);
   if (!state) return;
-  state.pending = Math.max(0, state.pending - 1);
-  if (result === "miss") state.misses++;
-  state.lastResolution = elapsed;
   if (
     doctrine === "SSLS" &&
     result === "miss" &&
@@ -2469,20 +2460,7 @@ function destroyMissileVisual(
   flashCombat(effect);
 }
 function ciwsTracer(target: THREE.Vector3, origin: THREE.Vector3) {
-  const line = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([origin.clone(), target.clone()]),
-    new THREE.LineBasicMaterial({
-      color: 0xffef9a,
-      transparent: true,
-      opacity: 0.9,
-    }),
-  );
-  scene.add(line);
-  setTimeout(() => {
-    scene.remove(line);
-    line.geometry.dispose();
-    (line.material as THREE.Material).dispose();
-  }, 110);
+  createCiwsTracer(scene, target, origin);
 }
 for (const threat of initialSurfaceThreats())
   addMissile(threat.position, threat.threatType);
