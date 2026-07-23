@@ -13,6 +13,10 @@ export interface FlightEnvelope {
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
 
+export function consumeFuel(remaining: number, fuelBurn: number) {
+  return Math.max(0, remaining - Math.max(0, fuelBurn));
+}
+
 export function stepFlightDynamics(input: {
   speed: number;
   currentBank: number;
