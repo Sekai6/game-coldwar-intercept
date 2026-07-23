@@ -1,4 +1,16 @@
 import type { AirMissionOrder, AirTrack } from "./types";
+import { selectDefenseObservation, type DefenseObservation } from "../defense/targeting.js";
+
+export function airTrackObservation(track: AirTrack): DefenseObservation {
+  return {
+    id: track.targetId,
+    kind: track.classification,
+    position: track.position,
+    velocity: track.velocity,
+    quality: track.quality,
+    updatedAt: track.lastUpdate,
+  };
+}
 
 export function selectMissionTrack(input: {
   mission: AirMissionOrder;
@@ -6,19 +18,14 @@ export function selectMissionTrack(input: {
   origin: { x: number; y: number; z: number };
 }) {
   const desiredClassification = input.mission === "anti-ship" ? "ship" : "aircraft";
-  return input.tracks
-    .filter((track) => track.classification === desiredClassification)
-    .sort((left, right) => {
-      const leftDistance =
-        (left.position.x - input.origin.x) ** 2 +
-        (left.position.y - input.origin.y) ** 2 +
-        (left.position.z - input.origin.z) ** 2;
-      const rightDistance =
-        (right.position.x - input.origin.x) ** 2 +
-        (right.position.y - input.origin.y) ** 2 +
-        (right.position.z - input.origin.z) ** 2;
-      return leftDistance - rightDistance;
-    })[0];
+  const selected = selectDefenseObservation(
+    input.tracks.map(airTrackObservation),
+    input.origin,
+    { acceptedKinds: [desiredClassification], distanceWeight: 1 },
+  );
+  return selected
+    ? input.tracks.find((track) => track.targetId === selected.id)
+    : undefined;
 }
 
 export function missionShouldReturn(input: {
