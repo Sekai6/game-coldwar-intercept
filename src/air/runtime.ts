@@ -692,6 +692,8 @@ export class AirCombatSystem {
             seekerAcquired: false,
             illuminationLostAt: null,
             softKillResolved: false,
+            countermeasureRequested: false,
+            countermeasureRequestedAt: -Infinity,
             ignitionDelay: hardpoint.ignitionDelay,
             releaseAge: 0,
             nextSeekerAttempt: time,
@@ -1636,7 +1638,31 @@ export class AirCombatSystem {
         "detect",
         `${m.definition.name} SEEKER ACQUIRED / ${Math.round(result.captureProbability * 100)}% SOLUTION / ${burnThrough ? "BURN THROUGH" : "PROBABILISTIC"}`,
       );
-    if (m.seekerAcquired && !m.softKillResolved && cm) {
+    if (
+      m.phase === "terminal" &&
+      !m.countermeasureRequested &&
+      result.targetRange <= m.definition.seekerRange
+    ) {
+      m.countermeasureRequested = true;
+      m.countermeasureRequestedAt = time;
+      const launched = context.requestShipCountermeasure?.({
+        targetId: target.id,
+        threatId: m.id,
+        threatPosition: m.position.clone(),
+      });
+      if (launched)
+        this.emit(
+          time,
+          "countermeasure",
+          `${m.definition.name} DEFENDER SRBOC LAUNCH OBSERVED`,
+        );
+    }
+    if (
+      m.seekerAcquired &&
+      !m.softKillResolved &&
+      cm &&
+      time - (m.countermeasureRequestedAt ?? -Infinity) >= 1.2
+    ) {
       m.softKillResolved = true;
       const nearest = cm.decoys
           .filter((d) => d.position.distanceTo(target.position) < 30)

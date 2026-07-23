@@ -34,7 +34,7 @@ export function radarCountermeasureContest(input: {
     Math.min(
       0.78,
       (decoyCapture * (0.52 + ecmInterference * 0.28) +
-        ecmInterference * 0.04) *
+        ecmInterference * 0.16) *
         (homeOnJam ? 0.62 : 1),
     ),
   );

@@ -31,6 +31,7 @@
     "verify:air-guidance": "tsc src/air/guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-guidance.mjs",
     "verify:air-dynamics": "tsc src/air/flight-dynamics.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-dynamics.mjs",
     "verify:air-countermeasures": "node scripts/verify-air-countermeasures.mjs",
+    "verify:air-asm-ecm": "node scripts/verify-air-asm-ecm.mjs",
     "verify:air-formation-damage": "tsc src/air/formation.ts src/air/damage.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-formation-damage.mjs",
     "verify:air-damage-geometry": "tsc src/air/damage.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-damage-geometry.mjs",
     "verify:air-resources": "tsc src/air/launch-management.ts src/air/countermeasure-program.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-resources.mjs",

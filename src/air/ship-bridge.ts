@@ -53,6 +53,7 @@ export function createAirShipBridge(deps: AirShipBridgeDependencies) {
 
 export type AirScenarioBridgeSnapshot = AirShipBridgeDependencies & {
   countermeasures?: AirScenarioContext["countermeasures"];
+  requestShipCountermeasure?: AirScenarioContext["requestShipCountermeasure"];
   targets?: readonly TargetableEntity[];
 };
 
@@ -68,6 +69,7 @@ export function createAirScenarioContext(
         state.targets ??
         [bridge.blueShip, ...(bridge.redShip ? [bridge.redShip] : [])],
       countermeasures: state.countermeasures,
+      requestShipCountermeasure: state.requestShipCountermeasure,
     };
   };
 }

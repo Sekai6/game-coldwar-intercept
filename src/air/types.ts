@@ -214,6 +214,8 @@ export interface AirMissileInstance extends TargetableEntity {
   seekerAcquired: boolean;
   illuminationLostAt: number | null;
   softKillResolved?: boolean;
+  countermeasureRequested?: boolean;
+  countermeasureRequestedAt?: number;
   ignitionDelay: number;
   releaseAge: number;
   nextSeekerAttempt: number;
@@ -239,6 +241,11 @@ export interface AirScenarioContext {
     burnThroughRange: number;
     decoys: readonly { position: THREE.Vector3; rcs: number }[];
   } | null;
+  requestShipCountermeasure?: (request: {
+    targetId: string;
+    threatId: string;
+    threatPosition: THREE.Vector3;
+  }) => boolean;
 }
 
 export type AirCombatEvent = {

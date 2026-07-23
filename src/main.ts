@@ -1574,6 +1574,9 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
   return true;
 }
 function deployShipChaff(threat: Missile) {
+  return deployShipChaffAt(threat.mesh.position);
+}
+function deployShipChaffAt(threatPosition: THREE.Vector3) {
   const health = subsystemHealth("srboc");
   if (
     !srbocEnabled ||
@@ -1582,7 +1585,7 @@ function deployShipChaff(threat: Missile) {
     elapsed - lastSrboc < 4 / Math.max(0.3, health)
   )
     return false;
-  const relative = threat.mesh.position
+  const relative = threatPosition
       .clone()
       .sub(defender.position)
       .setY(0)
@@ -2433,6 +2436,8 @@ const airScenarioContext = createAirScenarioContext(() => {
           .map((cloud) => ({ position: cloud.position, rcs: cloud.rcs })),
       };
     },
+    requestShipCountermeasure: ({ targetId, threatPosition }) =>
+      targetId === "blue-surface-ship" && deployShipChaffAt(threatPosition),
   };
 });
 function applyPlatformScenarioHealth(platform: EnemyPlatformInstance) {
@@ -7639,6 +7644,11 @@ function tick(now: number) {
     .filter((event) => event.kind === "countermeasure")
     .map((event) => `${event.time.toFixed(2)}:${event.text}`)
     .join("|");
+  canvas.dataset.shipSrbocRounds = String(srbocRounds);
+  canvas.dataset.shipSrbocRoundsInFlight = String(srbocRoundsInFlight.length);
+  canvas.dataset.shipChaffClouds = String(
+    chaffClouds.filter((cloud) => cloud.side === "ship").length,
+  );
   canvas.dataset.airHardpointStates = airCombat.aircraft
     .flatMap((aircraft) =>
       aircraft.hardpoints.map(
