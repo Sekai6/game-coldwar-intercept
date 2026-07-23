@@ -12,6 +12,7 @@ import {
 } from "../dist-test/defense/target-source.js";
 import {
   authorizeLaunch,
+  planDefenseEngagement,
   resolveShot,
   threatScore,
 } from "../dist-test/ship-defense/engagement-runtime.js";
@@ -201,6 +202,62 @@ const config = {
   elevationRateDeg: 180,
   reloadSeconds: 1,
 };
+const lowerPriorityObservation = {
+  ...observation,
+  id: "aircraft-2",
+  position: new THREE.Vector3(260, 0, 0),
+};
+const defensePlan = planDefenseEngagement({
+  origin: new THREE.Vector3(),
+  observations: [lowerPriorityObservation, observation],
+  policy: { acceptedKinds: ["missile"] },
+  engagements: new Map(),
+  weapons: [
+    { weapon: "RIM-67", rounds: 2, envelope: { minRange: 20, maxRange: 500 } },
+    { weapon: "SM-2MR", rounds: 2, envelope: { minRange: 10, maxRange: 180 } },
+    { weapon: "SM-2ER", rounds: 2, envelope: { minRange: 20, maxRange: 600 } },
+  ],
+  scoreObservation: (candidate) =>
+    candidate.id === observation.id ? 100 : 10,
+});
+assert(
+  defensePlan?.observation.id === observation.id &&
+    defensePlan.weapon === "SM-2MR",
+  "defense planner did not combine target ranking and weapon selection",
+);
+const committed = new Map([
+  [observation.id, { shots: 1, pending: 1, misses: 0, lastResolution: 0 }],
+]);
+const alternatePlan = planDefenseEngagement({
+  origin: new THREE.Vector3(),
+  observations: [observation, lowerPriorityObservation],
+  policy: { acceptedKinds: ["missile"] },
+  engagements: committed,
+  acceptEngagement: (_candidate, engagement) => !engagement?.pending,
+  weapons: [
+    { weapon: "SM-2ER", rounds: 1, envelope: { minRange: 20, maxRange: 600 } },
+  ],
+  scoreObservation: (candidate) =>
+    candidate.id === observation.id ? 100 : 10,
+});
+assert(
+  alternatePlan?.observation.id === lowerPriorityObservation.id &&
+    alternatePlan.weapon === "SM-2ER",
+  "defense planner did not advance to the next uncommitted observation",
+);
+assert(
+  !planDefenseEngagement({
+    origin: new THREE.Vector3(),
+    observations: [observation],
+    policy: { acceptedKinds: ["missile"] },
+    engagements: new Map(),
+    weapons: [
+      { weapon: "RIM-67", rounds: 0, envelope: { minRange: 0, maxRange: 500 } },
+    ],
+    scoreObservation: () => 1,
+  }),
+  "defense planner created a plan without an available weapon",
+);
 const aftLauncher = {
   ...mk10,
   name: "AFT",
@@ -281,6 +338,8 @@ console.log(
         new THREE.Vector3(),
         40,
       ),
+      plannedWeapon: defensePlan.weapon,
+      alternateTarget: alternatePlan.observation.id,
       elevation: launcher.elevation,
       mk10Launches: launches,
       mk10ReturnedRounds: returned,

@@ -109,11 +109,11 @@ import {
 } from "./ship-defense/launcher-runtime";
 import {
   authorizeLaunch,
+  planDefenseEngagement,
   resolveShot,
   threatScore,
 } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
-import { selectConsumerTarget } from "./defense/consumer.js";
 import type {
   EngagementRecord,
   EngagementSourceId,
@@ -5712,21 +5712,26 @@ function updateCombat(dt: number) {
     defenseObservations = eligibleDefenseTracks.map((track) =>
       adaptCombatTrack(track, defenseTargetForSource(track.sourceId)!),
     ),
-    selectedDefenseObservation = selectConsumerTarget({
+    defensePlan = planDefenseEngagement({
       origin: defender.position,
       observations: defenseObservations,
       policy: {
         acceptedKinds: ["missile", "aircraft", "ship", "unknown"],
       },
       engagements,
+      weapons: [
+        { weapon: "RIM-67", rounds: ammo, envelope: weaponProfiles["RIM-67"] },
+        { weapon: "SM-2MR", rounds: sm2Ammo, envelope: weaponProfiles["SM-2MR"] },
+        { weapon: "SM-2ER", rounds: sm2erAmmo, envelope: weaponProfiles["SM-2ER"] },
+      ],
       scoreObservation: (observation) => {
         const track = defenseTrackBySource.get(observation.id),
           target = track ? defenseTargetForSource(track.sourceId) : undefined;
         return track && target ? missileThreatScore(target, track) : -Infinity;
       },
     }),
-    best = selectedDefenseObservation
-      ? defenseTrackBySource.get(selectedDefenseObservation.id)
+    best = defensePlan
+      ? defenseTrackBySource.get(defensePlan.observation.id)
       : undefined;
   const terminalSm2 = activeInterceptors
     .filter(
@@ -5781,31 +5786,17 @@ function updateCombat(dt: number) {
     autoFire &&
     elapsed > 2 &&
     elapsed >= nextSamLaunch &&
-    (ammo > 0 || sm2Ammo > 0 || sm2erAmmo > 0) &&
     active < maxSamChannels &&
-    best
+    best &&
+    defensePlan
   ) {
-    const target = defenseTargetForSource(best.sourceId)!,
-      range = best.position.distanceTo(defender.position),
-      rim = weaponProfiles["RIM-67"],
-      mr = weaponProfiles["SM-2MR"],
-      er = weaponProfiles["SM-2ER"],
-      rimOk = ammo > 0 && range >= rim.minRange && range <= rim.maxRange,
-      mrOk = sm2Ammo > 0 && range >= mr.minRange && range <= mr.maxRange,
-      erOk = sm2erAmmo > 0 && range >= er.minRange && range <= er.maxRange;
-    if (rimOk || mrOk || erOk) {
-      selectedWeapon =
-        mrOk && range < mr.maxRange * 0.8
-          ? "SM-2MR"
-          : rimOk
-            ? "RIM-67"
-            : "SM-2ER";
-      if (queueInterceptorLaunch(target, selectedWeapon)) {
-        nextSamLaunch = elapsed + 0.12;
-        changeAmmo(selectedWeapon, -1);
-      } else nextSamLaunch = elapsed + 1;
-      weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
-    }
+    const target = defenseTargetForSource(best.sourceId)!;
+    selectedWeapon = defensePlan.weapon;
+    if (queueInterceptorLaunch(target, selectedWeapon)) {
+      nextSamLaunch = elapsed + 0.12;
+      changeAmmo(selectedWeapon, -1);
+    } else nextSamLaunch = elapsed + 1;
+    weaponButton.textContent = `WEAPON: ${selectedWeapon}`;
   }
   interceptors.forEach((i) => {
     if (!i.mesh.visible) return;
