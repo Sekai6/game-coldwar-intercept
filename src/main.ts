@@ -72,7 +72,7 @@ import {
 import { pointDefenseCapability } from "./platforms/defense";
 import { recordPlatformPointDefenseShot } from "./platforms/visual-defense";
 import { AirCombatSystem } from "./air/runtime";
-import { jointAirScenarioSpawns } from "./air/scenarios";
+import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -2711,6 +2711,11 @@ airScenarioField.className = "sandbox-toggle";
 airScenarioField.innerHTML = '<input id="sbAirCombat" type="checkbox" checked> JOINT AIR OPERATIONS / F-14A + TU-16K + A-6E';
 sandbox.insertBefore(airScenarioField, sandbox.querySelector("#sbStart"));
 const airScenarioInput = airScenarioField.querySelector("input") as HTMLInputElement;
+const airPresetField = document.createElement("label");
+airPresetField.className = "sandbox-field";
+airPresetField.innerHTML = `<span>AIR PRESET</span><select id="sbAirPreset">${Object.entries(AIR_SCENARIO_PRESETS).map(([id, preset]) => `<option value="${id}">${preset.label} / ${preset.description}</option>`).join("")}</select>`;
+sandbox.insertBefore(airPresetField, sandbox.querySelector("#sbStart"));
+const airPresetInput = airPresetField.querySelector("select") as HTMLSelectElement;
 
 function airScenarioContext() {
   const blueShip: TargetableEntity = {
@@ -3347,9 +3352,10 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   airCombat.enabled = airScenarioInput.checked;
   if (airCombat.enabled) {
     const context = airScenarioContext();
-    airCombat.reset(context.blueShip, context.redShip, jointAirScenarioSpawns());
+    const presetId = airPresetInput.value as AirScenarioPresetId;
+    airCombat.reset(context.blueShip, context.redShip, airScenarioSpawns(presetId));
     airCombat.countermeasuresEnabled = new URLSearchParams(location.search).get("airCountermeasures") !== "off";
-    log("JOINT AIR OPERATIONS / 2 x F-14A CAP / 2 x TU-16K RAID / 2 x A-6E STRIKE");
+    log(`AIR OPERATIONS / ${AIR_SCENARIO_PRESETS[presetId].description.toUpperCase()}`);
   }
   updateMaterialDiagnostics();
   selectedTargetId = 1;
