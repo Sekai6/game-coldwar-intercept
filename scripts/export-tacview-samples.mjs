@@ -7,11 +7,21 @@ const outputDirectory = path.resolve(
 );
 await mkdir(outputDirectory, { recursive: true });
 
-const scenarios = [
+const allScenarios = [
   { name: "p500-ship-defense", threat: "P-500", count: 2, air: false },
   { name: "p15-ship-defense", threat: "P-15 Termit", count: 2, air: false },
   { name: "joint-air-combat", threat: "P-500", count: 1, air: true },
 ];
+const requestedScenarios = new Set(
+  (process.env.ACMI_SCENARIOS ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean),
+);
+const scenarios = requestedScenarios.size
+  ? allScenarios.filter((scenario) => requestedScenarios.has(scenario.name))
+  : allScenarios;
+if (!scenarios.length) throw new Error("No matching ACMI sample scenarios");
 
 const browser = await chromium.launch({
   headless: true,

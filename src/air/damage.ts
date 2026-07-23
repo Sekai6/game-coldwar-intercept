@@ -67,11 +67,17 @@ export function resolveAircraftHit(input: {
     zone = "fuselage";
   }
 
+  const heavyWarhead = Math.max(0, Math.min(1, (input.damage - 45) / 30)),
+    primaryMultiplier = 0.9 + heavyWarhead * 0.6,
+    structureTransfer = 0.65 + heavyWarhead * 0.3;
+
   return {
     primary,
     zone,
-    primaryDamage: input.damage * (primary === "structure" ? 1 : 0.78),
-    structureDamage: primary === "structure" ? 0 : input.damage * 0.18,
+    primaryDamage: input.damage * (primary === "structure" ? 1.35 : primaryMultiplier),
+    structureDamage:
+      primary === "structure" ? 0 : input.damage * structureTransfer,
+    blastSeverity: heavyWarhead,
     normalizedHit: { lateral, vertical: input.localHit.y / halfLength, longitudinal },
   };
 }

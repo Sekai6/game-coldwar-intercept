@@ -23,7 +23,7 @@ F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM
 
 箔条与热焰弹按 `CountermeasureProgram.interval` 逐枚抛射，库存也在每个实体实际离机时扣减。飞行动力学核心位于 `src/air/flight-dynamics.ts`，统一计算速度相关过载能力、飞控健康、最大滚转率、俯仰/迎角限制、失速以及与油门和爬升相关的燃油流量。对应门槛为 `verify:air-countermeasures` 与 `verify:air-dynamics`。
 
-双机编队使用长机水平航向计算三维槽位，并通过 `joined / separated / rejoining` 迟滞状态避免边界抖动；失散僚机会优先重新集合。飞机毁伤处置与模型局部命中分区由 `src/air/damage.ts` 统一处理，机鼻、发动机舱、外翼、尾部和中央机身分别作用于对应系统，不再随机抽取受损系统。`verify:air-formation-damage` 与 `verify:air-damage-geometry` 覆盖编队状态、关键系统门槛和命中区域。
+双机编队使用长机水平航向计算三维槽位，并通过 `joined / separated / rejoining` 迟滞状态避免边界抖动；失散僚机会优先重新集合。飞机毁伤处置与模型局部命中分区由 `src/air/damage.ts` 统一处理，机鼻、发动机舱、外翼、尾部和中央机身分别作用于对应系统，不再随机抽取受损系统。空空导弹近炸效能按实际引爆距离衰减，并按战斗部量级同时计算主系统破片与结构冲击；AIM-54A 的典型近炸可重创飞控/发动机并强制返航，近距或中央命中可形成任务击杀，而箔条捕获仍会正常脱靶。`verify:air-formation-damage` 与 `verify:air-damage-geometry` 覆盖编队状态、关键系统门槛、战斗部传递和命中区域。
 
 飞机模型包含随系统毁伤程度开启的持续烟雾与火焰节点；任务击毁后的下降、滚转、重力增速与海面接触由 `stepAircraftLossOfControl` 固定步长积分，撞海后速度归零并保留残骸及扩散水面冲击，不再瞬间隐藏。联合空情面板逐机显示任务、编队状态/误差、最佳航迹质量、燃油、剩余武器和可确认战损；敌方未确认的内部健康不会泄露到 HUD。
 

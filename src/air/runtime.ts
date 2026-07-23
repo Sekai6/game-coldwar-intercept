@@ -1353,7 +1353,15 @@ export class AirCombatSystem {
   ) {
     if (range <= missile.definition.proximityRadius) {
       if (target.kind !== "decoy") {
-        target.applyDamage(missile.definition.damage, missile.position);
+        const fuzeEffect = THREE.MathUtils.lerp(
+          1,
+          0.85,
+          THREE.MathUtils.clamp(range / missile.definition.proximityRadius, 0, 1),
+        );
+        target.applyDamage(
+          missile.definition.damage * fuzeEffect,
+          missile.position,
+        );
         this.standardDamageApplications++;
         if (!target.alive)
           this.emit(
