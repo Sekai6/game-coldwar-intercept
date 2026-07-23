@@ -2734,9 +2734,9 @@ function airScenarioContext() {
       if (targetId !== bridge.blueShip.id) return null;
       return {
         ecmEnabled: shipEcmEnabled,
-        ecmStrength: 0.62,
+        ecmStrength: DEFAULT_SURFACE_CONFIG.shipEcmStrength,
         ecmHealth: subsystemHealth("ecm"),
-        burnThroughRange: 72,
+        burnThroughRange: DEFAULT_SURFACE_CONFIG.shipEcmBurnThroughRange,
         decoys: chaffClouds
           .filter((cloud) => cloud.side === "ship" && cloud.rcs > 0.1)
           .map((cloud) => ({ position: cloud.position, rcs: cloud.rcs })),

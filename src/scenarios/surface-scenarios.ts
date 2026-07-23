@@ -21,6 +21,8 @@ export type SurfaceScenarioConfig = {
   platformDecoysEnabled: boolean;
   srbocEnabled: boolean;
   srbocRounds: number;
+  shipEcmStrength: number;
+  shipEcmBurnThroughRange: number;
 };
 
 export const DEFAULT_SURFACE_CONFIG: SurfaceScenarioConfig = {
@@ -37,6 +39,8 @@ export const DEFAULT_SURFACE_CONFIG: SurfaceScenarioConfig = {
   platformDecoysEnabled: true,
   srbocEnabled: true,
   srbocRounds: 12,
+  shipEcmStrength: 0.62,
+  shipEcmBurnThroughRange: 72,
 };
 
 export function initialSurfaceLoadout(ship: ShipDefinition) {
