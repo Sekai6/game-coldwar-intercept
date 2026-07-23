@@ -76,6 +76,7 @@ import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } fro
 import { createAirShipBridge } from "./air/ship-bridge";
 import { initialSurfaceThreats } from "./scenarios/surface-scenarios";
 import { allTargets, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
+import { moveAngle, moveToward } from "./ship-defense/launcher-runtime";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -1302,18 +1303,6 @@ function queueInterceptorLaunch(target: DefenseTarget, weapon: WeaponType) {
     `${launcherConfig.displayName} ${launcher.name} TASK / TRACK ${trackId} / SLEWING / HEALTH ${Math.round(launcherHealth(launcher) * 100)}%`,
   );
   return true;
-}
-function moveAngle(current: number, target: number, maxStep: number) {
-  return (
-    current +
-    THREE.MathUtils.clamp(angleDifference(target, current), -maxStep, maxStep)
-  );
-}
-function moveToward(current: number, target: number, maxStep: number) {
-  return (
-    current +
-    Math.sign(target - current) * Math.min(Math.abs(target - current), maxStep)
-  );
 }
 function setLauncherElevation(launcher: Mk10LauncherState, elevation: number) {
   launcher.elevation = elevation;
