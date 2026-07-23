@@ -1,4 +1,33 @@
+import * as THREE from "three";
+import type { TargetableEntity } from "../combat-entity";
 import type { DefenseTarget, Missile } from "../combat-types";
+import type { EnemyType } from "../threats/catalog";
+
+export type DefenseTargetAdapterOptions = {
+  phase: DefenseTarget["phase"];
+  threatType: EnemyType;
+  displayName?: string;
+};
+
+export function adaptTargetableEntity(
+  entity: TargetableEntity,
+  mesh: THREE.Group,
+  options: DefenseTargetAdapterOptions,
+): DefenseTarget {
+  return {
+    mesh,
+    get velocity() {
+      return entity.velocity;
+    },
+    phase: options.phase,
+    threatType: options.threatType,
+    get rcs() {
+      return entity.radarCrossSection;
+    },
+    entity,
+    displayName: options.displayName,
+  };
+}
 
 export function sourceSeed(sourceId: number | string): number {
   if (typeof sourceId === "number") return sourceId;

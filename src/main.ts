@@ -75,7 +75,7 @@ import { AirCombatSystem } from "./air/runtime";
 import { AIR_SCENARIO_PRESETS, airScenarioSpawns, type AirScenarioPresetId } from "./air/scenarios";
 import { createAirShipBridge, createShipTarget } from "./air/ship-bridge";
 import { DEFAULT_SURFACE_CONFIG, initialSurfaceLoadout, initialSurfaceThreats } from "./scenarios/surface-scenarios";
-import { allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
+import { adaptTargetableEntity, allTargets, sourceForTarget, sourceSeed, targetForSource } from "./ship-defense/defense-targets";
 import { moveAngle, moveToward, setMk10Elevation } from "./ship-defense/launcher-runtime";
 import { recordLaunch, resolveShot, threatScore } from "./ship-defense/engagement-runtime";
 import { createCiwsTracer } from "./ship-defense/defense-visuals";
@@ -487,19 +487,11 @@ function synchronizeAirDefenseTargets() {
       selection.visible = false;
       contact.model.add(selection);
       contact.model.userData.selection = selection;
-      target = {
-        mesh: contact.model,
-        get velocity() {
-          return contact.entity.velocity;
-        },
+      target = adaptTargetableEntity(contact.entity, contact.model, {
         phase: "inbound",
         threatType: contact.template,
-        get rcs() {
-          return contact.entity.radarCrossSection;
-        },
-        entity: contact.entity,
         displayName: contact.name,
-      };
+      });
       airDefenseTargets.set(contact.entity.id, target);
       log(`AIR THREAT REGISTERED / ${contact.name} / ${contact.entity.kind.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`);
     }
