@@ -86,10 +86,9 @@ import {
 import {
   adaptCombatTrack,
   adaptTargetableEntity,
-  allTargets,
-  sourceForTarget,
+  indexedDefenseTargetSource,
+  mappedDefenseTargetSource,
   sourceSeed,
-  targetForSource,
 } from "./ship-defense/defense-targets";
 import {
   moveAngle,
@@ -107,6 +106,7 @@ import type {
   EngagementRecord,
   EngagementSourceId,
 } from "./defense/engagement.js";
+import { DefenseTargetRegistry } from "./defense/target-source.js";
 import type { CombatEntity, TargetableEntity } from "./combat-entity";
 import type {
   AarCategory,
@@ -474,13 +474,33 @@ const interceptors: Interceptor[] = [];
 const airDefenseTargets = new Map<string, DefenseTarget>();
 const airDefenseHardKills = new Set<string>();
 const engagements = new Map<EngagementSourceId, EngagementRecord>();
+const defenseTargets = new DefenseTargetRegistry<DefenseTarget>();
+defenseTargets.register(
+  indexedDefenseTargetSource(
+    "surface-threats",
+    missiles,
+    (target) =>
+      elapsed >= target.launchAt &&
+      target.phase !== "destroyed" &&
+      (!target.platformLaunch || target.platformLaunch.released),
+  ),
+);
+defenseTargets.register(
+  mappedDefenseTargetSource(
+    "air-combat",
+    airDefenseTargets,
+    (target) => target.phase !== "destroyed",
+  ),
+);
 
 function defenseTargetForSource(sourceId: number | string) {
-  return targetForSource(sourceId, missiles, airDefenseTargets);
+  return defenseTargets.get(sourceId);
 }
 
 function defenseSourceForTarget(target: DefenseTarget) {
-  return sourceForTarget(target, missiles);
+  const sourceId = defenseTargets.idFor(target);
+  if (sourceId === undefined) throw new Error("Unregistered defense target");
+  return sourceId;
 }
 
 function defenseSourceSeed(sourceId: number | string) {
@@ -488,7 +508,7 @@ function defenseSourceSeed(sourceId: number | string) {
 }
 
 function allDefenseTargets() {
-  return allTargets(missiles, airDefenseTargets);
+  return defenseTargets.values();
 }
 
 function synchronizeAirDefenseTargets() {
@@ -2784,6 +2804,7 @@ function airScenarioContext() {
   });
   return {
     ...bridge,
+    targets: [bridge.blueShip, ...(bridge.redShip ? [bridge.redShip] : [])],
     countermeasures: (targetId: string) => {
       if (targetId !== bridge.blueShip.id) return null;
       return {
@@ -6009,32 +6030,13 @@ function updateCombat(dt: number) {
     elapsed,
     dt,
     radarEnabled
-      ? [
-          ...missiles
-            .map((m, i) => ({ m, i }))
-            .filter(
-              (x) =>
-                elapsed >= x.m.launchAt &&
-                x.m.phase !== "destroyed" &&
-                (!x.m.platformLaunch || x.m.platformLaunch.released),
-            )
-            .map((x) => ({
-              id: x.i + 1,
-              position: x.m.mesh.position,
-              velocity: x.m.velocity,
-              altitude: x.m.mesh.position.y * 50,
-              rcs: x.m.rcs,
-            })),
-          ...[...airDefenseTargets.entries()]
-            .filter(([, target]) => target.phase !== "destroyed")
-            .map(([id, target]) => ({
-              id,
-              position: target.mesh.position,
-              velocity: target.velocity,
-              altitude: target.mesh.position.y * 50,
-              rcs: target.rcs,
-            })),
-        ]
+      ? defenseTargets.observableEntries().map(([id, target]) => ({
+          id,
+          position: target.mesh.position,
+          velocity: target.velocity,
+          altitude: target.mesh.position.y * 50,
+          rcs: target.rcs,
+        }))
       : [],
     {
       [primarySensor]: subsystemHealth("primaryRadar"),

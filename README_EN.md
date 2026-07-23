@@ -623,6 +623,10 @@ game-codewar-intercept/
 │  ├─ vls.ts                  # Pure VLS loading, geometry, and damage logic
 │  ├─ scenarios/
 │  │  └─ surface-scenarios.ts # Initial deployment, loadout, doctrine, and ECM scenario data
+│  ├─ defense/
+│  │  ├─ target-source.ts     # Pluggable target sources and unique-ID registry
+│  │  ├─ targeting.ts / consumer.ts # Observation policy, scoring, and selection
+│  │  └─ engagement.ts        # Authorization, commitment, and settlement ledger
 │  ├─ air/
 │  │  ├─ scenarios.ts         # Air presets, formations, missions, and escort assignments
 │  │  ├─ ship-bridge.ts       # Surface-ship to generic air target adapter
@@ -666,6 +670,8 @@ game-codewar-intercept/
 The runtime now follows a capability configuration + model anchors + generic orchestration structure. `main.ts` does not branch on ship IDs such as `long-beach` or `ticonderoga`, and it contains no USS Long Beach geometry, equipment-name defaults, magazine defaults, or hit-zone layout. Each catalog entry declares sensors, launcher behavior, compatible weapons, platform maneuver data, radar signature, magazines, subsystem positions, and longitudinal damage zones. Model modules only construct Three.js objects and expose equipment anchors.
 
 Shared subsystem slots use semantic names such as `primaryRadar`, `fireControl`, and `forwardLauncher` rather than treating SPS-48, SPG-55, or Mk 10 as cross-class identifiers. Sensor capabilities select mechanical or fixed-array behavior; the launcher discriminated configuration selects Mk 10 or Mk 41 behavior. Adding a ship must not add a ship-name branch to `main.ts`.
+
+Shipboard and airborne defenders share one pipeline: `target-source registration -> sensor track -> DefenseConsumer scoring -> resource authorization -> EngagementRecord -> physical release -> settlement`. Registration never implies detection or grants target truth. `DefenseTargetRegistry` accepts live pluggable sources, supports removal, and rejects duplicate source names or target IDs; radar, SAM, CIWS, and airborne OODA do not enumerate a specific platform container directly.
 
 <a id="adding-ships-and-weapons"></a>
 ### Adding Ships and Weapons

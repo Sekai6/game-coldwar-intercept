@@ -9,17 +9,9 @@ import type { EnemyType } from "../threats/catalog";
 import type { FormationStatus } from "./formation";
 
 export type AirMissionOrder =
-  | "cap"
-  | "intercept"
-  | "escort"
-  | "anti-ship"
-  | "egress"
-  | "return";
+  "cap" | "intercept" | "escort" | "anti-ship" | "egress" | "return";
 export type AirGuidance =
-  | "active-radar"
-  | "semi-active-radar"
-  | "infrared"
-  | "anti-ship-radar";
+  "active-radar" | "semi-active-radar" | "infrared" | "anti-ship-radar";
 export type AirPlatformId = "F-14A" | "TU-16K" | "A-6E";
 export type AirWeaponId = "AIM-54A" | "AIM-7F" | "AIM-9L" | "KSR-5" | "AGM-84A";
 export type AirSubsystem =
@@ -159,12 +151,7 @@ export interface AirPlatformInstance extends TargetableEntity {
   chaff: number;
   flares: number;
   state:
-    | "formation"
-    | "engaging"
-    | "defending"
-    | "egress"
-    | "disabled"
-    | "crashed";
+    "formation" | "engaging" | "defending" | "egress" | "disabled" | "crashed";
   targetId: string | null;
   engagements: Map<string, EngagementRecord>;
   missileWarnings: Map<string, AirTrack>;
@@ -221,6 +208,7 @@ export interface AirDecoyInstance extends CombatEntity {
 export interface AirScenarioContext {
   blueShip: TargetableEntity;
   redShip: TargetableEntity | null;
+  targets?: readonly TargetableEntity[];
   countermeasures?: (targetId: string) => {
     ecmEnabled: boolean;
     ecmStrength: number;

@@ -6,6 +6,9 @@ The simulation is organized around capabilities rather than ship-name checks.
 
 - `src/main.ts`: scene orchestration, UI adapters, and the frame loop.
 - `src/combat-entity.ts`: side-neutral entity and target contracts shared by aircraft, ships, missiles, and decoys.
+- `src/defense/target-source.ts`: domain-neutral live target-source contract and registry. Sources own identity exposure and observability; consumers never enumerate aircraft, missile, or ship containers directly.
+- `src/defense/targeting.ts` and `src/defense/consumer.ts`: observed-target policy, scoring, ranking, and consumer selection shared by airborne and shipboard defenders.
+- `src/defense/engagement.ts`: stable-ID engagement authorization, commitment, and hit/miss/cancel settlement shared by launchers and aircraft hardpoints.
 - `src/air/types.ts`: aircraft, mission, observed-track, weapon, countermeasure, and damage contracts.
 - `src/air/catalog.ts`: game-scaled F-14A, Tu-16K, A-6E, AIM-54A, AIM-7F, AIM-9L, KSR-5, and AGM-84A capability data.
 - `src/air/models.ts`: reusable procedural aircraft geometry and stable animation anchors.
@@ -47,6 +50,24 @@ The simulation is organized around capabilities rather than ship-name checks.
 - `src/sim.ts`: sensor scans, uncertain tracks, and fire-control solutions.
 - `src/sensor-faces.ts`: fixed-array aspect coverage and localized damage.
 - `src/vls.ts`: pure VLS load planning, geometry, and damage math.
+
+## Unified defense pipeline
+
+Every defensive domain follows one path:
+
+```text
+DefenseTargetSource registration
+-> sensor measurement and uncertain DefenseObservation/AirTrack
+-> DefenseConsumer policy and domain scoring
+-> resource authorization
+-> stable-ID EngagementRecord commitment
+-> physical launcher/hardpoint release
+-> hit, miss, or cancel settlement
+```
+
+`DefenseTargetRegistry` accepts live sources and rejects duplicate source names or target IDs. A source may expose all registered targets while filtering which are currently observable, so an unreleased weapon can exist in scenario state without becoming radar truth. Shipboard radar input, source lookup, CIWS enumeration, and SAM engagement all consume the same registry. `AirCombatSystem` registers aircraft, weapons, decoys, and scenario-provided external entities through the same contract; `AirScenarioContext.targets` is the extension point for another ship, aircraft group, or future targetable domain.
+
+Registration does not grant detection or fire-control quality. Sensors still create noisy tracks, and scoring consumes those observations rather than target transforms. Authorization is committed only after a real launcher, VLS cell, or aircraft hardpoint reserves the shot. A pre-release casualty, stale track, destroyed target, or launcher failure settles that commitment as `cancel`; physical weapons settle `hit` or `miss`. No adapter may spawn a shipboard SAM or increment a synthetic launch counter.
 
 ## Adding a ship
 

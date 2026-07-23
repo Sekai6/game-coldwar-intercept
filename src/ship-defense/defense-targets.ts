@@ -1,9 +1,13 @@
 import * as THREE from "three";
 import type { TargetableEntity } from "../combat-entity";
-import type { DefenseTarget, Missile } from "../combat-types";
+import type { DefenseTarget } from "../combat-types";
 import type { EnemyType } from "../threats/catalog";
 import type { Track } from "../sim";
 import type { DefenseObservation } from "../defense/targeting";
+import {
+  createDefenseTargetSource,
+  type DefenseTargetSource,
+} from "../defense/target-source.js";
 
 export type DefenseTargetAdapterOptions = {
   phase: DefenseTarget["phase"];
@@ -55,24 +59,24 @@ export function sourceSeed(sourceId: number | string): number {
   return hash >>> 0;
 }
 
-export function targetForSource(
-  sourceId: number | string,
-  missiles: Missile[],
-  aircraft: Map<string, DefenseTarget>,
-): DefenseTarget | undefined {
-  return typeof sourceId === "string" ? aircraft.get(sourceId) : missiles[sourceId - 1];
+export function indexedDefenseTargetSource<TTarget extends DefenseTarget>(
+  name: string,
+  targets: readonly TTarget[],
+  observable: (target: TTarget) => boolean = () => true,
+): DefenseTargetSource<DefenseTarget> {
+  return createDefenseTargetSource(
+    name,
+    () => targets.map((target, index) => [index + 1, target] as const),
+    { observable },
+  );
 }
 
-export function sourceForTarget(
-  target: DefenseTarget,
-  missiles: Missile[],
-): number | string {
-  return target.entity?.id ?? missiles.findIndex((candidate) => candidate === target) + 1;
-}
-
-export function allTargets(
-  missiles: Missile[],
-  aircraft: Map<string, DefenseTarget>,
-): DefenseTarget[] {
-  return [...missiles, ...aircraft.values()];
+export function mappedDefenseTargetSource(
+  name: string,
+  targets: ReadonlyMap<string, DefenseTarget>,
+  observable: (target: DefenseTarget) => boolean = () => true,
+): DefenseTargetSource<DefenseTarget> {
+  return createDefenseTargetSource(name, () => targets.entries(), {
+    observable,
+  });
 }

@@ -40,6 +40,10 @@ import {
   resolveEngagement,
 } from "../defense/engagement.js";
 import { opposingSides } from "../defense/allegiance.js";
+import {
+  createDefenseTargetSource,
+  DefenseTargetRegistry,
+} from "../defense/target-source.js";
 import type {
   AirCombatEvent,
   AirDecoyInstance,
@@ -231,7 +235,37 @@ export class AirCombatSystem {
   private lastEventIndex = 0;
   private currentTime = 0;
   private standardDamageApplications = 0;
+  private readonly targetSources = new DefenseTargetRegistry<AirRuntimeTarget>();
+  private externalTargets: readonly TargetableEntity[] = [];
   constructor(private scene: THREE.Scene) {
+    this.targetSources.register(
+      createDefenseTargetSource("aircraft", () =>
+        this.aircraft
+          .filter((target) => target.alive)
+          .map((target) => [target.id, target] as const),
+      ),
+    );
+    this.targetSources.register(
+      createDefenseTargetSource("air-weapons", () =>
+        this.missiles
+          .filter((target) => target.alive)
+          .map((target) => [target.id, target] as const),
+      ),
+    );
+    this.targetSources.register(
+      createDefenseTargetSource("air-decoys", () =>
+        this.decoys
+          .filter((target) => target.alive)
+          .map((target) => [target.id, target] as const),
+      ),
+    );
+    this.targetSources.register(
+      createDefenseTargetSource("external-combat-entities", () =>
+        this.externalTargets
+          .filter((target) => target.alive)
+          .map((target) => [target.id, target] as const),
+      ),
+    );
     this.group.name = "air-combat";
     scene.add(this.group);
   }
@@ -315,13 +349,11 @@ export class AirCombatSystem {
     return out;
   }
   private entities(context: AirScenarioContext) {
-    return [
-      ...this.aircraft.filter((a) => a.alive),
-      ...this.missiles.filter((m) => m.alive),
-      ...this.decoys.filter((d) => d.alive),
+    this.externalTargets = context.targets ?? [
       context.blueShip,
-      ...(context.redShip?.alive ? [context.redShip] : []),
+      ...(context.redShip ? [context.redShip] : []),
     ];
+    return this.targetSources.values();
   }
   update(time: number, dt: number, context: AirScenarioContext) {
     if (!this.enabled) return;

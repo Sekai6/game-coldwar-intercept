@@ -534,6 +534,10 @@ game-codewar-intercept/
    ├─ surface-doctrine.ts        # 反舰齐射规模与 BDA 规划
    ├─ scenarios/
    │  └─ surface-scenarios.ts    # 初始部署、装载、交战条令与 ECM 场景参数
+   ├─ defense/
+   │  ├─ target-source.ts        # 可插拔目标来源与唯一 ID 注册表
+   │  ├─ targeting.ts / consumer.ts # 观测目标策略、评分与选择
+   │  └─ engagement.ts           # 授权、承诺与命中/脱靶/取消结算
    ├─ air/
    │  ├─ scenarios.ts            # 空中预设、编队、任务与护航关系
    │  ├─ ship-bridge.ts          # 舰船到通用空中目标接口的适配层
@@ -569,6 +573,8 @@ game-codewar-intercept/
 - `scenarios/` 只描述一局战斗的初始状态和可调规则，不实现武器行为。
 - `air/ship-bridge.ts` 是空中系统与水面舰运行时之间的唯一目标适配边界。
 - `ship-defense/` 管理目标映射、交战状态、发射架通用规则和防空视觉；实体发射仍必须经过舰载弹药与发射架状态机。
+- 舰艇和飞机统一遵循 `目标来源注册 -> 传感器航迹 -> DefenseConsumer 评分 -> 资源授权 -> EngagementRecord -> 实体发射 -> 结算`。注册目标不等于探测成功，也不授予目标真值。
+- `DefenseTargetRegistry` 可以动态注册或注销新的领域来源，并拒绝重复来源名和重复目标 ID。舰载雷达、SAM、CIWS 与空中 OODA 不直接枚举某一种平台容器。
 - 防御舰的能力、库存、传感器、发射器和损伤区段由 `ShipDefinition` 声明。
 - 来袭弹包线、终端能力、预设和程序化模型由 `ThreatDefinition` 声明。
 - 敌平台传感器、武器槽、机动、点防御、软杀伤和损管由 `EnemyPlatformDefinition` 声明。

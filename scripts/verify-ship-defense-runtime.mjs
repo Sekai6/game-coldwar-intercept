@@ -2,11 +2,14 @@ import * as THREE from "three";
 import { opposingSides } from "../dist-test/defense/allegiance.js";
 import {
   adaptTargetableEntity,
-  allTargets,
-  sourceForTarget,
+  indexedDefenseTargetSource,
+  mappedDefenseTargetSource,
   sourceSeed,
-  targetForSource,
 } from "../dist-test/ship-defense/defense-targets.js";
+import {
+  createDefenseTargetSource,
+  DefenseTargetRegistry,
+} from "../dist-test/defense/target-source.js";
 import {
   authorizeLaunch,
   resolveShot,
@@ -67,31 +70,56 @@ assert(
 );
 const legacy = { ...missile, entity: undefined };
 const entities = new Map([["air-weapon-1", missile]]);
-
+const registry = new DefenseTargetRegistry();
+registry.register(indexedDefenseTargetSource("legacy", [legacy]));
+registry.register(mappedDefenseTargetSource("entities", entities));
+assert(registry.get("air-weapon-1") === missile, "entity source lookup failed");
+assert(registry.get(1) === legacy, "legacy source lookup failed");
 assert(
-  targetForSource("air-weapon-1", [legacy], entities) === missile,
-  "entity source lookup failed",
-);
-assert(
-  targetForSource(1, [legacy], entities) === legacy,
-  "legacy source lookup failed",
-);
-assert(
-  sourceForTarget(missile, [legacy]) === "air-weapon-1",
+  registry.idFor(missile) === "air-weapon-1",
   "entity reverse lookup failed",
 );
-assert(sourceForTarget(legacy, [legacy]) === 1, "legacy reverse lookup failed");
-assert(
-  allTargets([legacy], entities).length === 2,
-  "target aggregation failed",
+assert(registry.idFor(legacy) === 1, "legacy reverse lookup failed");
+
+const futureTarget = { ...adapted, displayName: "future undersea contact" };
+const unregisterFuture = registry.register(
+  createDefenseTargetSource(
+    "future-domain",
+    () => [["future-contact", futureTarget]],
+    { observable: () => false },
+  ),
 );
+assert(
+  registry.values().length === 3,
+  "pluggable target source was not aggregated",
+);
+assert(
+  registry.observableEntries().length === 2,
+  "source observation filter was not respected",
+);
+unregisterFuture();
+assert(!registry.get("future-contact"), "target source did not unregister");
+
+const unregisterDuplicate = registry.register(
+  createDefenseTargetSource("duplicate", () => [
+    ["air-weapon-1", futureTarget],
+  ]),
+);
+let duplicateRejected = false;
+try {
+  registry.entries();
+} catch {
+  duplicateRejected = true;
+}
+unregisterDuplicate();
+assert(duplicateRejected, "duplicate target id was not rejected");
 assert(
   sourceSeed("track-a") === sourceSeed("track-a"),
   "source seed is not deterministic",
 );
 
 const engagements = new Map();
-const targetId = sourceForTarget(missile, [legacy]);
+const targetId = registry.idFor(missile);
 const rejected = authorizeLaunch(engagements, targetId, () => false);
 assert(
   !rejected && engagements.size === 0,
