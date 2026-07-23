@@ -6,9 +6,10 @@ export type SensorHealth = Partial<Record<SensorName, number>>;
 export type SensorAspectHealth = Partial<
   Record<SensorName, (bearing: number) => number>
 >;
+export type TrackSourceId = number | string;
 export interface Track {
   id: number;
-  sourceId: number;
+  sourceId: TrackSourceId;
   position: THREE.Vector3;
   velocity: THREE.Vector3;
   quality: number;
@@ -34,7 +35,7 @@ export interface SearchState {
 }
 
 type TargetReturn = {
-  id: number;
+  id: TrackSourceId;
   position: THREE.Vector3;
   velocity: THREE.Vector3;
   altitude: number;
@@ -81,7 +82,7 @@ export class CombatPicture {
   private rng = 0x41c64e6d;
   private nextTrackId = 1;
   private events: string[] = [];
-  private lastTrackForSource = new Map<number, number>();
+  private lastTrackForSource = new Map<TrackSourceId, number>();
   private sensors: SensorDefinition[];
   private nextScan: Map<SensorName, number>;
   private nextBackgroundScan: Map<SensorName, number>;
@@ -393,7 +394,7 @@ export class CombatPicture {
     for (const [id, track] of this.tracks)
       if (track.quality < 0.03 || track.age > 160) this.tracks.delete(id);
   }
-  trackForTarget(sourceId: number) {
+  trackForTarget(sourceId: TrackSourceId) {
     return [...this.tracks.values()]
       .filter((track) => track.sourceId === sourceId)
       .sort(

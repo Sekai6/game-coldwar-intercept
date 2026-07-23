@@ -157,7 +157,7 @@ export type IlluminatorState = {
   id: number;
   azimuth: number;
   target: Interceptor | null;
-  lastTargetId: number;
+  lastTargetId: number | string;
 };
 export type AarCategory =
   | "sensor"
@@ -182,7 +182,7 @@ export type AarSnapshot = {
     x: number;
     z: number;
     weapon: WeaponType;
-    targetId: number;
+    targetId: number | string;
   }[];
   chaff: { x: number; z: number; side: "threat" | "ship" | "platform" }[];
   enemyPlatform: {

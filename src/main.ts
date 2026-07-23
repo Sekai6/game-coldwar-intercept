@@ -442,6 +442,30 @@ const airDefenseTargets = new Map<string, Missile>();
 const airDefenseHardKills = new Set<string>();
 const engagements = new Map<Missile, EngagementState>();
 
+function defenseTargetForSource(sourceId: number | string) {
+  return typeof sourceId === "string"
+    ? airDefenseTargets.get(sourceId)
+    : missiles[sourceId - 1];
+}
+
+function defenseSourceForTarget(target: Missile) {
+  return target.externalAirEntityId ?? missiles.indexOf(target) + 1;
+}
+
+function defenseSourceSeed(sourceId: number | string) {
+  if (typeof sourceId === "number") return sourceId;
+  let hash = 2166136261;
+  for (const character of sourceId) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function allDefenseTargets() {
+  return [...missiles, ...airDefenseTargets.values()];
+}
+
 function synchronizeAirDefenseTargets() {
   const activeIds = new Set<string>();
   for (const contact of airCombat.shipDefenseContacts("blue-surface-ship")) {
@@ -485,7 +509,6 @@ function synchronizeAirDefenseTargets() {
         externalDisplayName: contact.name,
       };
       airDefenseTargets.set(contact.id, target);
-      missiles.push(target);
       log(`AIR THREAT REGISTERED / ${contact.name} / ${contact.category.toUpperCase()} / SHIP COMBAT SYSTEM INTAKE`);
     }
     target.phase = contact.phase;
@@ -495,7 +518,7 @@ function synchronizeAirDefenseTargets() {
   for (const [id, target] of airDefenseTargets) {
     if (activeIds.has(id) || target.phase === "destroyed") continue;
     target.phase = "destroyed";
-    target.mesh.visible = false;
+    if (target.externalAirCategory === "missile") target.mesh.visible = false;
   }
 }
 
@@ -618,7 +641,7 @@ function settleEngagement(
     interceptor.target.phase !== "destroyed"
   )
     log(
-      `DOCTRINE LOOK / TARGET ${missiles.indexOf(interceptor.target) + 1} / ${state.misses} MISS`,
+      `DOCTRINE LOOK / TARGET ${defenseSourceForTarget(interceptor.target)} / ${state.misses} MISS`,
     );
 }
 function missileThreatScore(missile: Missile, quality: number) {
@@ -1068,7 +1091,7 @@ function launchInterceptor(
         blending: THREE.AdditiveBlending,
       }),
     ),
-    track = combatPicture.trackForTarget(missiles.indexOf(target) + 1),
+    track = combatPicture.trackForTarget(defenseSourceForTarget(target)),
     salvoLeader = interceptors.find(
       (i) => i.mesh.visible && i.target === target,
     ),
@@ -1273,7 +1296,7 @@ function queueInterceptorLaunch(target: Missile, weapon: WeaponType) {
     preferred.phase = "opening";
     preferred.phaseSince = elapsed;
     log(
-      `MK 41 ${preferred.bank} CELL ${String(preferred.index + 1).padStart(2, "0")} / ${preferred.loadout} TASK / TRACK ${missiles.indexOf(target) + 1} / HATCH OPENING`,
+      `MK 41 ${preferred.bank} CELL ${String(preferred.index + 1).padStart(2, "0")} / ${preferred.loadout} TASK / TRACK ${defenseSourceForTarget(target)} / HATCH OPENING`,
     );
     return true;
   }
@@ -1295,7 +1318,7 @@ function queueInterceptorLaunch(target: Missile, weapon: WeaponType) {
   launcher.reloadRail = -1;
   launcher.phase = "slewing";
   launcher.phaseSince = elapsed;
-  const trackId = missiles.indexOf(target) + 1;
+  const trackId = defenseSourceForTarget(target);
   log(
     `${launcherConfig.displayName} ${launcher.name} TASK / TRACK ${trackId} / SLEWING / HEALTH ${Math.round(launcherHealth(launcher) * 100)}%`,
   );
@@ -1356,7 +1379,7 @@ function updateMk10Launchers(dt: number) {
       );
     }
     if (launcher.phase === "slewing" && launcher.pending) {
-      const trackId = missiles.indexOf(launcher.pending.target) + 1,
+      const trackId = defenseSourceForTarget(launcher.pending.target),
         track = combatPicture.trackForTarget(trackId);
       if (!track) {
         if (elapsed - launcher.phaseSince > 4.5) {
@@ -2539,7 +2562,7 @@ let shipSpeedKnots = 0,
   shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots,
   shipManeuverMode: ShipManeuverMode = "patrol",
   nextShipDecision = 0,
-  shipManeuverThreatId = 0;
+  shipManeuverThreatId: number | string = 0;
 let aarSnapshots: AarSnapshot[] = [],
   aarEvents: AarEvent[] = [],
   nextAarSnapshot = 0,
@@ -3580,7 +3603,7 @@ function captureAarSnapshot(force = false) {
         x: x.i.mesh.position.x,
         z: x.i.mesh.position.z,
         weapon: x.i.weapon,
-        targetId: missiles.indexOf(x.i.target) + 1,
+        targetId: defenseSourceForTarget(x.i.target),
       })),
     chaff: chaffClouds.map((c) => ({
       x: c.position.x,
@@ -4174,7 +4197,7 @@ function updateShipManeuver(dt: number) {
     ),
     tracks = [...combatPicture.tracks.values()]
       .filter((track) => {
-        const missile = missiles[track.sourceId - 1];
+        const missile = defenseTargetForSource(track.sourceId);
         return (
           missile &&
           missile.phase !== "destroyed" &&
@@ -4185,9 +4208,9 @@ function updateShipManeuver(dt: number) {
       .sort(
         (a, b) =>
           a.position.distanceTo(defender.position) /
-            Math.max(1, missiles[a.sourceId - 1].velocity.length()) -
+            Math.max(1, defenseTargetForSource(a.sourceId)?.velocity.length() ?? 1) -
           b.position.distanceTo(defender.position) /
-            Math.max(1, missiles[b.sourceId - 1].velocity.length()),
+            Math.max(1, defenseTargetForSource(b.sourceId)?.velocity.length() ?? 1),
       ),
     threat = tracks[0],
     threatRange = threat?.position.distanceTo(defender.position) ?? Infinity;
@@ -4363,7 +4386,7 @@ function updateShipStatus() {
       .slice(0, effectiveIlluminators)
       .map((state) =>
         state.target
-          ? `T${String(missiles.indexOf(state.target.target) + 1).padStart(2, "0")}`
+          ? `T${String(defenseSourceForTarget(state.target.target)).padStart(2, "0")}`
           : "--",
       )
       .join("/");
@@ -4693,7 +4716,7 @@ function scheduleIlluminators(candidates: Interceptor[], dt: number) {
       )[0];
     if (free) {
       free.target = interceptor;
-      const id = missiles.indexOf(interceptor.target) + 1;
+      const id = defenseSourceForTarget(interceptor.target);
       if (free.lastTargetId !== id) {
         free.lastTargetId = id;
         log(
@@ -4767,9 +4790,10 @@ function updateCiws() {
       heading: -Math.PI / 2,
     },
   ].filter((mount) => mount.model);
-  const candidates = missiles
+  const candidates = allDefenseTargets()
     .filter(
       (m) =>
+        m.externalAirCategory !== "aircraft" &&
         m.phase !== "destroyed" &&
         m.mesh.position.distanceTo(defender.position) < 15,
     )
@@ -4797,8 +4821,9 @@ function updateCiws() {
     );
   const target = candidates[0];
   if (!target) {
-    const nearby = missiles.filter(
+    const nearby = allDefenseTargets().filter(
         (m) =>
+          m.externalAirCategory !== "aircraft" &&
           m.phase !== "destroyed" &&
           m.mesh.position.distanceTo(defender.position) < 15,
       ),
@@ -4865,7 +4890,7 @@ function updateCiws() {
     windowFactor = Math.min(1.35, 0.75 + bursts * 0.12),
     pk = Math.min(0.72, singlePk * windowFactor),
     roll = deterministicProbabilityRoll(
-      missiles.indexOf(target.m) + 1,
+      defenseSourceSeed(defenseSourceForTarget(target.m)),
       elapsed,
       ciwsRounds,
     );
@@ -4913,7 +4938,7 @@ setInterval(() => {
       interceptors.filter((i) => i.mesh.visible).map((i) => i.target),
     ).size,
     tracks = [...combatPicture.tracks.values()].filter(
-      (track) => missiles[track.sourceId - 1]?.phase !== "destroyed",
+      (track) => defenseTargetForSource(track.sourceId)?.phase !== "destroyed",
     ).length;
   if (enemyPlatform)
     updateRaidCard(
@@ -5066,7 +5091,7 @@ setInterval(() => {
     radarCtx.fillText("ESM", cueX + 9, cueY - 7);
   }
   for (const track of combatPicture.tracks.values()) {
-    const missile = missiles[track.sourceId - 1];
+    const missile = defenseTargetForSource(track.sourceId);
     if (!missile || missile.phase === "destroyed") continue;
     const x =
         cx +
@@ -5986,7 +6011,8 @@ function updateCombat(dt: number) {
     elapsed,
     dt,
     radarEnabled
-      ? missiles
+      ? [
+          ...missiles
           .map((m, i) => ({ m, i }))
           .filter(
             (x) =>
@@ -6000,7 +6026,17 @@ function updateCombat(dt: number) {
             velocity: x.m.velocity,
             altitude: x.m.mesh.position.y * 50,
             rcs: x.m.rcs,
-          }))
+          })),
+          ...[...airDefenseTargets.entries()]
+            .filter(([, target]) => target.phase !== "destroyed")
+            .map(([id, target]) => ({
+              id,
+              position: target.mesh.position,
+              velocity: target.velocity,
+              altitude: target.mesh.position.y * 50,
+              rcs: target.rcs,
+            })),
+        ]
       : [],
     {
       [primarySensor]: subsystemHealth("primaryRadar"),
@@ -6053,7 +6089,7 @@ function updateCombat(dt: number) {
   );
   const best = [...combatPicture.tracks.values()]
     .filter((t) => {
-      const missile = missiles[t.sourceId - 1];
+      const missile = defenseTargetForSource(t.sourceId);
       return (
         missile &&
         missile.phase !== "destroyed" &&
@@ -6066,8 +6102,8 @@ function updateCombat(dt: number) {
     })
     .sort(
       (a, b) =>
-        missileThreatScore(missiles[b.sourceId - 1], b.quality) -
-        missileThreatScore(missiles[a.sourceId - 1], a.quality),
+        missileThreatScore(defenseTargetForSource(b.sourceId)!, b.quality) -
+        missileThreatScore(defenseTargetForSource(a.sourceId)!, a.quality),
     )[0];
   const terminalSm2 = activeInterceptors
     .filter(
@@ -6126,7 +6162,7 @@ function updateCombat(dt: number) {
     active < maxSamChannels &&
     best
   ) {
-    const target = missiles[best.sourceId - 1],
+    const target = defenseTargetForSource(best.sourceId)!,
       range = target.mesh.position.distanceTo(defender.position),
       rim = weaponProfiles["RIM-67"],
       mr = weaponProfiles["SM-2MR"],
@@ -6167,7 +6203,7 @@ function updateCombat(dt: number) {
         range / (expectedInterceptorSpeed + i.target.velocity.length()),
       ),
       terminal = range < profile.terminalRange,
-      trackId = missiles.indexOf(i.target) + 1;
+      trackId = defenseSourceForTarget(i.target);
     i.commandPoint.addScaledVector(i.commandVelocity, dt);
     if (!terminal && elapsed >= i.nextDatalink) {
       const track = combatPicture.trackForTarget(trackId);
@@ -6254,7 +6290,7 @@ function updateCombat(dt: number) {
         ),
         acquisitionRoll = deterministicProbabilityRoll(
           i.mesh.userData.launchSerial,
-          trackId,
+          defenseSourceSeed(trackId),
           Math.floor(i.age * 4),
           67,
         );
@@ -6301,7 +6337,7 @@ function updateCombat(dt: number) {
             2.2,
             range * (0.006 + (1 - i.target.rcs) * 0.004),
           ),
-          seed = trackId * 19.3 + Math.floor(elapsed * 8.3);
+          seed = defenseSourceSeed(trackId) * 19.3 + Math.floor(elapsed * 8.3);
         i.mesh.userData.seekerAimPoint = i.target.mesh.position
           .clone()
           .add(
@@ -6342,7 +6378,7 @@ function updateCombat(dt: number) {
         !!nearestChaff &&
         deterministicProbabilityRoll(
           i.mesh.userData.launchSerial,
-          trackId,
+          defenseSourceSeed(trackId),
           Math.floor(elapsed * 2),
           2,
         ) <
@@ -6352,7 +6388,7 @@ function updateCombat(dt: number) {
           ? THREE.MathUtils.clamp(range / 320, 0, 0.65)
           : 0,
       ecmOffset = new THREE.Vector3(
-        Math.sin(elapsed * 3.1 + trackId) * ecmStrength * 4,
+        Math.sin(elapsed * 3.1 + defenseSourceSeed(trackId)) * ecmStrength * 4,
         Math.cos(elapsed * 2.7) * ecmStrength,
         Math.sin(elapsed * 2.3 + 1) * ecmStrength * 4,
       );
@@ -6583,7 +6619,7 @@ function updateCombat(dt: number) {
       return;
     }
     if (interceptDistance < 2.5) {
-      const id = missiles.indexOf(i.target) + 1,
+      const id = defenseSourceForTarget(i.target),
         trackQualityValue = combatPicture.trackForTarget(id)?.quality ?? 0.1,
         guidanceQuality =
           i.weapon === "RIM-67"
@@ -6593,7 +6629,7 @@ function updateCombat(dt: number) {
             : i.illuminated
               ? Math.max(0.55, trackQualityValue)
               : trackQualityValue,
-        saturation = missiles.filter(
+        saturation = allDefenseTargets().filter(
           (m) =>
             m.phase !== "destroyed" &&
             m.mesh.position.distanceTo(i.target.mesh.position) < 35,
@@ -6622,7 +6658,7 @@ function updateCombat(dt: number) {
       );
       const roll = deterministicProbabilityRoll(
         i.mesh.userData.launchSerial,
-        id,
+        defenseSourceSeed(id),
         i.age,
         i.weapon === "RIM-67" ? 67 : i.weapon === "SM-2MR" ? 2 : 3,
       );
@@ -6636,8 +6672,10 @@ function updateCombat(dt: number) {
         );
         if (destroyed) {
           i.target.phase = "destroyed";
-          i.target.mesh.visible = false;
-          destroyMissileVisual(i.target, "intercept");
+          if (i.target.externalAirCategory !== "aircraft") {
+            i.target.mesh.visible = false;
+            destroyMissileVisual(i.target, "intercept");
+          }
         } else {
           i.target.phase = "inbound";
           createExplosion(i.target.mesh.position.clone());
@@ -7846,15 +7884,15 @@ function tick(now: number) {
   canvas.dataset.airEcmDetections = String(air.ecmDetections);
   canvas.dataset.ksrMaximumSpeed = air.ksrMaximumSpeed.toFixed(2);
   const airDefenseTracks = [...combatPicture.tracks.values()].filter(
-      (track) => missiles[track.sourceId - 1]?.externalAirMissileId,
+      (track) => defenseTargetForSource(track.sourceId)?.externalAirMissileId,
     ).length,
     airDefenseAircraftTracks = [...combatPicture.tracks.values()].filter(
       (track) =>
-        missiles[track.sourceId - 1]?.externalAirCategory === "aircraft",
+        defenseTargetForSource(track.sourceId)?.externalAirCategory === "aircraft",
     ).length,
     airDefenseMissileTracks = [...combatPicture.tracks.values()].filter(
       (track) =>
-        missiles[track.sourceId - 1]?.externalAirCategory === "missile",
+        defenseTargetForSource(track.sourceId)?.externalAirCategory === "missile",
     ).length,
     airDefenseSamLaunches = interceptors.filter(
       (interceptor) => interceptor.target.externalAirEntityId,
@@ -7863,6 +7901,9 @@ function tick(now: number) {
   canvas.dataset.shipAirAircraftTracks = String(airDefenseAircraftTracks);
   canvas.dataset.shipAirWeaponTracks = String(airDefenseMissileTracks);
   canvas.dataset.shipAirMissileKills = String(airDefenseHardKills.size);
+  canvas.dataset.airDefenseLegacyRegistrations = String(
+    missiles.filter((target) => target.externalAirEntityId).length,
+  );
   canvas.dataset.shipSamShots = String(airDefenseSamLaunches.length);
   canvas.dataset.airDefenseLaunchers = airDefenseSamLaunches
     .map(

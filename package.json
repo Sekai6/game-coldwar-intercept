@@ -33,6 +33,7 @@
     "verify:air-ooda": "tsc src/air/ooda.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-ooda.mjs",
     "verify:air-tracks": "tsc src/air/track-store.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-tracks.mjs",
     "verify:air-missile-runtime": "tsc src/air/missile-runtime.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-missile-runtime.mjs",
+    "verify:track-source-ids": "tsc src/sim.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-track-source-ids.mjs",
     "verify:air-sensors": "tsc src/air/sensors.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-sensors.mjs",
     "verify:radar-countermeasures": "tsc src/radar-countermeasures.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-radar-countermeasures.mjs",
     "verify:anti-ship-guidance": "tsc src/anti-ship-guidance.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-anti-ship-guidance.mjs"
