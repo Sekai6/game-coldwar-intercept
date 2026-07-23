@@ -7932,6 +7932,10 @@ function tick(now: number) {
   canvas.dataset.airMissionStates = airCombat.aircraft
     .map((aircraft) => `${aircraft.id}:${aircraft.mission}`)
     .join(",");
+  canvas.dataset.airEscortAssignments = airCombat.aircraft
+    .filter((aircraft) => aircraft.mission === "escort")
+    .map((aircraft) => `${aircraft.id}->${aircraft.protectedId ?? "none"}`)
+    .join(",");
   canvas.dataset.airFormationStates = airCombat.aircraft
     .map(
       (aircraft) =>

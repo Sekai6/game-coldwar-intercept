@@ -119,6 +119,7 @@ export interface AirPlatformInstance extends TargetableEntity {
   formationId: string;
   formationIndex: number;
   leaderId: string | null;
+  protectedId: string | null;
   mission: AirMissionOrder;
   fuel: number;
   heading: THREE.Vector3;
