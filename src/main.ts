@@ -2367,6 +2367,22 @@ sandbox.insertBefore(airPresetField, sandbox.querySelector("#sbStart"));
 const airPresetInput = airPresetField.querySelector(
   "select",
 ) as HTMLSelectElement;
+let pureAirCombatStart = false;
+const pureAirStartButton = document.createElement("button");
+pureAirStartButton.id = "sbStartPureAir";
+pureAirStartButton.textContent = "START PURE AIR COMBAT / F-14A VS MIG-29A";
+pureAirStartButton.style.cssText =
+  "margin-top:10px;width:100%;border:1px solid #5f8fe8;background:#101f3a;color:#d8e6ff;padding:11px;cursor:pointer;letter-spacing:1px";
+sandbox.insertBefore(pureAirStartButton, sandbox.querySelector("#sbStart"));
+pureAirStartButton.onclick = () => {
+  pureAirCombatStart = true;
+  airScenarioInput.checked = true;
+  airPresetInput.value = "fighter";
+  wave2Select.value = "NONE";
+  const start = sandbox.querySelector("#sbStart") as HTMLButtonElement;
+  start.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  start.click();
+};
 
 const airScenarioContext = createAirScenarioContext(() => {
   const blueVelocity = new THREE.Vector3(
@@ -2835,7 +2851,8 @@ radarCanvas.addEventListener("pointerdown", (e) => {
 });
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
   "pointerdown",
-  () => {
+  (event) => {
+    if (event.isTrusted) pureAirCombatStart = false;
     missiles.forEach((m) => {
       const line = m.mesh.userData.seekerLine as THREE.Line | undefined;
       if (line) {
@@ -2926,8 +2943,14 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     spread = numberInput("#sbSpread");
   const platformSelection = platformSelect.value as
     EnemyPlatformType | "AIRBORNE";
-  let count = requestedCount;
-  if (platformSelection === "AIRBORNE") {
+  let count = pureAirCombatStart ? 0 : requestedCount;
+  if (pureAirCombatStart) {
+    autoFire = false;
+    ciwsEnabled = false;
+    log("PURE AIR COMBAT / SURFACE WEAPONS HOLD / SHIPS OBSERVATION ONLY");
+  } else if (platformSelection === "AIRBORNE") {
+    autoFire = DEFAULT_SURFACE_CONFIG.autoFire;
+    ciwsEnabled = true;
     for (let index = 0; index < count; index++) {
       const offset = count === 1 ? 0 : (index / (count - 1) - 0.5) * spread;
       addMissile(
@@ -7505,6 +7528,7 @@ function tick(now: number) {
   const air = airCombat.diagnostics();
   const airVisuals = airCombat.visualDiagnostics();
   canvas.dataset.airCombatEnabled = String(airCombat.enabled);
+  canvas.dataset.pureAirCombat = String(pureAirCombatStart);
   canvas.dataset.aircraftTotal = String(air.aircraft);
   canvas.dataset.aircraftLive = String(air.live);
   canvas.dataset.aircraftBlueLive = String(air.blueLive);
