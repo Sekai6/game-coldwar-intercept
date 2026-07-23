@@ -155,6 +155,8 @@ scene.add(sun);
 const ocean = createOceanSurface();
 scene.add(ocean.object);
 const airCombat = new AirCombatSystem(scene);
+let airShipHits = 0,
+  airShipDamage = 0;
 canvas.dataset.oceanBackend = ocean.backend;
 function updateMaterialDiagnostics() {
   let mappedMaterials = 0;
@@ -436,7 +438,74 @@ let surfaceHardpointState = new Map<
   surfaceFireControlReadyAt = Infinity,
   surfaceFireControlReadyLogged = false;
 const interceptors: Interceptor[] = [];
+const airDefenseTargets = new Map<string, Missile>();
+const airDefenseHardKills = new Set<string>();
 const engagements = new Map<Missile, EngagementState>();
+
+function synchronizeAirDefenseTargets() {
+  const activeIds = new Set<string>();
+  for (const airMissile of airCombat.incomingAntiShipMissiles("blue-surface-ship")) {
+    activeIds.add(airMissile.id);
+    let target = airDefenseTargets.get(airMissile.id);
+    if (!target) {
+      const selection = new THREE.Mesh(
+        new THREE.RingGeometry(2.4, 3, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0xff7f63,
+          transparent: true,
+          opacity: 0.72,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      selection.rotation.x = -Math.PI / 2;
+      selection.visible = false;
+      airMissile.model.add(selection);
+      airMissile.model.userData.selection = selection;
+      const path = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([airMissile.position.clone()]),
+        new THREE.LineBasicMaterial({ visible: false }),
+      );
+      target = {
+        mesh: airMissile.model,
+        velocity: airMissile.velocity,
+        phase: airMissile.phase,
+        age: airMissile.age,
+        history: [airMissile.position.clone()],
+        path,
+        kind:
+          airMissile.definition.id === "AGM-84A"
+            ? "RGM-84 Harpoon"
+            : "Kh-22",
+        speedFactor: 1,
+        rcs: airMissile.radarCrossSection,
+        launchAt: elapsed,
+        aimOffset: new THREE.Vector3(),
+        bank: 0,
+        externalAirMissileId: airMissile.id,
+      };
+      airDefenseTargets.set(airMissile.id, target);
+      missiles.push(target);
+      log(`AIR THREAT REGISTERED / ${airMissile.definition.name} / SHIP COMBAT SYSTEM INTAKE`);
+    }
+    target.phase = airMissile.phase;
+    target.age = airMissile.age;
+    target.rcs = airMissile.radarCrossSection;
+  }
+  for (const [id, target] of airDefenseTargets) {
+    if (activeIds.has(id) || target.phase === "destroyed") continue;
+    target.phase = "destroyed";
+    target.mesh.visible = false;
+  }
+}
+
+function destroyAirDefenseTarget(target: Missile) {
+  if (
+    target.externalAirMissileId &&
+    airCombat.destroyMissile(target.externalAirMissileId)
+  )
+    airDefenseHardKills.add(target.externalAirMissileId);
+}
 const illuminators: IlluminatorState[] = [
   { id: 1, azimuth: 0, target: null, lastTargetId: 0 },
   { id: 2, azimuth: 0, target: null, lastTargetId: 0 },
@@ -1015,6 +1084,8 @@ function launchInterceptor(
     illuminationBeam,
   } as Interceptor;
   g.userData.launchSerial = interceptors.length + 1;
+  g.userData.launcherLabel = launcherLabel;
+  g.userData.launchPoint = launchPoint;
   interceptors.push(interceptor);
   recordEngagementLaunch(target);
   const launchRange =
@@ -2631,8 +2702,23 @@ function airScenarioContext() {
     radarCrossSection: activeShip.platform.radarRcs,
     infraredSignature: 0.8,
     alive: hullIntegrity > 0,
-    applyDamage: (damage) => {
+    applyDamage: (damage, hitPoint) => {
       hullIntegrity = Math.max(0, hullIntegrity - damage);
+      airShipHits++;
+      airShipDamage += damage;
+      leakers++;
+      createExplosion(hitPoint.clone());
+      flashCombat("impact");
+      const localImpact = defender.worldToLocal(hitPoint.clone()),
+        zone = activeShip.damageModel.zones.find(
+          (candidate) => localImpact.x > candidate.minX,
+        ) ?? activeShip.damageModel.zones[activeShip.damageModel.zones.length - 1],
+        primary = zone.systems[airShipHits % zone.systems.length];
+      damageSubsystem(primary, damage * 0.62, false, Math.atan2(-localImpact.z, localImpact.x));
+      log(
+        `AIR-LAUNCHED MISSILE IMPACT / ${damage.toFixed(0)}% DAMAGE / ${subsystems[primary].label} PRIMARY / HULL ${hullIntegrity.toFixed(0)}%`,
+      );
+      phaseEl.textContent = hullIntegrity > 0 ? "DAMAGE CONTROL" : "SHIP DISABLED";
     },
   };
   const redShip: TargetableEntity | null = enemyPlatform
@@ -3082,6 +3168,8 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     m.path.geometry.dispose();
   });
   missiles.length = 0;
+  airDefenseTargets.clear();
+  airDefenseHardKills.clear();
   for (const missile of surfaceStrikeMissiles) {
     scene.remove(missile.mesh, missile.path);
     missile.path.geometry.dispose();
@@ -3126,6 +3214,8 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   sm2Ammo = activeShip.ammo.sm2mr;
   sm2erAmmo = activeShip.ammo.sm2er;
   hullIntegrity = 100;
+  airShipHits = 0;
+  airShipDamage = 0;
   ciwsRounds = activeShip.ammo.ciws;
   missionEnded = false;
   selectedWeapon = (sandbox.querySelector("#sbWeapon") as HTMLSelectElement)
@@ -4723,6 +4813,7 @@ function updateCiws() {
   if (roll < pk) {
     target.m.phase = "destroyed";
     target.m.mesh.visible = false;
+    destroyAirDefenseTarget(target.m);
     destroyMissileVisual(target.m, "intercept");
     log(
       `CIWS KILL / ${target.mount.name} / PK ${Math.round(pk * 100)}% / ${ciwsRounds} ROUNDS`,
@@ -6475,6 +6566,7 @@ function updateCombat(dt: number) {
         settleEngagement(i, "hit");
         i.target.phase = "destroyed";
         i.target.mesh.visible = false;
+        destroyAirDefenseTarget(i.target);
         destroyMissileVisual(i.target, "intercept");
         phaseEl.textContent = "TERMINAL INTERCEPT";
         log(
@@ -6634,6 +6726,7 @@ function initializePlatformWaveArrivalPlan(missile: Missile) {
 }
 
 function updateIncomingMissile(m: Missile, dt: number) {
+  if (m.externalAirMissileId) return;
   if (m.phase === "destroyed") {
     m.mesh.userData.seekerLine.visible = false;
     m.mesh.userData.seekerFov.visible = false;
@@ -7442,12 +7535,13 @@ function tick(now: number) {
           }
         }
       }
-      updateCombat(0.05);
       if (airCombat.enabled) {
         const airContext = airScenarioContext();
         airCombat.update(elapsed, 0.05, airContext);
+        synchronizeAirDefenseTargets();
         for (const event of airCombat.drainEvents()) log(`AIR OODA / ${event.text}`);
       }
+      updateCombat(0.05);
       missiles.forEach((m) => updateIncomingMissile(m, 0.05));
       updatePlatformFirePlan();
       captureAarSnapshot();
@@ -7669,7 +7763,24 @@ function tick(now: number) {
   canvas.dataset.airCombatKills = String(air.kills);
   canvas.dataset.airChaff = String(air.chaff);
   canvas.dataset.airFlares = String(air.flares);
-  canvas.dataset.shipSamShots = String(air.shipSamShots);
+  canvas.dataset.ksrMaximumSpeed = air.ksrMaximumSpeed.toFixed(2);
+  const airDefenseTracks = [...combatPicture.tracks.values()].filter(
+      (track) => missiles[track.sourceId - 1]?.externalAirMissileId,
+    ).length,
+    airDefenseSamLaunches = interceptors.filter(
+      (interceptor) => interceptor.target.externalAirMissileId,
+    );
+  canvas.dataset.shipAirMissileTracks = String(airDefenseTracks);
+  canvas.dataset.shipAirMissileKills = String(airDefenseHardKills.size);
+  canvas.dataset.shipSamShots = String(airDefenseSamLaunches.length);
+  canvas.dataset.airDefenseLaunchers = airDefenseSamLaunches
+    .map(
+      (interceptor) =>
+        `${interceptor.mesh.userData.launcherLabel}/${interceptor.mesh.userData.launchPoint}`,
+    )
+    .join("|");
+  canvas.dataset.airShipHits = String(airShipHits);
+  canvas.dataset.airShipDamage = airShipDamage.toFixed(1);
   canvas.dataset.airWeaponLaunchLog = airCombat.events
     .filter((event) => event.kind === "launch")
     .map((event) => event.text)
@@ -7682,7 +7793,7 @@ function tick(now: number) {
     .map((missile) => `${missile.definition.name}:${missile.phase}:${missile.seekerAcquired}`)
     .join(",");
   airStatusPanel.style.display = airCombat.enabled ? "block" : "none";
-  airStatusPanel.innerHTML = `<b>JOINT AIR PICTURE</b><span>BLUE <strong>${air.blueLive}</strong> / RED <strong>${air.redLive}</strong> / WEAPONS ${air.activeMissiles}</span><br><span>CHAFF ${air.chaff} / FLARES ${air.flares} / SHIP SAM ${air.shipSamShots}</span>`;
+  airStatusPanel.innerHTML = `<b>JOINT AIR PICTURE</b><span>BLUE <strong>${air.blueLive}</strong> / RED <strong>${air.redLive}</strong> / WEAPONS ${air.activeMissiles}</span><br><span>CHAFF ${air.chaff} / FLARES ${air.flares}</span>`;
   canvas.dataset.surfaceEsmCueQuality = surfaceEsmCue.quality.toFixed(3);
   canvas.dataset.surfaceEsmCueAge = Number.isFinite(surfaceEsmCue.age)
     ? surfaceEsmCue.age.toFixed(2)

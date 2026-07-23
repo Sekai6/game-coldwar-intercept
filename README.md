@@ -13,7 +13,9 @@
 
 场景面板中的 `JOINT AIR OPERATIONS` 会加入 F-14A、Tu-16K 与 A-6E 三个双机编队。每架飞机均为独立实体，拥有三维受限机动、编队跟随、带误差雷达航迹、燃油、ECM、箔条/热焰弹以及机体、发动机、雷达、飞控和武器系统毁伤。
 
-F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM-84A Harpoon。舰载 SAM 同时参与防空。数字键 `6` 跟随当前空中武器或飞机。运行 `npm run verify:joint-air` 可串行验证四条发射链，并生成 `verification-joint-air.png`。
+F-14A 使用 AIM-54A、AIM-7F 与 AIM-9L；Tu-16K 使用 KSR-5；A-6E 使用 AGM-84A Harpoon。KSR-5 的游戏缩放极速约为 Mach 3.1。空射反舰弹会进入舰载搜索雷达、三维航迹、火控解算、交战队列和现有 Mk 10/Mk 41 实体发射链；空中模块无权直接生成舰载 SAM。漏防弹会触发舰体、子系统、爆炸和持续烟火损伤。数字键 `6` 跟随当前空中武器或飞机。
+
+运行 `npm run verify:joint-air` 可串行验证联合发射链；`npm run verify:air-strike-defense` 分别验证真实舰载发射器拦截与关闭自动火力后的命中损伤，并生成对应截图。
 
 > [!IMPORTANT]
 > 项目使用真实舰船、雷达和武器名称建立时代背景，但全部性能数值均为游戏化缩放。它不是武器性能数据库、工程分析工具或训练系统，也不代表真实装备能力。
@@ -562,6 +564,8 @@ game-codewar-intercept/
 | `npm run verify:bilateral-launch` | CGN-9、CG-57 与 Moskva 双向实体发射 |
 | `npm run verify:default-platform` | 默认平台、航迹、火控和 P-500 离舰 |
 | `npm run verify:default-engagement` | 默认 65 km 双舰场景的 ESM 被动目标指示、双方齐射和实体离舰 |
+| `npm run verify:joint-air` | F-14、Tu-16K、A-6E 武器释放与舰载实体发射链参与联合防空 |
+| `npm run verify:air-strike-defense` | 空射反舰弹的舰载航迹、Mk 10/Mk 41 发射、硬杀伤与漏防损伤 |
 | `npm run verify:platform-doctrine` | 首波、BDA、补射和命中信用 |
 | `npm run verify:platform-arrival` | P-500 同波到达计划与速度补偿 |
 | `npm run verify:platform-abort` | 平台/目标失能后的预约取消与在飞武器保留 |
