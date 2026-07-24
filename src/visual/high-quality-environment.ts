@@ -6,7 +6,7 @@ export interface HighQualityEnvironment {
   readonly cloudCount: number;
   readonly fogVolumeCount: number;
   setEnabled(enabled: boolean): void;
-  setUltraDetail(texture: THREE.Texture | null): void;
+  setUltraDetail(texture: THREE.Texture | null, volumeTexture?: THREE.Data3DTexture | null): void;
   update(time: number, cameraPosition: THREE.Vector3): void;
   dispose(): void;
 }
@@ -55,6 +55,9 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
   const cloudGeometry = new THREE.SphereGeometry(1, 24, 16);
   const neutralDetail = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, THREE.RGBAFormat);
   neutralDetail.needsUpdate = true;
+  const neutralVolume = new THREE.Data3DTexture(new Uint8Array([128, 128, 255, 255]), 1, 1, 1);
+  neutralVolume.format = THREE.RGBAFormat;
+  neutralVolume.needsUpdate = true;
   const cloudCount = 16;
   const cloudVolumes: THREE.Mesh[] = [];
   const cloudMaterials: THREE.ShaderMaterial[] = [];
@@ -71,17 +74,20 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
         proximityFade: { value: 1 },
         sunDirection: { value: atmosphericSunDirection },
         ultraDetail: { value: neutralDetail },
+        ultraVolume: { value: neutralVolume },
         ultraMix: { value: 0 },
       },
-      vertexShader: `varying vec3 vLocal;void main(){vLocal=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+      glslVersion: THREE.GLSL3,
+      vertexShader: `out vec3 vLocal;void main(){vLocal=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
       fragmentShader: `
         precision highp float;
-        varying vec3 vLocal; uniform vec3 cameraLocal; uniform float time; uniform float seed; uniform float proximityFade; uniform vec3 sunDirection; uniform sampler2D ultraDetail; uniform float ultraMix;
+        in vec3 vLocal; out vec4 outColor; uniform vec3 cameraLocal; uniform float time; uniform float seed; uniform float proximityFade; uniform vec3 sunDirection; uniform sampler2D ultraDetail; uniform sampler3D ultraVolume; uniform float ultraMix;
         float hash(vec3 p){p=fract(p*.3183099+vec3(.1,.2,.3));p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
         float noise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);}
         float fbm(vec3 p){float n=0.,a=.55;for(int i=0;i<4;i++){n+=noise(p)*a;p=p*2.03+vec3(7.1,3.7,5.9);a*=.5;}return n;}
-        float density(vec3 p){float edge=1.-smoothstep(.56,.98,length(p*vec3(.82,1.55,.82)));float base=fbm(p*2.25+vec3(time*.012,seed,time*.006));float procedural=fbm(p*6.2-vec3(time*.018,seed*.3,0.));vec2 detailUv=p.xz*1.7+vec2(seed*.017,time*.002);float gpuDetail=texture2D(ultraDetail,detailUv).r;float detail=mix(procedural,gpuDetail,ultraMix);return max(0.,(base*.76+detail*.24-.43)*edge*3.8);}
-        void main(){vec3 ray=normalize(vLocal-cameraLocal);vec3 p=cameraLocal;vec3 inv=1./ray;vec3 t0=(-vec3(1.)-p)*inv,t1=(vec3(1.)-p)*inv;vec3 tn=min(t0,t1),tf=max(t0,t1);float nearT=max(max(tn.x,tn.y),tn.z),farT=min(min(tf.x,tf.y),tf.z);nearT=max(nearT,0.);if(farT<=nearT)discard;float stepSize=(farT-nearT)/24.;float trans=1.;vec3 color=vec3(0.);for(int i=0;i<24;i++){vec3 q=p+ray*(nearT+(float(i)+.5)*stepSize);float d=density(q);if(d>.005){float lightD=density(q+normalize(sunDirection)*.075);float light=mix(.25,.88,exp(-lightD*3.8));float alpha=1.-exp(-d*stepSize*3.25);vec3 cloudColor=mix(vec3(.34,.42,.49),vec3(.93,.92,.86),light);color+=trans*alpha*cloudColor;trans*=1.-alpha;if(trans<.018)break;}}float opacity=(1.-trans)*proximityFade;if(opacity<.012)discard;gl_FragColor=vec4(color/max(1.-trans,.001),min(.96,opacity));}
+        vec4 volumeSample(vec3 p){vec3 uv=vec3(fract(p.x*.5+.5+seed*.013+time*.0007),clamp(p.y*.5+.5,0.,1.),fract(p.z*.5+.5+seed*.021-time*.0004));return texture(ultraVolume,uv);}
+        float density(vec3 p){float radial=length(p*vec3(.82,1.55,.82));float base=fbm(p*2.25+vec3(time*.012,seed,time*.006));float procedural=fbm(p*6.2-vec3(time*.018,seed*.3,0.));vec2 detailUv=p.xz*1.7+vec2(seed*.017,time*.002);float gpuDetail=texture(ultraDetail,detailUv).r;vec4 volume=volumeSample(p);float irregularEdge=1.-smoothstep(.5+procedural*.13+gpuDetail*.06,.94+base*.05,radial);float detail=mix(procedural,gpuDetail,ultraMix*.45);float proceduralDensity=max(0.,(base*.74+detail*.26-.445)*3.55);float volumeCoverage=smoothstep(.035,.42,volume.r-volume.g*.16);float macroModulation=mix(1.,.74+volumeCoverage*.42,ultraMix);float erosion=mix(1.,smoothstep(.16,.78,procedural*.78+gpuDetail*.22),ultraMix*.16);return proceduralDensity*macroModulation*irregularEdge*erosion;}
+        void main(){vec3 ray=normalize(vLocal-cameraLocal);vec3 p=cameraLocal;vec3 inv=1./ray;vec3 t0=(-vec3(1.)-p)*inv,t1=(vec3(1.)-p)*inv;vec3 tn=min(t0,t1),tf=max(t0,t1);float nearT=max(max(tn.x,tn.y),tn.z),farT=min(min(tf.x,tf.y),tf.z);nearT=max(nearT,0.);if(farT<=nearT)discard;float stepSize=(farT-nearT)/32.;float trans=1.;vec3 color=vec3(0.);for(int i=0;i<32;i++){vec3 q=p+ray*(nearT+(float(i)+.5)*stepSize);float d=density(q);if(d>.005){float lightD=density(q+normalize(sunDirection)*.075);float computedLight=exp(-lightD*4.8);float volumeLight=volumeSample(q).b;float light=mix(.2,.94,mix(computedLight,volumeLight,ultraMix*.72));float powder=(1.-exp(-d*2.8))*exp(-lightD*.8);float forwardSilver=pow(max(dot(ray,-normalize(sunDirection)),0.),7.)*(1.-trans);float alpha=1.-exp(-d*stepSize*3.15);vec3 cloudColor=mix(vec3(.18,.28,.38),vec3(1.04,.95,.79),clamp(light+powder*.16+forwardSilver*.24,0.,1.));color+=trans*alpha*cloudColor;trans*=1.-alpha;if(trans<.018)break;}}float opacity=(1.-trans)*proximityFade;if(opacity<.012)discard;outColor=vec4(color/max(1.-trans,.001),min(.97,opacity));}
       `,
     });
     const cloud = new THREE.Mesh(cloudGeometry, material);
@@ -101,10 +107,11 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
     cloudCount,
     fogVolumeCount,
     setEnabled: (enabled) => { object.visible = enabled; },
-    setUltraDetail: (texture) => {
+    setUltraDetail: (texture, volumeTexture) => {
       cloudMaterials.forEach((material) => {
         material.uniforms.ultraDetail.value = texture ?? neutralDetail;
-        material.uniforms.ultraMix.value = texture ? 0.72 : 0;
+        material.uniforms.ultraVolume.value = volumeTexture ?? neutralVolume;
+        material.uniforms.ultraMix.value = texture && volumeTexture ? 1 : 0;
       });
     },
     update: (time, cameraPosition) => {
@@ -123,7 +130,7 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
     },
     dispose: () => {
       sky.geometry.dispose(); skyMaterial.dispose();
-      cloudGeometry.dispose(); neutralDetail.dispose(); cloudMaterials.forEach((material) => material.dispose());
+      cloudGeometry.dispose(); neutralDetail.dispose(); neutralVolume.dispose(); cloudMaterials.forEach((material) => material.dispose());
     },
   };
 }

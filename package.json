@@ -45,6 +45,7 @@
     "verify:high-quality-environment": "node scripts/verify-high-quality-environment.mjs",
     "verify:webgpu-ultra": "node scripts/verify-webgpu-ultra.mjs",
     "verify:webgpu-ultra-active": "node scripts/verify-webgpu-ultra-active.mjs",
+    "capture:webgpu-ultra-clouds": "node scripts/capture-webgpu-ultra-clouds.mjs",
     "verify:mig29-combat": "node scripts/verify-mig29-combat.mjs",
     "verify:air-ooda": "tsc src/air/ooda.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-ooda.mjs",
     "verify:air-tracks": "tsc src/air/track-store.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-tracks.mjs",

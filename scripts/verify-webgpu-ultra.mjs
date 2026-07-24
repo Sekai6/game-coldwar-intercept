@@ -26,14 +26,15 @@ try {
     detail: canvas.dataset.webGpuUltraCloudDetail,
     scatter: canvas.dataset.webGpuUltraScatter,
     depth: canvas.dataset.webGpuUltraDepth,
+    volume: canvas.dataset.webGpuUltraCloudVolume,
     adapter: canvas.dataset.webGpuUltraAdapter,
     error: canvas.dataset.webGpuUltraError,
     highQuality: canvas.dataset.highQualityEnvironment,
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  const validActive = result.status === "active" && result.backend === "WEBGL2_WEBGPU_COMPUTE" && result.detail === "COMPUTE_FBM_128" && result.scatter === "COMPUTE_SCATTER_ATLAS_128" && result.depth === "GTAO_DEPTH_RECONSTRUCTED";
-  const validFallback = ["unsupported", "failed"].includes(result.status) && result.backend === "WEBGL2" && result.detail === "OFF" && result.scatter === "OFF" && result.depth === "OFF" && Boolean(result.error);
+  const validActive = result.status === "active" && result.backend === "WEBGL2_WEBGPU_COMPUTE" && result.detail === "COMPUTE_FBM_128" && result.scatter === "COMPUTE_SCATTER_ATLAS_128" && result.depth === "GTAO_DEPTH_RECONSTRUCTED" && result.volume === "COMPUTE_VOLUME_64X32X64";
+  const validFallback = ["unsupported", "failed"].includes(result.status) && result.backend === "WEBGL2" && result.detail === "OFF" && result.scatter === "OFF" && result.depth === "OFF" && result.volume === "OFF" && Boolean(result.error);
   if (errors.length || result.requested !== "true" || result.highQuality !== "true" || (!validActive && !validFallback)) process.exitCode = 1;
 } finally {
   await browser.close();

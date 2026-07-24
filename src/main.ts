@@ -2426,6 +2426,7 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
+  canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
 }
 
 async function configureWebGpuUltra(requested: boolean) {
@@ -2433,6 +2434,7 @@ async function configureWebGpuUltra(requested: boolean) {
     highQualityEnvironment.setUltraDetail(null);
     webGpuUltraResult?.detailTexture?.dispose();
     webGpuUltraResult?.scatterTexture?.dispose();
+    webGpuUltraResult?.volumeTexture?.dispose();
     setCinematicUltraScatter(cinematicAtmospherePass, null);
     webGpuUltraResult = null;
     webGpuUltraStatus = "idle";
@@ -2447,7 +2449,7 @@ async function configureWebGpuUltra(requested: boolean) {
   webGpuUltraInitialization = (async () => {
     webGpuUltraResult = await initializeWebGpuUltra();
     webGpuUltraStatus = webGpuUltraResult.status;
-    highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture);
+    highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
     setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
     updateWebGpuUltraStatus();
     webGpuUltraInitialization = null;
@@ -7699,6 +7701,7 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
+  canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
