@@ -227,6 +227,7 @@ function missileModel(guidance: AirMissileInstance["definition"]["guidance"]) {
 }
 
 export class AirCombatSystem {
+  onOceanSplash: ((position: THREE.Vector3, energy: number) => void) | null = null;
   readonly group = new THREE.Group();
   readonly aircraft: AirPlatformInstance[] = [];
   readonly missiles: AirMissileInstance[] = [];
@@ -1508,8 +1509,11 @@ export class AirCombatSystem {
       );
       return;
     }
-    if (missile.age > 180 || missile.position.y < 0)
+    if (missile.age > 180 || missile.position.y < 0) {
+      if (missile.position.y < 0)
+        this.onOceanSplash?.(missile.position, Math.min(1.4, missile.definition.damage / 80));
       this.terminateMissile(missile, "miss", time);
+    }
   }
   private updateMissile(
     missile: AirMissileInstance,

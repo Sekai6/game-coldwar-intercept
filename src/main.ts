@@ -215,6 +215,8 @@ composer.addPass(outputPass);
 const displayPixelRatio = Math.min(devicePixelRatio, 2);
 const visualValidationParams = new URLSearchParams(location.search);
 const ultraAtmosphereMode = visualValidationParams.get("ultraAtmosphere") ?? "both";
+const ultraOceanFftEnabled = visualValidationParams.get("oceanFFT") !== "off";
+const ultraOceanWakeEnabled = visualValidationParams.get("oceanWake") !== "off";
 const hizVisualComparison = visualValidationParams.has("hizEffects");
 hizScreenSpacePass.setEffectsEnabled(visualValidationParams.get("hizEffects") !== "off");
 const hizDebugMode = visualValidationParams.get("hizDebug");
@@ -277,6 +279,7 @@ let froxelLightCount = 0;
 let froxelDominantLight = "none";
 let retainedFroxelLights: Array<{ sample: FroxelLightInput; expiresAt: number }> = [];
 const airCombat = new AirCombatSystem(scene);
+airCombat.onOceanSplash = (position, energy) => ocean.addSplash(position, energy);
 let airShipHits = 0,
   airShipDamage = 0;
 canvas.dataset.oceanBackend = ocean.backend;
@@ -468,31 +471,6 @@ function damageFixedSensorFace(localBearing: number, amount: number) {
   );
   return result.index;
 }
-const wake = new THREE.Group(),
-  wakeLineMat = new THREE.LineBasicMaterial({
-    color: 0xc5eff0,
-    transparent: true,
-    opacity: 0.3,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-for (const side of [-1, 1])
-  for (const offset of [0, 1.2]) {
-    const points = [
-      new THREE.Vector3(0, 0, side * (2.8 + offset * 0.25)),
-      new THREE.Vector3(-14, 0, side * (4.4 + offset)),
-      new THREE.Vector3(-34, 0, side * (8 + offset * 1.6)),
-      new THREE.Vector3(-58, 0, side * (14 + offset * 2)),
-    ];
-    wake.add(
-      new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(points),
-        wakeLineMat,
-      ),
-    );
-  }
-wake.position.set(-28, 0.22, 40);
-scene.add(wake);
 const missiles: Missile[] = [];
 let enemyPlatform: EnemyPlatformInstance | null = null;
 type PlatformFirePlan = {
@@ -2246,6 +2224,7 @@ let shipSpeedKnots = DEFAULT_SURFACE_CONFIG.initialSpeedKnots,
   shipManeuverMode: ShipManeuverMode = "patrol",
   nextShipDecision = 0,
   shipManeuverThreatId: number | string = 0;
+const shipWakePosition = new THREE.Vector3();
 let aarSnapshots: AarSnapshot[] = [],
   aarEvents: AarEvent[] = [],
   nextAarSnapshot = 0,
@@ -2463,6 +2442,7 @@ async function configureWebGpuUltra(requested: boolean) {
   if (!requested) {
     highQualityEnvironment.setUltraDetail(null);
     ocean.setUltraCloudVolume(null);
+    ocean.setUltraSpectrum(null);
     temporalReconstructionPass.setRequested(false);
     hizScreenSpacePass.setRequested(false);
     outputPass.enabled = true;
@@ -2473,6 +2453,7 @@ async function configureWebGpuUltra(requested: boolean) {
     webGpuUltraResult?.scatterTexture?.dispose();
     webGpuUltraResult?.volumeTexture?.dispose();
     webGpuUltraResult?.froxelTexture?.dispose();
+    webGpuUltraResult?.oceanSpectrumTexture?.dispose();
     setCinematicUltraScatter(cinematicAtmospherePass, null);
     setCinematicFroxel(cinematicAtmospherePass, null);
     webGpuUltraResult = null;
@@ -2494,6 +2475,8 @@ async function configureWebGpuUltra(requested: boolean) {
     webGpuUltraStatus = webGpuUltraResult.status;
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
+    ocean.setUltraSpectrum(ultraOceanFftEnabled ? webGpuUltraResult.oceanSpectrumTexture : null, webGpuUltraResult.oceanSpectrumFrames);
+    canvas.dataset.webGpuUltraOcean = ultraOceanFftEnabled && webGpuUltraResult.oceanSpectrumTexture ? `FFT_${webGpuUltraResult.oceanSpectrumFrames}X64` : "GERSTNER";
     temporalReconstructionPass.setRequested(webGpuUltraResult.status === "active");
     hizScreenSpacePass.setRequested(webGpuUltraResult.status === "active");
     outputPass.enabled = webGpuUltraResult.status !== "active";
@@ -3267,7 +3250,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     const x = numberInput("#sbShipX"),
       z = numberInput("#sbShipZ");
     defender.position.set(x, 0, z);
-    wake.position.set(x - 28, 0.22, z);
+    ocean.setVesselWake(defender.position, defender.rotation.y, 0);
   },
   true,
 );
@@ -3281,8 +3264,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     nextShipDecision = 0;
     shipManeuverThreatId = 0;
     defender.rotation.y = 0;
-    wake.rotation.y = 0;
-    wakeLineMat.opacity = 0.08;
+    ocean.setVesselWake(defender.position, 0, 0);
   },
   true,
 );
@@ -4238,10 +4220,8 @@ function updateShipManeuver(dt: number) {
     updatedForward,
     shipSpeedKnots * 0.005144 * dt,
   );
-  wake.rotation.y = defender.rotation.y;
-  wake.position.copy(defender.position).addScaledVector(updatedForward, -28);
-  wake.position.y = 0.22;
-  wakeLineMat.opacity = 0.08 + (0.28 * shipSpeedKnots) / designSpeed;
+  shipWakePosition.copy(defender.position).addScaledVector(updatedForward, -Number(defender.userData.hullLength ?? 70) * 0.46);
+  ocean.setVesselWake(shipWakePosition, defender.rotation.y, ultraOceanWakeEnabled ? shipSpeedKnots / designSpeed : 0);
   canvas.dataset.shipManeuverMode = shipManeuverMode;
   canvas.dataset.shipCommandedSpeedKnots = shipCommandedSpeedKnots.toFixed(2);
   canvas.dataset.shipDesiredHeadingDeg =

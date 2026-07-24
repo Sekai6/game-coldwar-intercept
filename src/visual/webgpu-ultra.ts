@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createTessendorfOceanSpectrum } from "./ocean-spectrum";
 
 export type WebGpuUltraStatus = "idle" | "initializing" | "active" | "unsupported" | "failed";
 
@@ -9,6 +10,8 @@ export interface WebGpuUltraResult {
   scatterTexture: THREE.DataTexture | null;
   volumeTexture: THREE.Data3DTexture | null;
   froxelTexture: THREE.DataTexture | null;
+  oceanSpectrumTexture: THREE.DataTexture | null;
+  oceanSpectrumFrames: number;
   updateFroxel: ((lights: readonly FroxelLightInput[]) => Promise<boolean>) | null;
   disposeCompute: (() => void) | null;
   adapterName: string;
@@ -27,7 +30,7 @@ export interface FroxelLightInput {
 const TEXTURE_SIZE = 128;
 
 function unavailable(status: "unsupported" | "failed", error: string): WebGpuUltraResult {
-  return { status, backend: "WEBGL2", detailTexture: null, scatterTexture: null, volumeTexture: null, froxelTexture: null, updateFroxel: null, disposeCompute: null, adapterName: "", error };
+  return { status, backend: "WEBGL2", detailTexture: null, scatterTexture: null, volumeTexture: null, froxelTexture: null, oceanSpectrumTexture: null, oceanSpectrumFrames: 0, updateFroxel: null, disposeCompute: null, adapterName: "", error };
 }
 
 const VOLUME_WIDTH = 64;
@@ -247,6 +250,7 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     froxelTexture.wrapT = THREE.ClampToEdgeWrapping;
     froxelTexture.colorSpace = THREE.NoColorSpace;
     froxelTexture.needsUpdate = true;
+    const oceanSpectrum = createTessendorfOceanSpectrum(64, 16);
     let froxelUpdatePending = false;
     let computeDisposed = false;
     const updateFroxel = async (lights: readonly FroxelLightInput[]) => {
@@ -292,6 +296,8 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
       scatterTexture,
       volumeTexture,
       froxelTexture,
+      oceanSpectrumTexture: oceanSpectrum.texture,
+      oceanSpectrumFrames: oceanSpectrum.frames,
       updateFroxel,
       disposeCompute,
       adapterName: info.description || info.device || info.vendor || "WebGPU adapter",

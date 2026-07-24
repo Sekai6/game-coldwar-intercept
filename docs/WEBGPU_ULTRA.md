@@ -13,6 +13,9 @@ The first implementation uses a hybrid backend:
 - A full-scene temporal reconstruction pass renders Ultra at 0.85x internal resolution and resolves to a full-resolution half-float history target. An eight-sample Halton jitter, per-object previous-MVP velocity prepass, linear-distance disocclusion rejection, silhouette rejection, reactive masks, variance-aware 3x3 neighborhood clipping, Catmull-Rom current-frame reconstruction and bounded RCAS-style sharpening stabilize ships, aircraft, missiles, antennas, ocean and clouds without unrestricted ghost trails.
 - An 80 x 45 x 32 WebGPU froxel grid is packed into a 640 x 180 atlas for the hybrid WebGL compositor. A low-density ambient medium and the strongest eight visible point lights are injected asynchronously; warm high-energy transients outrank small persistent navigation lights without adding a permanent full-screen milk haze.
 - A six-level minimum-depth Hi-Z pyramid drives half-resolution object-space AO and short-range contact shadows. Screen-space sea reflection remains an explicit validation mode until moving-camera hull-ghost rejection passes; it is not enabled during normal Ultra play.
+- Ultra ocean uses a deterministic 64 x 64 Tessendorf/Phillips directional spectrum. A radix-2 two-dimensional inverse FFT generates 16 looped displacement/Jacobian frames once during initialization; WebGL interpolates the atlas without per-frame GPU-to-CPU readback. The current transform is CPU-initialized and is not described as a WebGPU compute FFT.
+- The ocean shader consumes horizontal displacement, height and Jacobian compression separately, with a reduced Gerstner residual for sub-spectrum detail. Vessel wakes use a speed-scaled Kelvin wedge and turbulent centerline rooted at the actual stern rather than transparent scene lines.
+- Ocean impacts enter a shared eight-event ring buffer. Air-launched missiles that strike the sea now generate expanding displacement and foam rings through the ocean surface instead of weapon-owned flat ring meshes.
 - Camera cuts, fast rotation, large translation, resize and Ultra shutdown invalidate history immediately. High-motion pixels reduce history weight while disocclusions reject history using depth.
 - A second compute output stores layered scattering, shaft weighting and extinction for the Ultra atmosphere pass.
 - GTAO's independently rendered depth texture is linearized into view-space distance so Ultra fog respects scene geometry instead of applying a uniform screen haze.
@@ -34,6 +37,7 @@ Runtime diagnostics are exposed on `#scene`:
 - `data-web-gpu-ultra-cloud-shadows`: `OFF` or `VOLUME_PROJECTED_3_LAYER`
 - `data-web-gpu-ultra-reprojection`: `OFF` or `TAA_VELOCITY_DEPTH_CLAMP`
 - `data-web-gpu-ultra-froxel`: `OFF` or `FROXEL_80X45X32_DYNAMIC_8`
+- `data-web-gpu-ultra-ocean`: `GERSTNER` or `FFT_16X64`
 - `data-web-gpu-ultra-history-valid`, `data-web-gpu-ultra-history-frames` and `data-web-gpu-ultra-history-resets` expose accumulation and invalidation state.
 - `data-web-gpu-ultra-adapter` and `data-web-gpu-ultra-error`
 
@@ -41,4 +45,6 @@ Run `npm run verify:webgpu-ultra` to verify either the active compute path or an
 
 Run `npm run verify:webgpu-ultra-active` on a WebGPU-capable machine to require an actual adapter and both compute outputs. It fails instead of accepting fallback.
 
-Future migration order is SSR motion stability, FFT ocean compute, GPU particles, Bruneton atmosphere LUTs and clustered lighting. A full `WebGPURenderer` switch remains separate because the current GLSL post-processing stack is not directly compatible.
+Run `npm run capture:webgpu-ocean` for a strictly serial FFT/Gerstner and wake/no-wake visual comparison. Query parameters `oceanFFT=off` and `oceanWake=off` are validation-only controls; normal Ultra enables both.
+
+Future migration order is WebGPU compute migration for the initialized FFT atlas, richer multi-vessel wake history and spray, GPU particles, Bruneton atmosphere LUTs and clustered lighting. A full `WebGPURenderer` switch remains separate because the current GLSL post-processing stack is not directly compatible.

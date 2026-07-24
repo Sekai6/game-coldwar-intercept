@@ -51,6 +51,8 @@
     "capture:webgpu-taa-ship": "node scripts/capture-webgpu-taa-ship.mjs",
     "capture:webgpu-atmosphere-isolation": "node scripts/capture-webgpu-atmosphere-isolation.mjs",
     "capture:webgpu-hiz": "node scripts/capture-webgpu-hiz.mjs",
+    "capture:webgpu-ocean": "node scripts/capture-webgpu-ocean.mjs",
+    "verify:ocean-spectrum": "tsc src/visual/ocean-spectrum.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-ocean-spectrum.mjs",
     "verify:webgpu-ultra-reprojection": "node scripts/verify-webgpu-ultra-reprojection.mjs",
     "verify:mig29-combat": "node scripts/verify-mig29-combat.mjs",
     "verify:air-ooda": "tsc src/air/ooda.ts --outDir dist-test --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck && node scripts/verify-air-ooda.mjs",
