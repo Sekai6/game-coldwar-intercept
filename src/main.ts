@@ -46,6 +46,7 @@ import { createOceanSurface } from "./visual/ocean";
 import { createHighQualityEnvironment } from "./visual/high-quality-environment";
 import { createCinematicAtmospherePass } from "./visual/cinematic-atmosphere-pass";
 import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
+import { initializeWebGpuUltra, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
   getEnemyPlatformDefinition,
@@ -246,6 +247,9 @@ scene.add(ocean.object);
 const highQualityEnvironment = createHighQualityEnvironment();
 scene.add(highQualityEnvironment.object);
 let highQualityEnvironmentEnabled = false;
+let webGpuUltraStatus: WebGpuUltraStatus = "idle";
+let webGpuUltraResult: WebGpuUltraResult | null = null;
+let webGpuUltraInitialization: Promise<void> | null = null;
 const airCombat = new AirCombatSystem(scene);
 let airShipHits = 0,
   airShipDamage = 0;
@@ -2401,6 +2405,53 @@ highQualityField.innerHTML =
   '<input id="sbHighQualityEnvironment" type="checkbox"> HIGH QUALITY ENVIRONMENT / SKY + CLOUDS + VOLUMETRIC FOG';
 sandbox.insertBefore(highQualityField, sandbox.querySelector("#sbStart"));
 const highQualityEnvironmentInput = highQualityField.querySelector("input") as HTMLInputElement;
+const ultraQualityField = document.createElement("label");
+ultraQualityField.className = "sandbox-toggle";
+ultraQualityField.innerHTML =
+  '<input id="sbWebGpuUltra" type="checkbox"> WEBGPU ULTRA / COMPUTE CLOUD DETAIL <span id="sbWebGpuUltraStatus">IDLE</span>';
+sandbox.insertBefore(ultraQualityField, sandbox.querySelector("#sbStart"));
+const webGpuUltraInput = ultraQualityField.querySelector("input") as HTMLInputElement;
+const webGpuUltraStatusElement = ultraQualityField.querySelector("span") as HTMLSpanElement;
+
+function updateWebGpuUltraStatus() {
+  webGpuUltraStatusElement.textContent = webGpuUltraStatus.toUpperCase();
+  webGpuUltraStatusElement.dataset.status = webGpuUltraStatus;
+  ultraQualityField.title = webGpuUltraResult?.error || webGpuUltraResult?.adapterName || "WebGPU compute is initialized only when Ultra is selected";
+  canvas.dataset.webGpuUltraRequested = String(webGpuUltraInput.checked);
+  canvas.dataset.webGpuUltraStatus = webGpuUltraStatus;
+  canvas.dataset.webGpuUltraBackend = webGpuUltraResult?.backend ?? "WEBGL2";
+  canvas.dataset.webGpuUltraAdapter = webGpuUltraResult?.adapterName ?? "";
+  canvas.dataset.webGpuUltraError = webGpuUltraResult?.error ?? "";
+  canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
+}
+
+async function configureWebGpuUltra(requested: boolean) {
+  if (!requested) {
+    highQualityEnvironment.setUltraDetail(null);
+    webGpuUltraResult?.detailTexture?.dispose();
+    webGpuUltraResult = null;
+    webGpuUltraStatus = "idle";
+    updateWebGpuUltraStatus();
+    return;
+  }
+  highQualityEnvironmentInput.checked = true;
+  if (webGpuUltraStatus === "active") return;
+  if (webGpuUltraInitialization) return webGpuUltraInitialization;
+  webGpuUltraStatus = "initializing";
+  updateWebGpuUltraStatus();
+  webGpuUltraInitialization = (async () => {
+    webGpuUltraResult = await initializeWebGpuUltra();
+    webGpuUltraStatus = webGpuUltraResult.status;
+    highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture);
+    updateWebGpuUltraStatus();
+    webGpuUltraInitialization = null;
+  })();
+  return webGpuUltraInitialization;
+}
+
+webGpuUltraInput.addEventListener("change", () => {
+  void configureWebGpuUltra(webGpuUltraInput.checked);
+});
 const airPresetField = document.createElement("label");
 airPresetField.className = "sandbox-field";
 airPresetField.innerHTML = `<span>AIR PRESET</span><select id="sbAirPreset">${Object.entries(
@@ -2923,7 +2974,9 @@ radarCanvas.addEventListener("pointerdown", (e) => {
   },
   true,
 );
-(sandbox.querySelector("#sbStart") as HTMLButtonElement).onclick = () => {
+(sandbox.querySelector("#sbStart") as HTMLButtonElement).onclick = async () => {
+  if (webGpuUltraInput.checked && webGpuUltraStatus !== "active")
+    await configureWebGpuUltra(true);
   highQualityEnvironmentEnabled = highQualityEnvironmentInput.checked;
   highQualityEnvironment.setEnabled(highQualityEnvironmentEnabled);
   cinematicAtmospherePass.enabled = highQualityEnvironmentEnabled;
@@ -7631,6 +7684,12 @@ function tick(now: number) {
   canvas.dataset.environmentIndirectLighting = scene.environment === bouncedLightEnvironment ? "PMREM_MULTI_BOUNCE" : "OFF";
   canvas.dataset.environmentGodRays = cinematicAtmospherePass.enabled ? "RADIAL_COLOR_OCCLUSION_28" : "OFF";
   canvas.dataset.environmentColorGrade = cinematicAtmospherePass.enabled ? "CINEMATIC_OCEAN_LUT_16" : "OFF";
+  canvas.dataset.webGpuUltraRequested = String(webGpuUltraInput.checked);
+  canvas.dataset.webGpuUltraStatus = webGpuUltraStatus;
+  canvas.dataset.webGpuUltraBackend = webGpuUltraResult?.backend ?? "WEBGL2";
+  canvas.dataset.webGpuUltraAdapter = webGpuUltraResult?.adapterName ?? "";
+  canvas.dataset.webGpuUltraError = webGpuUltraResult?.error ?? "";
+  canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
