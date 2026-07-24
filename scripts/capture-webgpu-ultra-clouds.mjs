@@ -31,6 +31,12 @@ async function capture(path, ultra, temporalPath) {
     await page.waitForTimeout(2_000);
     await canvas.screenshot({ path });
     if (temporalPath) {
+      await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.42, { steps: 10 });
+      await page.mouse.up();
+      await page.waitForTimeout(500);
+      await canvas.screenshot({ path: "verification-ultra-froxel-sun.png" });
       await page.keyboard.press("9");
       await canvas.screenshot({ path: "verification-ultra-reprojection-cut.png" });
       await page.waitForTimeout(1_000);

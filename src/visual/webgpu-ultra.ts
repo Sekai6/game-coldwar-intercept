@@ -8,19 +8,37 @@ export interface WebGpuUltraResult {
   detailTexture: THREE.DataTexture | null;
   scatterTexture: THREE.DataTexture | null;
   volumeTexture: THREE.Data3DTexture | null;
+  froxelTexture: THREE.DataTexture | null;
+  updateFroxel: ((lights: readonly FroxelLightInput[]) => Promise<boolean>) | null;
+  disposeCompute: (() => void) | null;
   adapterName: string;
   error: string;
+}
+
+export interface FroxelLightInput {
+  screenX: number;
+  screenY: number;
+  depth: number;
+  radius: number;
+  color: THREE.Color;
+  intensity: number;
 }
 
 const TEXTURE_SIZE = 128;
 
 function unavailable(status: "unsupported" | "failed", error: string): WebGpuUltraResult {
-  return { status, backend: "WEBGL2", detailTexture: null, scatterTexture: null, volumeTexture: null, adapterName: "", error };
+  return { status, backend: "WEBGL2", detailTexture: null, scatterTexture: null, volumeTexture: null, froxelTexture: null, updateFroxel: null, disposeCompute: null, adapterName: "", error };
 }
 
 const VOLUME_WIDTH = 64;
 const VOLUME_HEIGHT = 32;
 const VOLUME_DEPTH = 64;
+const FROXEL_WIDTH = 80;
+const FROXEL_HEIGHT = 45;
+const FROXEL_DEPTH = 32;
+const FROXEL_COLUMNS = 8;
+const FROXEL_ATLAS_WIDTH = FROXEL_WIDTH * FROXEL_COLUMNS;
+const FROXEL_ATLAS_HEIGHT = FROXEL_HEIGHT * (FROXEL_DEPTH / FROXEL_COLUMNS);
 
 export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
   const gpu = (navigator as Navigator & { gpu?: any }).gpu;
@@ -40,6 +58,11 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     };
     const texture = device.createTexture(textureDescriptor);
     const scatterTextureGpu = device.createTexture(textureDescriptor);
+    const froxelTextureGpu = device.createTexture({
+      size: [FROXEL_ATLAS_WIDTH, FROXEL_ATLAS_HEIGHT, 1],
+      format: "rgba8unorm",
+      usage: textureUsage.STORAGE_BINDING | textureUsage.COPY_SRC,
+    });
     const volumeTextureGpu = device.createTexture({
       size: [VOLUME_WIDTH, VOLUME_HEIGHT, VOLUME_DEPTH],
       dimension: "3d",
@@ -98,6 +121,40 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     });
     const volumePipeline = device.createComputePipeline({ layout: "auto", compute: { module: volumeShader, entryPoint: "main" } });
     const volumeBindGroup = device.createBindGroup({ layout: volumePipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: volumeTextureGpu.createView() }] });
+    const froxelShader = device.createShaderModule({
+      code: `
+        @group(0) @binding(0) var froxelAtlas: texture_storage_2d<rgba8unorm, write>;
+        @group(0) @binding(1) var<storage,read> lights: array<vec4<f32>,16>;
+        fn hash21(p: vec2<f32>) -> f32 { return fract(sin(dot(p,vec2<f32>(127.1,311.7)))*43758.5453); }
+        @compute @workgroup_size(8,5,1) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+          if(id.x>=${FROXEL_WIDTH}u||id.y>=${FROXEL_HEIGHT}u||id.z>=${FROXEL_DEPTH}u){return;}
+          let screen=(vec2<f32>(id.xy)+0.5)/vec2<f32>(${FROXEL_WIDTH}.0,${FROXEL_HEIGHT}.0);
+          let z=(f32(id.z)+0.5)/${FROXEL_DEPTH}.0;
+          let viewY=mix(-0.55,0.85,screen.y);
+          let distance=z*z*900.0;
+          let worldHeight=max(0.0,viewY*distance+18.0);
+          let baseDensity=exp(-worldHeight/95.0)*mix(0.016,0.004,z);
+          let horizon=exp(-abs(viewY)*2.8);
+          let noise=0.82+hash21(vec2<f32>(id.xy)+vec2<f32>(f32(id.z)*7.0,13.0))*0.18;
+          let extinction=clamp(baseDensity*noise*22.0,0.0,1.0);
+          let sunMu=clamp(screen.x*0.44+screen.y*0.56,0.0,1.0);
+          let forwardPhase=0.32+pow(sunMu,5.0)*0.68;
+          var scatter=vec3<f32>(0.43,0.56,0.68)*extinction*(0.7+horizon*0.3)+vec3<f32>(1.0,0.68,0.36)*extinction*forwardPhase*0.42;
+          for(var lightIndex=0u;lightIndex<8u;lightIndex++){
+            let shape=lights[lightIndex*2u];let emission=lights[lightIndex*2u+1u];
+            let delta=vec3<f32>((screen-shape.xy)/max(shape.w,0.001),(z-shape.z)*2.4/max(shape.w,0.001));
+            let influence=exp(-dot(delta,delta)*2.1)*emission.w;
+            scatter+=emission.rgb*influence*(1.15+extinction*2.4);
+          }
+          let tile=vec2<u32>(id.z%${FROXEL_COLUMNS}u,id.z/${FROXEL_COLUMNS}u);
+          let atlas=vec2<i32>(tile*vec2<u32>(${FROXEL_WIDTH}u,${FROXEL_HEIGHT}u)+id.xy);
+          textureStore(froxelAtlas,atlas,vec4<f32>(scatter,extinction));
+        }`,
+    });
+    const froxelPipeline = device.createComputePipeline({ layout: "auto", compute: { module: froxelShader, entryPoint: "main" } });
+    const froxelLightBuffer = device.createBuffer({ size: 256, usage: bufferUsage.STORAGE | bufferUsage.COPY_DST });
+    device.queue.writeBuffer(froxelLightBuffer, 0, new Float32Array(64));
+    const froxelBindGroup = device.createBindGroup({ layout: froxelPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: froxelTextureGpu.createView() }, { binding: 1, resource: { buffer: froxelLightBuffer } }] });
     const bytesPerRow = TEXTURE_SIZE * 4;
     const readback = device.createBuffer({
       size: bytesPerRow * TEXTURE_SIZE,
@@ -109,6 +166,8 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     });
     const volumeBytesPerRow = VOLUME_WIDTH * 4;
     const volumeReadback = device.createBuffer({ size: volumeBytesPerRow * VOLUME_HEIGHT * VOLUME_DEPTH, usage: bufferUsage.COPY_DST | bufferUsage.MAP_READ });
+    const froxelBytesPerRow = FROXEL_ATLAS_WIDTH * 4;
+    const froxelReadback = device.createBuffer({ size: froxelBytesPerRow * FROXEL_ATLAS_HEIGHT, usage: bufferUsage.COPY_DST | bufferUsage.MAP_READ });
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -120,28 +179,37 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     volumePass.setBindGroup(0, volumeBindGroup);
     volumePass.dispatchWorkgroups(VOLUME_WIDTH / 4, VOLUME_HEIGHT / 4, VOLUME_DEPTH / 4);
     volumePass.end();
+    const froxelPass = encoder.beginComputePass();
+    froxelPass.setPipeline(froxelPipeline);
+    froxelPass.setBindGroup(0, froxelBindGroup);
+    froxelPass.dispatchWorkgroups(FROXEL_WIDTH / 8, FROXEL_HEIGHT / 5, FROXEL_DEPTH);
+    froxelPass.end();
     encoder.copyTextureToBuffer(
       { texture },
       { buffer: readback, bytesPerRow, rowsPerImage: TEXTURE_SIZE },
       [TEXTURE_SIZE, TEXTURE_SIZE, 1],
     );
     encoder.copyTextureToBuffer({ texture: volumeTextureGpu }, { buffer: volumeReadback, bytesPerRow: volumeBytesPerRow, rowsPerImage: VOLUME_HEIGHT }, [VOLUME_WIDTH, VOLUME_HEIGHT, VOLUME_DEPTH]);
+    encoder.copyTextureToBuffer({ texture: froxelTextureGpu }, { buffer: froxelReadback, bytesPerRow: froxelBytesPerRow, rowsPerImage: FROXEL_ATLAS_HEIGHT }, [FROXEL_ATLAS_WIDTH, FROXEL_ATLAS_HEIGHT, 1]);
     encoder.copyTextureToBuffer(
       { texture: scatterTextureGpu },
       { buffer: scatterReadback, bytesPerRow, rowsPerImage: TEXTURE_SIZE },
       [TEXTURE_SIZE, TEXTURE_SIZE, 1],
     );
     device.queue.submit([encoder.finish()]);
-    await Promise.all([readback.mapAsync(mapMode.READ), scatterReadback.mapAsync(mapMode.READ), volumeReadback.mapAsync(mapMode.READ)]);
+    await Promise.all([readback.mapAsync(mapMode.READ), scatterReadback.mapAsync(mapMode.READ), volumeReadback.mapAsync(mapMode.READ), froxelReadback.mapAsync(mapMode.READ)]);
     const pixels = new Uint8Array(readback.getMappedRange()).slice();
     const scatterPixels = new Uint8Array(scatterReadback.getMappedRange()).slice();
     const volumePixels = new Uint8Array(volumeReadback.getMappedRange()).slice();
+    const froxelPixels = new Uint8Array(froxelReadback.getMappedRange()).slice();
     readback.unmap();
     scatterReadback.unmap();
     volumeReadback.unmap();
+    froxelReadback.unmap();
     readback.destroy();
     scatterReadback.destroy();
     volumeReadback.destroy();
+    froxelReadback.destroy();
     texture.destroy();
     scatterTextureGpu.destroy();
     volumeTextureGpu.destroy();
@@ -172,6 +240,50 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     volumeTexture.unpackAlignment = 1;
     volumeTexture.colorSpace = THREE.NoColorSpace;
     volumeTexture.needsUpdate = true;
+    const froxelTexture = new THREE.DataTexture(froxelPixels, FROXEL_ATLAS_WIDTH, FROXEL_ATLAS_HEIGHT, THREE.RGBAFormat);
+    froxelTexture.minFilter = THREE.LinearFilter;
+    froxelTexture.magFilter = THREE.LinearFilter;
+    froxelTexture.wrapS = THREE.ClampToEdgeWrapping;
+    froxelTexture.wrapT = THREE.ClampToEdgeWrapping;
+    froxelTexture.colorSpace = THREE.NoColorSpace;
+    froxelTexture.needsUpdate = true;
+    let froxelUpdatePending = false;
+    let computeDisposed = false;
+    const updateFroxel = async (lights: readonly FroxelLightInput[]) => {
+      if (froxelUpdatePending || computeDisposed) return false;
+      froxelUpdatePending = true;
+      const packed = new Float32Array(64);
+      lights.slice(0, 8).forEach((light, index) => {
+        const offset = index * 8;
+        packed.set([light.screenX, light.screenY, light.depth, light.radius, light.color.r, light.color.g, light.color.b, light.intensity], offset);
+      });
+      device.queue.writeBuffer(froxelLightBuffer, 0, packed);
+      const dynamicReadback = device.createBuffer({ size: froxelBytesPerRow * FROXEL_ATLAS_HEIGHT, usage: bufferUsage.COPY_DST | bufferUsage.MAP_READ });
+      const dynamicEncoder = device.createCommandEncoder();
+      const dynamicPass = dynamicEncoder.beginComputePass();
+      dynamicPass.setPipeline(froxelPipeline);
+      dynamicPass.setBindGroup(0, froxelBindGroup);
+      dynamicPass.dispatchWorkgroups(FROXEL_WIDTH / 8, FROXEL_HEIGHT / 5, FROXEL_DEPTH);
+      dynamicPass.end();
+      dynamicEncoder.copyTextureToBuffer({ texture: froxelTextureGpu }, { buffer: dynamicReadback, bytesPerRow: froxelBytesPerRow, rowsPerImage: FROXEL_ATLAS_HEIGHT }, [FROXEL_ATLAS_WIDTH, FROXEL_ATLAS_HEIGHT, 1]);
+      device.queue.submit([dynamicEncoder.finish()]);
+      try {
+        await dynamicReadback.mapAsync(mapMode.READ);
+        const dynamicPixels = new Uint8Array(dynamicReadback.getMappedRange());
+        (froxelTexture.image.data as Uint8Array).set(dynamicPixels);
+        froxelTexture.needsUpdate = true;
+        dynamicReadback.unmap();
+        return true;
+      } finally {
+        dynamicReadback.destroy();
+        froxelUpdatePending = false;
+      }
+    };
+    const disposeCompute = () => {
+      computeDisposed = true;
+      froxelLightBuffer.destroy();
+      froxelTextureGpu.destroy();
+    };
     const info = typeof adapter.info === "object" ? adapter.info : {};
     return {
       status: "active",
@@ -179,6 +291,9 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
       detailTexture,
       scatterTexture,
       volumeTexture,
+      froxelTexture,
+      updateFroxel,
+      disposeCompute,
       adapterName: info.description || info.device || info.vendor || "WebGPU adapter",
       error: "",
     };

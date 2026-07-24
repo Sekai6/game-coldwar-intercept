@@ -11,6 +11,7 @@ The first implementation uses a hybrid backend:
 - Cloud motion uses absolute simulation time rather than frame increments, while stable screen-space ray offsets avoid frame-to-frame sampling shimmer.
 - The ocean integrates three height layers of the same volume into a wind-advected cloud-shadow field without CPU readback.
 - A half-float history target reprojects sky and cloud color through the previous camera matrix; scene depth excludes ships, aircraft, missiles and ocean from accumulation.
+- An 80 x 45 x 32 WebGPU froxel grid is packed into a 640 x 180 atlas for the hybrid WebGL compositor. Height fog, afternoon sun and the strongest eight visible point lights are injected asynchronously; warm high-energy transients outrank small persistent navigation lights.
 - Camera cuts, fast rotation, large translation, resize and Ultra shutdown invalidate history immediately, and current-frame neighborhood clipping suppresses disocclusion ghosts.
 - A second compute output stores layered scattering, shaft weighting and extinction for the Ultra atmosphere pass.
 - GTAO's independently rendered depth texture is linearized into view-space distance so Ultra fog respects scene geometry instead of applying a uniform screen haze.
@@ -27,6 +28,7 @@ Runtime diagnostics are exposed on `#scene`:
 - `data-web-gpu-ultra-temporal`: `OFF` or `STABLE_JITTER_ABSOLUTE_WIND`
 - `data-web-gpu-ultra-cloud-shadows`: `OFF` or `VOLUME_PROJECTED_3_LAYER`
 - `data-web-gpu-ultra-reprojection`: `OFF` or `HISTORY_MATRIX_SKY_ONLY`
+- `data-web-gpu-ultra-froxel`: `OFF` or `FROXEL_80X45X32_DYNAMIC_8`
 - `data-web-gpu-ultra-history-valid`, `data-web-gpu-ultra-history-frames` and `data-web-gpu-ultra-history-resets` expose accumulation and invalidation state.
 - `data-web-gpu-ultra-adapter` and `data-web-gpu-ultra-error`
 

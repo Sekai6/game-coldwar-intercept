@@ -44,10 +44,11 @@ import {
 } from "./visual/threat-particles";
 import { createOceanSurface } from "./visual/ocean";
 import { createHighQualityEnvironment } from "./visual/high-quality-environment";
-import { createCinematicAtmospherePass, setCinematicDepth, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
+import { createCinematicAtmospherePass, setCinematicDepth, setCinematicFroxel, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
 import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
-import { initializeWebGpuUltra, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
+import { initializeWebGpuUltra, type FroxelLightInput, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
 import { TemporalCloudPass } from "./visual/temporal-cloud-pass";
+import { collectVolumetricLightSamples } from "./visual/volumetric-light-samples";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
   getEnemyPlatformDefinition,
@@ -254,6 +255,11 @@ let highQualityEnvironmentEnabled = false;
 let webGpuUltraStatus: WebGpuUltraStatus = "idle";
 let webGpuUltraResult: WebGpuUltraResult | null = null;
 let webGpuUltraInitialization: Promise<void> | null = null;
+let lastFroxelUpdateAt = -Infinity;
+let froxelUpdateCount = 0;
+let froxelLightCount = 0;
+let froxelDominantLight = "none";
+let retainedFroxelLights: Array<{ sample: FroxelLightInput; expiresAt: number }> = [];
 const airCombat = new AirCombatSystem(scene);
 let airShipHits = 0,
   airShipDamage = 0;
@@ -2432,6 +2438,7 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
   canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
+  canvas.dataset.webGpuUltraFroxel = webGpuUltraStatus === "active" ? "FROXEL_80X45X32_DYNAMIC_8" : "OFF";
 }
 
 async function configureWebGpuUltra(requested: boolean) {
@@ -2439,11 +2446,18 @@ async function configureWebGpuUltra(requested: boolean) {
     highQualityEnvironment.setUltraDetail(null);
     ocean.setUltraCloudVolume(null);
     temporalCloudPass.setRequested(false);
+    webGpuUltraResult?.disposeCompute?.();
     webGpuUltraResult?.detailTexture?.dispose();
     webGpuUltraResult?.scatterTexture?.dispose();
     webGpuUltraResult?.volumeTexture?.dispose();
+    webGpuUltraResult?.froxelTexture?.dispose();
     setCinematicUltraScatter(cinematicAtmospherePass, null);
+    setCinematicFroxel(cinematicAtmospherePass, null);
     webGpuUltraResult = null;
+    froxelUpdateCount = 0;
+    froxelLightCount = 0;
+    froxelDominantLight = "none";
+    retainedFroxelLights = [];
     webGpuUltraStatus = "idle";
     updateWebGpuUltraStatus();
     return;
@@ -2460,6 +2474,7 @@ async function configureWebGpuUltra(requested: boolean) {
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
     temporalCloudPass.setRequested(webGpuUltraResult.status === "active");
     setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
+    setCinematicFroxel(cinematicAtmospherePass, webGpuUltraResult.froxelTexture);
     updateWebGpuUltraStatus();
     webGpuUltraInitialization = null;
   })();
@@ -7713,6 +7728,10 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
   canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
+  canvas.dataset.webGpuUltraFroxel = webGpuUltraStatus === "active" ? "FROXEL_80X45X32_DYNAMIC_8" : "OFF";
+  canvas.dataset.webGpuUltraFroxelUpdates = String(froxelUpdateCount);
+  canvas.dataset.webGpuUltraFroxelLights = String(froxelLightCount);
+  canvas.dataset.webGpuUltraFroxelDominant = froxelDominantLight;
   const temporalDiagnostics = temporalCloudPass.diagnostics;
   canvas.dataset.webGpuUltraReprojection = webGpuUltraStatus === "active" ? "HISTORY_MATRIX_SKY_ONLY" : "OFF";
   canvas.dataset.webGpuUltraHistoryValid = String(temporalDiagnostics.valid);
@@ -7979,8 +7998,43 @@ function tick(now: number) {
   });
   canvas.dataset.activeThreatParticles = String(activeThreatParticles);
   clockEl.textContent = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(Math.floor(elapsed % 60)).padStart(2, "0")}`;
+  canvas.dataset.simulationElapsed = elapsed.toFixed(3);
   updateShipWeaponVisuals(realDt);
   updateCamera();
+  if (webGpuUltraStatus === "active" && webGpuUltraResult?.updateFroxel && elapsed - lastFroxelUpdateAt >= 0.12) {
+    lastFroxelUpdateAt = elapsed;
+    const currentSamples = collectVolumetricLightSamples(scene, camera);
+    retainedFroxelLights = retainedFroxelLights.filter((entry) => entry.expiresAt > elapsed);
+    for (const sample of currentSamples) {
+      const highEnergy = sample.intensity > 0.45 || sample.color.r > sample.color.b * 1.25;
+      if (!highEnergy) continue;
+      const existing = retainedFroxelLights.find((entry) =>
+        Math.hypot(entry.sample.screenX - sample.screenX, entry.sample.screenY - sample.screenY) < 0.045,
+      );
+      if (existing) {
+        existing.sample = sample;
+        existing.expiresAt = elapsed + 0.32;
+      } else retainedFroxelLights.push({ sample, expiresAt: elapsed + 0.32 });
+    }
+    const samples = [...retainedFroxelLights.map((entry) => entry.sample), ...currentSamples]
+      .filter((sample, index, all) => all.findIndex((candidate) => candidate === sample || Math.hypot(candidate.screenX - sample.screenX, candidate.screenY - sample.screenY) < 0.02) === index)
+      .sort((a, b) => {
+        const score = (sample: FroxelLightInput) => {
+          const warmTransientBias = sample.color.r > sample.color.b * 1.25 ? 1.75 : 1;
+          return sample.intensity * sample.radius * warmTransientBias;
+        };
+        return score(b) - score(a);
+      })
+      .slice(0, 8);
+    froxelLightCount = samples.length;
+    const dominant = samples[0];
+    froxelDominantLight = dominant
+      ? `${dominant.color.getHexString()}:${dominant.intensity.toFixed(2)}:${dominant.radius.toFixed(3)}:${dominant.screenX.toFixed(3)},${dominant.screenY.toFixed(3)},${dominant.depth.toFixed(3)}`
+      : "none";
+    void webGpuUltraResult.updateFroxel(samples).then((updated) => {
+      if (updated) froxelUpdateCount++;
+    });
+  }
   // Directional lights have no emitter position, so project a distant point
   // along the same afternoon direction used by clouds, ocean and shadows.
   const sunWorldPoint = camera.position
