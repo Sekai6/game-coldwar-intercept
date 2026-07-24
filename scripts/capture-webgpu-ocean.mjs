@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 const executablePath = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const baseUrl = process.env.APP_URL ?? "http://127.0.0.1:5173/";
 
-async function capture(path, fft, wake) {
+async function capture(path, fft, wake, validation = "") {
   const browser = await chromium.launch({
     headless: true,
     executablePath,
@@ -12,7 +12,7 @@ async function capture(path, fft, wake) {
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
     const separator = baseUrl.includes("?") ? "&" : "?";
-    await page.goto(`${baseUrl}${separator}shortAirValidation=1&oceanFFT=${fft ? "on" : "off"}&oceanWake=${wake ? "on" : "off"}`, {
+    await page.goto(`${baseUrl}${separator}shortAirValidation=1&oceanFFT=${fft ? "on" : "off"}&oceanWake=${wake ? "on" : "off"}&oceanValidation=${validation}`, {
       waitUntil: "domcontentloaded",
       timeout: 15_000,
     });
@@ -20,9 +20,12 @@ async function capture(path, fft, wake) {
     await page.locator("#sbWebGpuUltra").check();
     await page.waitForFunction(() => document.querySelector("#scene")?.dataset.webGpuUltraStatus === "active", null, { timeout: 15_000 });
     await page.locator("#sbStart").click();
-    await page.keyboard.press("1");
-    await page.mouse.wheel(0, 500);
-    await page.waitForFunction(() => Number(document.querySelector("#scene")?.dataset.simulationElapsed ?? 0) >= 10, null, { timeout: 20_000 });
+    if (!validation) {
+      await page.keyboard.press("1");
+      await page.mouse.wheel(0, 500);
+    }
+    const targetElapsed = validation === "stern" ? 6 : validation === "splash" ? 5.15 : 10;
+    await page.waitForFunction(target => Number(document.querySelector("#scene")?.dataset.simulationElapsed ?? 0) >= target, targetElapsed, { timeout: 25_000 });
     await page.keyboard.press("Space");
     await page.waitForTimeout(180);
     const canvas = page.locator("#scene");
@@ -32,13 +35,21 @@ async function capture(path, fft, wake) {
       ultra: element.dataset.webGpuUltraStatus,
       ocean: element.dataset.webGpuUltraOcean,
       speed: Number(element.dataset.shipSpeedKnots ?? 0),
+      wakeStrength: Number(element.dataset.oceanWakeStrength ?? 0),
+      splash: element.dataset.oceanValidationSplash ?? "off",
     }));
   } finally {
     await browser.close();
   }
 }
 
-const fftWake = await capture("verification-ultra-ocean-fft-wake.png", true, true);
-const gerstnerWake = await capture("verification-ultra-ocean-gerstner-wake.png", false, true);
-const fftNoWake = await capture("verification-ultra-ocean-fft-no-wake.png", true, false);
-console.log(JSON.stringify({ fftWake, gerstnerWake, fftNoWake }, null, 2));
+const detailOnly = process.argv.includes("--detail-only");
+const overview = detailOnly ? {} : {
+  fftWake: await capture("verification-ultra-ocean-fft-wake.png", true, true),
+  gerstnerWake: await capture("verification-ultra-ocean-gerstner-wake.png", false, true),
+  fftNoWake: await capture("verification-ultra-ocean-fft-no-wake.png", true, false),
+};
+const sternWake = await capture("verification-ultra-ocean-stern-wake.png", true, true, "stern");
+const sternNoWake = await capture("verification-ultra-ocean-stern-no-wake.png", true, false, "stern");
+const splash = await capture("verification-ultra-ocean-splash.png", true, false, "splash");
+console.log(JSON.stringify({ ...overview, sternWake, sternNoWake, splash }, null, 2));

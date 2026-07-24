@@ -912,6 +912,7 @@ export class AirCombatSystem {
         if (loss.crashed) {
           a.state = "crashed";
           a.model.visible = true;
+          this.onOceanSplash?.(a.position, 2);
           this.emit(
             time,
             "kill",

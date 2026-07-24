@@ -217,6 +217,9 @@ const visualValidationParams = new URLSearchParams(location.search);
 const ultraAtmosphereMode = visualValidationParams.get("ultraAtmosphere") ?? "both";
 const ultraOceanFftEnabled = visualValidationParams.get("oceanFFT") !== "off";
 const ultraOceanWakeEnabled = visualValidationParams.get("oceanWake") !== "off";
+const oceanValidationMode = visualValidationParams.get("oceanValidation") ?? "";
+let oceanValidationSplashTriggered = false;
+const oceanValidationSplashPosition = new THREE.Vector3();
 const hizVisualComparison = visualValidationParams.has("hizEffects");
 hizScreenSpacePass.setEffectsEnabled(visualValidationParams.get("hizEffects") !== "off");
 const hizDebugMode = visualValidationParams.get("hizDebug");
@@ -3257,9 +3260,9 @@ radarCanvas.addEventListener("pointerdown", (e) => {
 (sandbox.querySelector("#sbStart") as HTMLButtonElement).addEventListener(
   "pointerdown",
   () => {
-    shipSpeedKnots = 0;
+    shipSpeedKnots = oceanValidationMode === "stern" ? activeShip.platform.maxSpeedKnots * 0.82 : 0;
     shipDesiredHeading = 0;
-    shipCommandedSpeedKnots = activeShip.platform.patrolSpeedKnots;
+    shipCommandedSpeedKnots = oceanValidationMode === "stern" ? activeShip.platform.maxSpeedKnots : activeShip.platform.patrolSpeedKnots;
     shipManeuverMode = "patrol";
     nextShipDecision = 0;
     shipManeuverThreatId = 0;
@@ -4181,6 +4184,7 @@ function updateShipManeuver(dt: number) {
         `OODA MANEUVER / ${shipManeuverMode.toUpperCase()} / ${activeShip.name} / CMD ${shipCommandedSpeedKnots.toFixed(0)} KT`,
       );
   }
+  if (oceanValidationMode === "stern") shipCommandedSpeedKnots = activeShip.platform.maxSpeedKnots;
   const propulsion = subsystemHealth("propulsion"),
     designSpeed = activeShip.platform.maxSpeedKnots,
     maximumKnots =
@@ -4222,6 +4226,8 @@ function updateShipManeuver(dt: number) {
   );
   shipWakePosition.copy(defender.position).addScaledVector(updatedForward, -Number(defender.userData.hullLength ?? 70) * 0.46);
   ocean.setVesselWake(shipWakePosition, defender.rotation.y, ultraOceanWakeEnabled ? shipSpeedKnots / designSpeed : 0);
+  canvas.dataset.shipSpeedKnots = shipSpeedKnots.toFixed(2);
+  canvas.dataset.oceanWakeStrength = (ultraOceanWakeEnabled ? shipSpeedKnots / designSpeed : 0).toFixed(3);
   canvas.dataset.shipManeuverMode = shipManeuverMode;
   canvas.dataset.shipCommandedSpeedKnots = shipCommandedSpeedKnots.toFixed(2);
   canvas.dataset.shipDesiredHeadingDeg =
@@ -4273,6 +4279,20 @@ function updateCamera() {
   const selectedAircraft = airCombat.aircraft.find(
     (aircraft) => aircraft.id === selectedAircraftId && aircraft.alive,
   );
+  if (oceanValidationMode === "stern") {
+    const forward = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), defender.rotation.y);
+    const right = new THREE.Vector3(-forward.z, 0, forward.x);
+    const stern = defender.position.clone().addScaledVector(forward, -Number(defender.userData.hullLength ?? 70) * 0.45);
+    camera.position.copy(stern).addScaledVector(forward, -82).addScaledVector(right, 43).add(new THREE.Vector3(0, 13, 0));
+    camera.lookAt(stern.clone().addScaledVector(forward, -22).add(new THREE.Vector3(0, 1, 0)));
+    return;
+  }
+  if (oceanValidationMode === "splash") {
+    oceanValidationSplashPosition.copy(defender.position).add(new THREE.Vector3(-38, 0, 18));
+    camera.position.copy(oceanValidationSplashPosition).add(new THREE.Vector3(34, 24, 42));
+    camera.lookAt(oceanValidationSplashPosition);
+    return;
+  }
   if ((viewMode === 6 || viewMode === 7 || viewMode === 8) && selectedAircraft) {
     focus = selectedAircraft.position.clone().add(new THREE.Vector3(0, 1.2, 0));
     const forward = selectedAircraft.heading.clone().normalize(),
@@ -7969,6 +7989,12 @@ function tick(now: number) {
   canvas.dataset.surfaceEsmCueAge = Number.isFinite(surfaceEsmCue.age)
     ? surfaceEsmCue.age.toFixed(2)
     : "infinity";
+  if (oceanValidationMode === "splash" && !oceanValidationSplashTriggered && elapsed >= 4) {
+    oceanValidationSplashPosition.copy(defender.position).add(new THREE.Vector3(-38, 0, 18));
+    ocean.addSplash(oceanValidationSplashPosition, 1.8);
+    oceanValidationSplashTriggered = true;
+    canvas.dataset.oceanValidationSplash = "triggered";
+  }
   ocean.update(elapsed, camera.position);
   highQualityEnvironment.update(elapsed, camera.position);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,
