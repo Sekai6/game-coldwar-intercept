@@ -25,6 +25,10 @@ try {
     internalScale: canvas.dataset.webGpuUltraInternalScale,
     cloudShadows: canvas.dataset.webGpuUltraCloudShadows,
     froxel: canvas.dataset.webGpuUltraFroxel,
+    ocean: canvas.dataset.webGpuUltraOcean,
+    oceanCompute: canvas.dataset.webGpuUltraOceanCompute,
+    oceanRanges: canvas.dataset.webGpuUltraOceanRanges,
+    oceanError: canvas.dataset.webGpuUltraOceanError,
     froxelUpdates: Number(canvas.dataset.webGpuUltraFroxelUpdates ?? 0),
     froxelLights: Number(canvas.dataset.webGpuUltraFroxelLights ?? 0),
     reprojection: canvas.dataset.webGpuUltraReprojection,
@@ -41,7 +45,9 @@ try {
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.backend !== "WEBGL2_WEBGPU_COMPUTE" || result.detail !== "COMPUTE_FBM_128" || result.scatter !== "COMPUTE_SCATTER_ATLAS_128" || result.depth !== "GTAO_DEPTH_RECONSTRUCTED" || result.volume !== "COMPUTE_VOLUME_64X32X64" || result.temporal !== "TAAU_FULL_SCENE_0.85X" || result.internalScale !== "0.85" || result.cloudShadows !== "VOLUME_PROJECTED_3_LAYER" || result.froxel !== "FROXEL_80X45X32_DYNAMIC_8" || result.froxelUpdates < 1 || result.reprojection !== "TAA_VELOCITY_DEPTH_CLAMP" || result.velocity !== "OBJECT_PREVIOUS_MVP_RG16F" || result.temporalObjects < 1 || result.hiz !== "MIN_DEPTH_6_LEVEL" || result.hizLevels !== 6 || result.hizConsumers !== 2 || result.historyValid !== "true" || result.historyFrames < 2 || !result.adapter || result.highQuality !== "true" || result.clouds !== 16) process.exitCode = 1;
+  const oceanRanges = result.oceanRanges?.split("/").map(range => range.split("-").map(Number)) ?? [];
+  const oceanDynamic = oceanRanges.length === 4 && oceanRanges.slice(0, 3).every(([minimum, maximum]) => maximum - minimum > 80) && oceanRanges[3][1] > 4;
+  if (errors.length || result.backend !== "WEBGL2_WEBGPU_COMPUTE" || result.detail !== "COMPUTE_FBM_128" || result.scatter !== "COMPUTE_SCATTER_ATLAS_128" || result.depth !== "GTAO_DEPTH_RECONSTRUCTED" || result.volume !== "COMPUTE_VOLUME_64X32X64" || result.temporal !== "TAAU_FULL_SCENE_0.85X" || result.internalScale !== "0.85" || result.cloudShadows !== "VOLUME_PROJECTED_3_LAYER" || result.froxel !== "FROXEL_80X45X32_DYNAMIC_8" || result.ocean !== "FFT_16X64" || result.oceanCompute !== "COMPUTE_RADIX2" || result.oceanError || !oceanDynamic || result.froxelUpdates < 1 || result.reprojection !== "TAA_VELOCITY_DEPTH_CLAMP" || result.velocity !== "OBJECT_PREVIOUS_MVP_RG16F" || result.temporalObjects < 1 || result.hiz !== "MIN_DEPTH_6_LEVEL" || result.hizLevels !== 6 || result.hizConsumers !== 2 || result.historyValid !== "true" || result.historyFrames < 2 || !result.adapter || result.highQuality !== "true" || result.clouds !== 16) process.exitCode = 1;
 } finally {
   await browser.close();
 }

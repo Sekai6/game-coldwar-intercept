@@ -2480,6 +2480,9 @@ async function configureWebGpuUltra(requested: boolean) {
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
     ocean.setUltraSpectrum(ultraOceanFftEnabled ? webGpuUltraResult.oceanSpectrumTexture : null, webGpuUltraResult.oceanSpectrumFrames);
     canvas.dataset.webGpuUltraOcean = ultraOceanFftEnabled && webGpuUltraResult.oceanSpectrumTexture ? `FFT_${webGpuUltraResult.oceanSpectrumFrames}X64` : "GERSTNER";
+    canvas.dataset.webGpuUltraOceanCompute = webGpuUltraResult.oceanSpectrumBackend;
+    canvas.dataset.webGpuUltraOceanError = webGpuUltraResult.oceanSpectrumError;
+    canvas.dataset.webGpuUltraOceanRanges = String(webGpuUltraResult.oceanSpectrumTexture?.userData.channelRanges ?? "unknown");
     temporalReconstructionPass.setRequested(webGpuUltraResult.status === "active");
     hizScreenSpacePass.setRequested(webGpuUltraResult.status === "active");
     outputPass.enabled = webGpuUltraResult.status !== "active";

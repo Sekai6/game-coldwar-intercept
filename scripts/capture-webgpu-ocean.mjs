@@ -44,10 +44,13 @@ async function capture(path, fft, wake, validation = "") {
 }
 
 const detailOnly = process.argv.includes("--detail-only");
+const computeCheck = process.argv.includes("--compute-check");
 const overview = detailOnly ? {} : {
   fftWake: await capture("verification-ultra-ocean-fft-wake.png", true, true),
-  gerstnerWake: await capture("verification-ultra-ocean-gerstner-wake.png", false, true),
-  fftNoWake: await capture("verification-ultra-ocean-fft-no-wake.png", true, false),
+  ...(computeCheck ? {} : {
+    gerstnerWake: await capture("verification-ultra-ocean-gerstner-wake.png", false, true),
+    fftNoWake: await capture("verification-ultra-ocean-fft-no-wake.png", true, false),
+  }),
 };
 const sternWake = await capture("verification-ultra-ocean-stern-wake.png", true, true, "stern");
 const sternNoWake = await capture("verification-ultra-ocean-stern-no-wake.png", true, false, "stern");
