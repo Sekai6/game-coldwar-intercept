@@ -7,6 +7,7 @@ export interface OceanSurface {
   readonly object: THREE.Object3D;
   readonly backend: OceanBackend;
   setHighQuality(enabled: boolean): void;
+  setUltraCloudVolume(texture: THREE.Data3DTexture | null, detailTexture?: THREE.Texture | null): void;
   update(time: number, cameraPosition?: THREE.Vector3): void;
   resize(width: number, height: number): void;
   dispose(): void;
@@ -18,8 +19,13 @@ class WebglOcean implements OceanSurface {
   private readonly geometry = new THREE.PlaneGeometry(2200, 2200, 256, 256);
   private readonly standardMaterial = new THREE.MeshStandardMaterial({ color: 0x0a3340, roughness: 0.68, metalness: 0.18 });
   private readonly highQualityMaterial: THREE.ShaderMaterial;
+  private readonly neutralCloudVolume = new THREE.Data3DTexture(new Uint8Array([0, 128, 255, 255]), 1, 1, 1);
+  private readonly neutralCloudDetail = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, THREE.RGBAFormat);
 
   constructor() {
+    this.neutralCloudVolume.format = THREE.RGBAFormat;
+    this.neutralCloudVolume.needsUpdate = true;
+    this.neutralCloudDetail.needsUpdate = true;
     this.highQualityMaterial = new THREE.ShaderMaterial({
       lights: false,
       fog: true,
@@ -32,9 +38,13 @@ class WebglOcean implements OceanSurface {
         skyColor: { value: new THREE.Color(0x88b7d2) },
         fogColor: { value: new THREE.Color(0x8298a4) },
         fogDensity: { value: 0.00072 },
+        ultraCloudVolume: { value: this.neutralCloudVolume },
+        ultraCloudDetail: { value: this.neutralCloudDetail },
+        ultraCloudMix: { value: 0 },
       },
+      glslVersion: THREE.GLSL3,
       vertexShader: `
-        varying vec3 vWorldPosition; varying vec3 vWorldNormal; varying float vCrest;
+        out vec3 vWorldPosition; out vec3 vWorldNormal; out float vCrest;
         uniform float time;
         vec3 wave(vec2 p,vec2 dir,float steep,float length,float speed,inout vec3 tangent,inout vec3 binormal){
           float k=6.283185/length;float phase=k*(dot(dir,p)-speed*time);float a=steep/k;
@@ -54,8 +64,8 @@ class WebglOcean implements OceanSurface {
           gl_Position=projectionMatrix*viewMatrix*world;}
       `,
       fragmentShader: `
-        precision highp float; varying vec3 vWorldPosition;varying vec3 vWorldNormal;varying float vCrest;
-        uniform float time;uniform vec3 sunDirection;uniform vec3 sunColor;uniform vec3 deepColor;uniform vec3 shallowColor;uniform vec3 skyColor;uniform vec3 fogColor;uniform float fogDensity;
+        precision highp float; in vec3 vWorldPosition;in vec3 vWorldNormal;in float vCrest;out vec4 outColor;
+        uniform float time;uniform vec3 sunDirection;uniform vec3 sunColor;uniform vec3 deepColor;uniform vec3 shallowColor;uniform vec3 skyColor;uniform vec3 fogColor;uniform float fogDensity;uniform sampler3D ultraCloudVolume;uniform sampler2D ultraCloudDetail;uniform float ultraCloudMix;
         float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
         float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1)),f.x),f.y);}
         void main(){vec3 viewDir=normalize(cameraPosition-vWorldPosition);vec3 n=normalize(vWorldNormal);
@@ -64,10 +74,12 @@ class WebglOcean implements OceanSurface {
           float ndv=max(dot(n,viewDir),0.);float fresnel=.02+.98*pow(1.-ndv,5.);
           vec3 halfVector=normalize(viewDir+sunDirection);float glitter=pow(max(dot(n,halfVector),0.),680.)*3.6;
           float broad=pow(max(dot(n,halfVector),0.),92.)*.24;float depthFacing=smoothstep(.05,.82,ndv);
+          vec2 cloudUv=vec2(fract(vWorldPosition.x*.0014+time*.00105),fract(vWorldPosition.z*.0014-time*.00004));vec4 cloudLow=texture(ultraCloudVolume,vec3(cloudUv.x,.24,cloudUv.y));vec4 cloudMid=texture(ultraCloudVolume,vec3(cloudUv.x,.43,cloudUv.y));vec4 cloudHigh=texture(ultraCloudVolume,vec3(cloudUv.x,.62,cloudUv.y));vec2 erosionUv=fract(cloudUv*2.17+vec2(.31,.67));float fineErosion=texture(ultraCloudVolume,vec3(erosionUv.x,.48,erosionUv.y)).g;float detailErosion=texture(ultraCloudDetail,cloudUv*4.3+vec2(time*.0003,-time*.0001)).r;float projectedDensity=max(cloudLow.r-cloudLow.g*.22,max(cloudMid.r-cloudMid.g*.22,cloudHigh.r-cloudHigh.g*.22));float coverage=smoothstep(.018,.31,projectedDensity-fineErosion*.04-detailErosion*.075);float cloudShadow=mix(1.,.64,coverage*ultraCloudMix);
           vec3 water=mix(deepColor,shallowColor,depthFacing*.32+microA*.035);vec3 reflected=skyColor*(.32+.24*max(n.y,0.));
-          float foam=smoothstep(.88,1.0,vCrest)*smoothstep(.72,.94,microA*.55+microB*.45);vec3 color=mix(water,reflected,fresnel*.64)+sunColor*(glitter+broad)+vec3(.72,.84,.86)*foam*.34;
+          glitter*=mix(1.,.46,coverage*ultraCloudMix);float foam=smoothstep(.88,1.0,vCrest)*smoothstep(.72,.94,microA*.55+microB*.45);vec3 color=mix(water,reflected,fresnel*.64)+sunColor*(glitter+broad)+vec3(.72,.84,.86)*foam*.34;
+          color*=mix(1.,cloudShadow,ultraCloudMix*.62);color+=skyColor*(1.-cloudShadow)*.022*ultraCloudMix;
           float distanceToCamera=length(cameraPosition-vWorldPosition);float fogFactor=1.-exp(-fogDensity*fogDensity*distanceToCamera*distanceToCamera);
-          gl_FragColor=vec4(mix(color,fogColor,clamp(fogFactor,0.,1.)),1.);}
+          outColor=vec4(mix(color,fogColor,clamp(fogFactor,0.,1.)),1.);}
       `,
     });
     this.object = new THREE.Mesh(this.geometry, this.standardMaterial);
@@ -76,6 +88,11 @@ class WebglOcean implements OceanSurface {
   }
 
   setHighQuality(enabled: boolean) { this.object.material = enabled ? this.highQualityMaterial : this.standardMaterial; }
+  setUltraCloudVolume(texture: THREE.Data3DTexture | null, detailTexture?: THREE.Texture | null) {
+    this.highQualityMaterial.uniforms.ultraCloudVolume.value = texture ?? this.neutralCloudVolume;
+    this.highQualityMaterial.uniforms.ultraCloudDetail.value = detailTexture ?? this.neutralCloudDetail;
+    this.highQualityMaterial.uniforms.ultraCloudMix.value = texture ? 1 : 0;
+  }
   update(time: number, cameraPosition?: THREE.Vector3) {
     this.highQualityMaterial.uniforms.time.value = time;
     if (cameraPosition) {
@@ -84,7 +101,7 @@ class WebglOcean implements OceanSurface {
     }
   }
   resize(_width: number, _height: number) {}
-  dispose() { this.geometry.dispose(); this.standardMaterial.dispose(); this.highQualityMaterial.dispose(); }
+  dispose() { this.geometry.dispose(); this.standardMaterial.dispose(); this.highQualityMaterial.dispose(); this.neutralCloudVolume.dispose(); this.neutralCloudDetail.dispose(); }
 }
 
 export function createOceanSurface(): OceanSurface { return new WebglOcean(); }

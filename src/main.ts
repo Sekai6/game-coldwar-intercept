@@ -2427,11 +2427,14 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
+  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
+  canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
 }
 
 async function configureWebGpuUltra(requested: boolean) {
   if (!requested) {
     highQualityEnvironment.setUltraDetail(null);
+    ocean.setUltraCloudVolume(null);
     webGpuUltraResult?.detailTexture?.dispose();
     webGpuUltraResult?.scatterTexture?.dispose();
     webGpuUltraResult?.volumeTexture?.dispose();
@@ -2450,6 +2453,7 @@ async function configureWebGpuUltra(requested: boolean) {
     webGpuUltraResult = await initializeWebGpuUltra();
     webGpuUltraStatus = webGpuUltraResult.status;
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
+    ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
     setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
     updateWebGpuUltraStatus();
     webGpuUltraInitialization = null;
@@ -7702,6 +7706,8 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
+  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
+  canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";

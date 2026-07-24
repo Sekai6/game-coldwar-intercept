@@ -8,6 +8,8 @@ The first implementation uses a hybrid backend:
 - WebGPU Compute generates a 128 x 128 five-octave cloud detail field on a high-performance adapter.
 - The generated texture is injected into the ray-marched cloud density function.
 - A 64 x 32 x 64 WebGPU density volume stores cloud body, erosion and sun-direction transmittance; Ultra clouds ray march this shared field with 32 view samples and volumetric self-shadowing.
+- Cloud motion uses absolute simulation time rather than frame increments, while stable screen-space ray offsets avoid frame-to-frame sampling shimmer.
+- The ocean integrates three height layers of the same volume into a wind-advected cloud-shadow field without CPU readback.
 - A second compute output stores layered scattering, shaft weighting and extinction for the Ultra atmosphere pass.
 - GTAO's independently rendered depth texture is linearized into view-space distance so Ultra fog respects scene geometry instead of applying a uniform screen haze.
 - Unsupported or failed WebGPU initialization falls back to the normal high-quality WebGL path without changing simulation state.
@@ -20,6 +22,8 @@ Runtime diagnostics are exposed on `#scene`:
 - `data-web-gpu-ultra-scatter`: `OFF` or `COMPUTE_SCATTER_ATLAS_128`
 - `data-web-gpu-ultra-depth`: `OFF` or `GTAO_DEPTH_RECONSTRUCTED`
 - `data-web-gpu-ultra-cloud-volume`: `OFF` or `COMPUTE_VOLUME_64X32X64`
+- `data-web-gpu-ultra-temporal`: `OFF` or `STABLE_JITTER_ABSOLUTE_WIND`
+- `data-web-gpu-ultra-cloud-shadows`: `OFF` or `VOLUME_PROJECTED_3_LAYER`
 - `data-web-gpu-ultra-adapter` and `data-web-gpu-ultra-error`
 
 Run `npm run verify:webgpu-ultra` to verify either the active compute path or an explicit safe fallback. The verifier is strictly serial and launches one Chromium renderer.

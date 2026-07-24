@@ -61,7 +61,7 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
   const cloudCount = 16;
   const cloudVolumes: THREE.Mesh[] = [];
   const cloudMaterials: THREE.ShaderMaterial[] = [];
-  const transform = new THREE.Object3D();
+  const cloudOrigins: THREE.Vector3[] = [];
   for (let index = 0; index < cloudCount; index++) {
     const material = new THREE.ShaderMaterial({
       side: THREE.BackSide,
@@ -87,7 +87,7 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
         float fbm(vec3 p){float n=0.,a=.55;for(int i=0;i<4;i++){n+=noise(p)*a;p=p*2.03+vec3(7.1,3.7,5.9);a*=.5;}return n;}
         vec4 volumeSample(vec3 p){vec3 uv=vec3(fract(p.x*.5+.5+seed*.013+time*.0007),clamp(p.y*.5+.5,0.,1.),fract(p.z*.5+.5+seed*.021-time*.0004));return texture(ultraVolume,uv);}
         float density(vec3 p){float radial=length(p*vec3(.82,1.55,.82));float base=fbm(p*2.25+vec3(time*.012,seed,time*.006));float procedural=fbm(p*6.2-vec3(time*.018,seed*.3,0.));vec2 detailUv=p.xz*1.7+vec2(seed*.017,time*.002);float gpuDetail=texture(ultraDetail,detailUv).r;vec4 volume=volumeSample(p);float irregularEdge=1.-smoothstep(.5+procedural*.13+gpuDetail*.06,.94+base*.05,radial);float detail=mix(procedural,gpuDetail,ultraMix*.45);float proceduralDensity=max(0.,(base*.74+detail*.26-.445)*3.55);float volumeCoverage=smoothstep(.035,.42,volume.r-volume.g*.16);float macroModulation=mix(1.,.74+volumeCoverage*.42,ultraMix);float erosion=mix(1.,smoothstep(.16,.78,procedural*.78+gpuDetail*.22),ultraMix*.16);return proceduralDensity*macroModulation*irregularEdge*erosion;}
-        void main(){vec3 ray=normalize(vLocal-cameraLocal);vec3 p=cameraLocal;vec3 inv=1./ray;vec3 t0=(-vec3(1.)-p)*inv,t1=(vec3(1.)-p)*inv;vec3 tn=min(t0,t1),tf=max(t0,t1);float nearT=max(max(tn.x,tn.y),tn.z),farT=min(min(tf.x,tf.y),tf.z);nearT=max(nearT,0.);if(farT<=nearT)discard;float stepSize=(farT-nearT)/32.;float trans=1.;vec3 color=vec3(0.);for(int i=0;i<32;i++){vec3 q=p+ray*(nearT+(float(i)+.5)*stepSize);float d=density(q);if(d>.005){float lightD=density(q+normalize(sunDirection)*.075);float computedLight=exp(-lightD*4.8);float volumeLight=volumeSample(q).b;float light=mix(.2,.94,mix(computedLight,volumeLight,ultraMix*.72));float powder=(1.-exp(-d*2.8))*exp(-lightD*.8);float forwardSilver=pow(max(dot(ray,-normalize(sunDirection)),0.),7.)*(1.-trans);float alpha=1.-exp(-d*stepSize*3.15);vec3 cloudColor=mix(vec3(.18,.28,.38),vec3(1.04,.95,.79),clamp(light+powder*.16+forwardSilver*.24,0.,1.));color+=trans*alpha*cloudColor;trans*=1.-alpha;if(trans<.018)break;}}float opacity=(1.-trans)*proximityFade;if(opacity<.012)discard;outColor=vec4(color/max(1.-trans,.001),min(.97,opacity));}
+        void main(){vec3 ray=normalize(vLocal-cameraLocal);vec3 p=cameraLocal;vec3 inv=1./ray;vec3 t0=(-vec3(1.)-p)*inv,t1=(vec3(1.)-p)*inv;vec3 tn=min(t0,t1),tf=max(t0,t1);float nearT=max(max(tn.x,tn.y),tn.z),farT=min(min(tf.x,tf.y),tf.z);nearT=max(nearT,0.);if(farT<=nearT)discard;float stepSize=(farT-nearT)/32.;float stableJitter=fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715)));float trans=1.;vec3 color=vec3(0.);for(int i=0;i<32;i++){vec3 q=p+ray*(nearT+(float(i)+stableJitter)*stepSize);float d=density(q);if(d>.005){float lightD=density(q+normalize(sunDirection)*.075);float computedLight=exp(-lightD*4.8);float volumeLight=volumeSample(q).b;float light=mix(.2,.94,mix(computedLight,volumeLight,ultraMix*.72));float powder=(1.-exp(-d*2.8))*exp(-lightD*.8);float forwardSilver=pow(max(dot(ray,-normalize(sunDirection)),0.),7.)*(1.-trans);float alpha=1.-exp(-d*stepSize*3.15);vec3 cloudColor=mix(vec3(.18,.28,.38),vec3(1.04,.95,.79),clamp(light+powder*.16+forwardSilver*.24,0.,1.));color+=trans*alpha*cloudColor;trans*=1.-alpha;if(trans<.018)break;}}float opacity=(1.-trans)*proximityFade;if(opacity<.012)discard;outColor=vec4(color/max(1.-trans,.001),min(.97,opacity));}
       `,
     });
     const cloud = new THREE.Mesh(cloudGeometry, material);
@@ -95,6 +95,7 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
     cloud.scale.set(58 + seeded(index, 4) * 72, 17 + seeded(index, 5) * 18, 48 + seeded(index, 6) * 68);
     cloud.rotation.y = seeded(index, 7) * Math.PI;
     cloud.renderOrder = -5;
+    cloudOrigins.push(cloud.position.clone());
     cloudVolumes.push(cloud); cloudMaterials.push(material); object.add(cloud);
   }
 
@@ -118,8 +119,10 @@ export function createHighQualityEnvironment(): HighQualityEnvironment {
       if (!object.visible) return;
       sky.position.copy(cameraPosition);
       cloudVolumes.forEach((cloud, index) => {
-        cloud.position.x += 0.012 + (index % 3) * 0.003;
-        if (cloud.position.x > 700) cloud.position.x = -700;
+        const origin = cloudOrigins[index];
+        const windDistance = time * (0.72 + (index % 3) * 0.12);
+        cloud.position.x = THREE.MathUtils.euclideanModulo(origin.x + windDistance + 700, 1400) - 700;
+        cloud.position.z = origin.z + Math.sin(time * 0.006 + index * 1.7) * 3.5;
         cloud.updateMatrixWorld();
         cloudMaterials[index].uniforms.time.value = time;
         const localCamera = cloud.worldToLocal(cameraPosition.clone());
