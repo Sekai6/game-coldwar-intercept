@@ -23,13 +23,16 @@ try {
     volume: canvas.dataset.webGpuUltraCloudVolume,
     temporal: canvas.dataset.webGpuUltraTemporal,
     cloudShadows: canvas.dataset.webGpuUltraCloudShadows,
+    reprojection: canvas.dataset.webGpuUltraReprojection,
+    historyValid: canvas.dataset.webGpuUltraHistoryValid,
+    historyFrames: Number(canvas.dataset.webGpuUltraHistoryFrames ?? 0),
     adapter: canvas.dataset.webGpuUltraAdapter,
     highQuality: canvas.dataset.highQualityEnvironment,
     clouds: Number(canvas.dataset.environmentCloudCount ?? 0),
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  if (errors.length || result.backend !== "WEBGL2_WEBGPU_COMPUTE" || result.detail !== "COMPUTE_FBM_128" || result.scatter !== "COMPUTE_SCATTER_ATLAS_128" || result.depth !== "GTAO_DEPTH_RECONSTRUCTED" || result.volume !== "COMPUTE_VOLUME_64X32X64" || result.temporal !== "STABLE_JITTER_ABSOLUTE_WIND" || result.cloudShadows !== "VOLUME_PROJECTED_3_LAYER" || !result.adapter || result.highQuality !== "true" || result.clouds !== 16) process.exitCode = 1;
+  if (errors.length || result.backend !== "WEBGL2_WEBGPU_COMPUTE" || result.detail !== "COMPUTE_FBM_128" || result.scatter !== "COMPUTE_SCATTER_ATLAS_128" || result.depth !== "GTAO_DEPTH_RECONSTRUCTED" || result.volume !== "COMPUTE_VOLUME_64X32X64" || result.temporal !== "STABLE_JITTER_ABSOLUTE_WIND" || result.cloudShadows !== "VOLUME_PROJECTED_3_LAYER" || result.reprojection !== "HISTORY_MATRIX_SKY_ONLY" || result.historyValid !== "true" || result.historyFrames < 2 || !result.adapter || result.highQuality !== "true" || result.clouds !== 16) process.exitCode = 1;
 } finally {
   await browser.close();
 }

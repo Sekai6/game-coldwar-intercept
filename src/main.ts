@@ -47,6 +47,7 @@ import { createHighQualityEnvironment } from "./visual/high-quality-environment"
 import { createCinematicAtmospherePass, setCinematicDepth, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
 import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
 import { initializeWebGpuUltra, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
+import { TemporalCloudPass } from "./visual/temporal-cloud-pass";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
   getEnemyPlatformDefinition,
@@ -189,6 +190,7 @@ const composer = new EffectComposer(renderer),
     0.78,
   ),
   cinematicAtmospherePass = createCinematicAtmospherePass(),
+  temporalCloudPass = new TemporalCloudPass(gtaoPass.depthTexture, camera),
   outputPass = new OutputPass();
 ssaoPass.kernelRadius = 8;
 ssaoPass.minDistance = 0.001;
@@ -204,6 +206,7 @@ composer.addPass(ssaoPass);
 composer.addPass(gtaoPass);
 composer.addPass(bloomPass);
 composer.addPass(cinematicAtmospherePass);
+composer.addPass(temporalCloudPass);
 composer.addPass(outputPass);
 canvas.dataset.renderPipeline = "webgl2-pbr-ssao-bloom-aces";
 canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
@@ -2435,6 +2438,7 @@ async function configureWebGpuUltra(requested: boolean) {
   if (!requested) {
     highQualityEnvironment.setUltraDetail(null);
     ocean.setUltraCloudVolume(null);
+    temporalCloudPass.setRequested(false);
     webGpuUltraResult?.detailTexture?.dispose();
     webGpuUltraResult?.scatterTexture?.dispose();
     webGpuUltraResult?.volumeTexture?.dispose();
@@ -2454,6 +2458,7 @@ async function configureWebGpuUltra(requested: boolean) {
     webGpuUltraStatus = webGpuUltraResult.status;
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
+    temporalCloudPass.setRequested(webGpuUltraResult.status === "active");
     setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
     updateWebGpuUltraStatus();
     webGpuUltraInitialization = null;
@@ -7708,6 +7713,11 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
   canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
+  const temporalDiagnostics = temporalCloudPass.diagnostics;
+  canvas.dataset.webGpuUltraReprojection = webGpuUltraStatus === "active" ? "HISTORY_MATRIX_SKY_ONLY" : "OFF";
+  canvas.dataset.webGpuUltraHistoryValid = String(temporalDiagnostics.valid);
+  canvas.dataset.webGpuUltraHistoryFrames = String(temporalDiagnostics.frames);
+  canvas.dataset.webGpuUltraHistoryResets = String(temporalDiagnostics.resets);
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
@@ -8045,6 +8055,7 @@ addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
+  temporalCloudPass.invalidate();
   cinematicAtmospherePass.uniforms.resolution.value.set(innerWidth, innerHeight);
   ocean.resize(innerWidth, innerHeight);
   ssaoPass.enabled = innerWidth > 720;

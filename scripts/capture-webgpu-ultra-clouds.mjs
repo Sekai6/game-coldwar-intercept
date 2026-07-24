@@ -32,6 +32,7 @@ async function capture(path, ultra, temporalPath) {
     await canvas.screenshot({ path });
     if (temporalPath) {
       await page.keyboard.press("9");
+      await canvas.screenshot({ path: "verification-ultra-reprojection-cut.png" });
       await page.waitForTimeout(1_000);
       await canvas.screenshot({ path: "verification-ultra-cloud-shadows-overview.png" });
       await page.keyboard.press("1");
