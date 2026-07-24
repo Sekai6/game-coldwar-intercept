@@ -44,7 +44,7 @@ import {
 } from "./visual/threat-particles";
 import { createOceanSurface } from "./visual/ocean";
 import { createHighQualityEnvironment } from "./visual/high-quality-environment";
-import { createCinematicAtmospherePass } from "./visual/cinematic-atmosphere-pass";
+import { createCinematicAtmospherePass, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
 import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
 import { initializeWebGpuUltra, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
 import {
@@ -2423,12 +2423,15 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraAdapter = webGpuUltraResult?.adapterName ?? "";
   canvas.dataset.webGpuUltraError = webGpuUltraResult?.error ?? "";
   canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
+  canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
 }
 
 async function configureWebGpuUltra(requested: boolean) {
   if (!requested) {
     highQualityEnvironment.setUltraDetail(null);
     webGpuUltraResult?.detailTexture?.dispose();
+    webGpuUltraResult?.scatterTexture?.dispose();
+    setCinematicUltraScatter(cinematicAtmospherePass, null);
     webGpuUltraResult = null;
     webGpuUltraStatus = "idle";
     updateWebGpuUltraStatus();
@@ -2443,6 +2446,7 @@ async function configureWebGpuUltra(requested: boolean) {
     webGpuUltraResult = await initializeWebGpuUltra();
     webGpuUltraStatus = webGpuUltraResult.status;
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture);
+    setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
     updateWebGpuUltraStatus();
     webGpuUltraInitialization = null;
   })();
@@ -2979,6 +2983,7 @@ radarCanvas.addEventListener("pointerdown", (e) => {
     await configureWebGpuUltra(true);
   highQualityEnvironmentEnabled = highQualityEnvironmentInput.checked;
   highQualityEnvironment.setEnabled(highQualityEnvironmentEnabled);
+  grid.visible = !highQualityEnvironmentEnabled;
   cinematicAtmospherePass.enabled = highQualityEnvironmentEnabled;
   ocean.setHighQuality(highQualityEnvironmentEnabled);
   ssaoPass.enabled = !highQualityEnvironmentEnabled && innerWidth > 720;
@@ -7690,6 +7695,7 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraAdapter = webGpuUltraResult?.adapterName ?? "";
   canvas.dataset.webGpuUltraError = webGpuUltraResult?.error ?? "";
   canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
+  canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
@@ -7973,6 +7979,7 @@ function tick(now: number) {
   const followedMissile = viewMode === 4 &&
     (interceptors.some((item) => item.mesh.visible) || missiles.some((item) => item.mesh.visible));
   cinematicAtmospherePass.uniforms.chromaticAberration.value = followedMissile ? 0.72 : 0;
+  cinematicAtmospherePass.uniforms.ultraTime.value = elapsed;
   updateShipVisualLod();
   updateShipLights();
   defender.userData.smokePuffs?.forEach((puff: THREE.Mesh, index: number) => {
