@@ -23,13 +23,31 @@ export class TemporalReconstructionPass extends Pass {
     type: THREE.HalfFloatType,
     depthBuffer: true,
   });
+  private readonly reactiveTarget = new THREE.WebGLRenderTarget(1, 1, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    depthBuffer: false,
+  });
+  private reactiveHistoryTarget = new THREE.WebGLRenderTarget(1, 1, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    depthBuffer: false,
+  });
+  private reactiveHistoryScratch = this.reactiveHistoryTarget.clone();
   private readonly resolveMaterial: THREE.ShaderMaterial;
   private readonly velocityMaterial: THREE.ShaderMaterial;
+  private readonly reactiveMaterial: THREE.MeshBasicMaterial;
+  private readonly reactiveDecayMaterial: THREE.ShaderMaterial;
   private readonly copyMaterial: THREE.ShaderMaterial;
   private readonly displayMaterial: THREE.ShaderMaterial;
   private readonly resolveQuad: FullScreenQuad;
   private readonly copyQuad: FullScreenQuad;
   private readonly displayQuad: FullScreenQuad;
+  private readonly reactiveDecayQuad: FullScreenQuad;
   private readonly previousModelMatrices = new WeakMap<THREE.Object3D, THREE.Matrix4>();
   private readonly previousViewProjection = new THREE.Matrix4();
   private readonly inverseViewProjection = new THREE.Matrix4();
@@ -67,6 +85,14 @@ export class TemporalReconstructionPass extends Pass {
       depthWrite: true,
       side: THREE.DoubleSide,
     });
+    this.reactiveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+    this.reactiveDecayMaterial = new THREE.ShaderMaterial({
+      uniforms: { currentMask: { value: this.reactiveTarget.texture }, historyMask: { value: this.reactiveHistoryTarget.texture } },
+      vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}`,
+      fragmentShader: `varying vec2 vUv;uniform sampler2D currentMask;uniform sampler2D historyMask;void main(){float mask=max(texture2D(currentMask,vUv).r,texture2D(historyMask,vUv).r*.82);gl_FragColor=vec4(mask,mask,mask,1.);}`,
+      depthTest: false,
+      depthWrite: false,
+    });
     this.velocityMaterial.onBeforeRender = (_renderer, _scene, _camera, _geometry, object) => {
       const previous = this.previousModelMatrices.get(object) ?? object.matrixWorld;
       this.velocityMaterial.uniforms.previousModelMatrix.value.copy(previous);
@@ -77,6 +103,8 @@ export class TemporalReconstructionPass extends Pass {
         tHistory: { value: this.historyTarget.texture },
         tVelocity: { value: this.velocityTarget.texture },
         tDepth: { value: depthTexture },
+        tReactive: { value: this.reactiveTarget.texture },
+        tReactiveHistory: { value: this.reactiveHistoryTarget.texture },
         inverseViewProjection: { value: this.inverseViewProjection },
         previousViewProjection: { value: this.previousViewProjection },
         cameraPositionWorld: { value: new THREE.Vector3() },
@@ -85,20 +113,26 @@ export class TemporalReconstructionPass extends Pass {
         historyValid: { value: 0 },
         historyWeight: { value: 0.82 },
         skyDistance: { value: 520 },
+        cameraNear: { value: camera.near },
+        cameraFar: { value: camera.far },
       },
       vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}`,
       fragmentShader: `
-        precision highp float;varying vec2 vUv;uniform sampler2D tDiffuse;uniform sampler2D tHistory;uniform sampler2D tVelocity;uniform sampler2D tDepth;uniform mat4 inverseViewProjection;uniform mat4 previousViewProjection;uniform vec3 cameraPositionWorld;uniform vec2 resolution;uniform vec2 inputResolution;uniform float historyValid;uniform float historyWeight;uniform float skyDistance;
+        precision highp float;varying vec2 vUv;uniform sampler2D tDiffuse;uniform sampler2D tHistory;uniform sampler2D tVelocity;uniform sampler2D tDepth;uniform sampler2D tReactive;uniform sampler2D tReactiveHistory;uniform mat4 inverseViewProjection;uniform mat4 previousViewProjection;uniform vec3 cameraPositionWorld;uniform vec2 resolution;uniform vec2 inputResolution;uniform float historyValid;uniform float historyWeight;uniform float skyDistance;uniform float cameraNear;uniform float cameraFar;
         vec4 sampleCurrent(vec2 uv){vec2 samplePosition=uv*inputResolution-.5;vec2 base=floor(samplePosition);vec2 f=fract(samplePosition);vec2 f2=f*f;vec2 f3=f2*f;vec2 w0=-.5*f3+f2-.5*f;vec2 w1=1.5*f3-2.5*f2+1.;vec2 w2=-1.5*f3+2.*f2+.5*f;vec2 w3=.5*f3-.5*f2;vec2 g0=w0+w1;vec2 g1=w2+w3;vec2 h0=(base-1.+w1/max(g0,vec2(.0001))+.5)/inputResolution;vec2 h1=(base+1.+w3/max(g1,vec2(.0001))+.5)/inputResolution;return texture2D(tDiffuse,vec2(h0.x,h0.y))*g0.x*g0.y+texture2D(tDiffuse,vec2(h1.x,h0.y))*g1.x*g0.y+texture2D(tDiffuse,vec2(h0.x,h1.y))*g0.x*g1.y+texture2D(tDiffuse,vec2(h1.x,h1.y))*g1.x*g1.y;}
+        float linearDepth(float depth){float z=depth*2.-1.;return (2.*cameraNear*cameraFar)/max(cameraFar+cameraNear-z*(cameraFar-cameraNear),.0001);}
         void main(){
           vec4 current=sampleCurrent(vUv);float depth=texture2D(tDepth,vUv).r;float skyMask=smoothstep(.9985,.99995,depth);
           vec2 velocity=(texture2D(tVelocity,vUv).xy-.5)*2.;vec2 historyUv=vUv-velocity;
           vec4 farWorld=inverseViewProjection*vec4(vUv*2.-1.,1.,1.);vec3 ray=normalize(farWorld.xyz/farWorld.w-cameraPositionWorld);vec3 skyWorld=cameraPositionWorld+ray*skyDistance;vec4 previousSky=previousViewProjection*vec4(skyWorld,1.);vec2 skyHistoryUv=previousSky.xy/max(previousSky.w,.0001)*.5+.5;historyUv=mix(historyUv,skyHistoryUv,skyMask);
-          float inBounds=step(0.,historyUv.x)*step(historyUv.x,1.)*step(0.,historyUv.y)*step(historyUv.y,1.);vec4 history=texture2D(tHistory,clamp(historyUv,0.,1.));
+          float inBounds=step(0.,historyUv.x)*step(historyUv.x,1.)*step(0.,historyUv.y)*step(historyUv.y,1.);vec4 history=texture2D(tHistory,clamp(historyUv,0.,1.));vec3 rawHistoryColor=history.rgb;
           vec2 texel=1./resolution;vec3 lo=current.rgb,hi=current.rgb;float mean=0.;float mean2=0.;
           for(int x=-1;x<=1;x++){for(int y=-1;y<=1;y++){vec3 sampleColor=sampleCurrent(vUv+vec2(float(x),float(y))*texel).rgb;lo=min(lo,sampleColor);hi=max(hi,sampleColor);float luma=dot(sampleColor,vec3(.2126,.7152,.0722));mean+=luma;mean2+=luma*luma;}}
           mean/=9.;mean2/=9.;float sigma=sqrt(max(0.,mean2-mean*mean));history.rgb=clamp(history.rgb,lo-vec3(.012+sigma*.35),hi+vec3(.012+sigma*.35));
-          float depthDelta=abs(depth-history.a);float depthReject=1.-smoothstep(.00035,.0025+length(velocity)*.018,depthDelta);float motionWeight=mix(1.,.55,smoothstep(.002,.045,length(velocity)));float weight=historyWeight*historyValid*inBounds*depthReject*motionWeight;
+          float currentDistance=linearDepth(depth);float historyDistance=linearDepth(history.a);float relativeDepthDelta=abs(currentDistance-historyDistance)/max(currentDistance,1.);float depthReject=1.-smoothstep(.0015,.012+length(velocity)*.08,relativeDepthDelta);float motionWeight=mix(1.,.38,smoothstep(.0015,.028,length(velocity)));
+          float colorDelta=length(current.rgb-rawHistoryColor);float currentLuma=dot(current.rgb,vec3(.2126,.7152,.0722));float historyLuma=dot(rawHistoryColor,vec3(.2126,.7152,.0722));float lumaDelta=abs(currentLuma-historyLuma);float reactiveReject=1.-smoothstep(.018,.11,max(lumaDelta,colorDelta*.42));
+          float neighborDepth=max(max(abs(linearDepth(texture2D(tDepth,vUv+vec2(texel.x,0.)).r)-currentDistance),abs(linearDepth(texture2D(tDepth,vUv-vec2(texel.x,0.)).r)-currentDistance)),max(abs(linearDepth(texture2D(tDepth,vUv+vec2(0.,texel.y)).r)-currentDistance),abs(linearDepth(texture2D(tDepth,vUv-vec2(0.,texel.y)).r)-currentDistance)))/max(currentDistance,1.);float silhouetteReject=1.-smoothstep(.004,.035,neighborDepth);
+          float reactiveMask=max(texture2D(tReactive,vUv).r,texture2D(tReactiveHistory,historyUv).r);reactiveMask=smoothstep(.08,.22,reactiveMask);float weight=historyWeight*historyValid*inBounds*depthReject*motionWeight*reactiveReject*mix(.22,1.,silhouetteReject)*(1.-reactiveMask);
           vec3 resolved=mix(current.rgb,history.rgb,weight);gl_FragColor=vec4(resolved,depth);
         }
       `,
@@ -119,7 +153,7 @@ export class TemporalReconstructionPass extends Pass {
         precision highp float;varying vec2 vUv;uniform sampler2D source;uniform float toneMappingExposure;uniform vec2 resolution;
         vec3 taaAces(vec3 color){color*=toneMappingExposure/0.6;const mat3 inputMat=mat3(vec3(.59719,.07600,.02840),vec3(.35458,.90834,.13383),vec3(.04823,.01566,.83777));const mat3 outputMat=mat3(vec3(1.60475,-.10208,-.00327),vec3(-.53108,1.10813,-.07276),vec3(-.07367,-.00605,1.07602));color=inputMat*color;vec3 a=color*(color+.0245786)-.000090537;vec3 b=color*(.983729*color+.4329510)+.238081;color=outputMat*(a/b);return clamp(color,0.,1.);}
         vec3 taaSrgb(vec3 color){return mix(pow(color,vec3(1./2.4))*1.055-.055,color*12.92,lessThanEqual(color,vec3(.0031308)));}
-        void main(){vec2 texel=1./resolution;vec3 center=texture2D(source,vUv).rgb;vec3 north=texture2D(source,vUv+vec2(0.,texel.y)).rgb;vec3 south=texture2D(source,vUv-vec2(0.,texel.y)).rgb;vec3 east=texture2D(source,vUv+vec2(texel.x,0.)).rgb;vec3 west=texture2D(source,vUv-vec2(texel.x,0.)).rgb;vec3 lo=min(center,min(min(north,south),min(east,west)));vec3 hi=max(center,max(max(north,south),max(east,west)));vec3 sharpened=clamp(center+(center-(north+south+east+west)*.25)*.44,lo,hi);gl_FragColor=vec4(taaSrgb(taaAces(sharpened)),1.);}
+        void main(){vec2 texel=1./resolution;vec3 center=texture2D(source,vUv).rgb;vec3 north=texture2D(source,vUv+vec2(0.,texel.y)).rgb;vec3 south=texture2D(source,vUv-vec2(0.,texel.y)).rgb;vec3 east=texture2D(source,vUv+vec2(texel.x,0.)).rgb;vec3 west=texture2D(source,vUv-vec2(texel.x,0.)).rgb;vec3 lo=min(center,min(min(north,south),min(east,west)));vec3 hi=max(center,max(max(north,south),max(east,west)));vec3 sharpened=clamp(center+(center-(north+south+east+west)*.25)*.68,lo,hi);gl_FragColor=vec4(taaSrgb(taaAces(sharpened)),1.);}
       `,
       depthTest: false,
       depthWrite: false,
@@ -128,6 +162,7 @@ export class TemporalReconstructionPass extends Pass {
     this.resolveQuad = new FullScreenQuad(this.resolveMaterial);
     this.copyQuad = new FullScreenQuad(this.copyMaterial);
     this.displayQuad = new FullScreenQuad(this.displayMaterial);
+    this.reactiveDecayQuad = new FullScreenQuad(this.reactiveDecayMaterial);
     this.enabled = false;
   }
 
@@ -139,6 +174,8 @@ export class TemporalReconstructionPass extends Pass {
 
   setCamera(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
+    this.resolveMaterial.uniforms.cameraNear.value = camera.near;
+    this.resolveMaterial.uniforms.cameraFar.value = camera.far;
   }
 
   beginFrame() {
@@ -177,6 +214,9 @@ export class TemporalReconstructionPass extends Pass {
 
   setSize(width: number, height: number) {
     this.velocityTarget.setSize(width, height);
+    this.reactiveTarget.setSize(width, height);
+    this.reactiveHistoryTarget.setSize(width, height);
+    this.reactiveHistoryScratch.setSize(width, height);
     this.resolveMaterial.uniforms.inputResolution.value.set(width, height);
     this.invalidate();
   }
@@ -202,12 +242,41 @@ export class TemporalReconstructionPass extends Pass {
     const previousOverride = this.scene.overrideMaterial;
     const previousClearColor = renderer.getClearColor(new THREE.Color()).clone();
     const previousClearAlpha = renderer.getClearAlpha();
+    const velocityExcluded: THREE.Object3D[] = [];
+    this.scene.traverseVisible((object) => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      const excludesVelocity = object instanceof THREE.Line || object instanceof THREE.Points || materials.some((material) =>
+        material.transparent || material.opacity < 0.999 || material.depthWrite === false
+      );
+      if (!excludesVelocity) return;
+      velocityExcluded.push(object);
+      object.visible = false;
+    });
     this.scene.overrideMaterial = this.velocityMaterial;
     renderer.setRenderTarget(this.velocityTarget);
     renderer.setClearColor(new THREE.Color().setRGB(0.5, 0.5, 0), 1);
     renderer.clear();
     renderer.render(this.scene, this.camera);
     this.scene.overrideMaterial = previousOverride;
+    velocityExcluded.forEach((object) => { object.visible = true; });
+
+    const reactiveHidden: THREE.Object3D[] = [];
+    this.scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points)) return;
+      if (object.userData.temporalReactive) return;
+      if (object.visible) {
+        reactiveHidden.push(object);
+        object.visible = false;
+      }
+    });
+    this.scene.overrideMaterial = this.reactiveMaterial;
+    renderer.setRenderTarget(this.reactiveTarget);
+    renderer.setClearColor(0x000000, 1);
+    renderer.clear(true, false, false);
+    renderer.render(this.scene, this.camera);
+    this.scene.overrideMaterial = previousOverride;
+    reactiveHidden.forEach((object) => { object.visible = true; });
     renderer.setClearColor(previousClearColor, previousClearAlpha);
 
     this.resolveMaterial.uniforms.tDiffuse.value = readBuffer.texture;
@@ -223,6 +292,13 @@ export class TemporalReconstructionPass extends Pass {
     renderer.setRenderTarget(this.historyTarget);
     renderer.clear();
     this.copyQuad.render(renderer);
+    this.reactiveDecayMaterial.uniforms.currentMask.value = this.reactiveTarget.texture;
+    this.reactiveDecayMaterial.uniforms.historyMask.value = this.reactiveHistoryTarget.texture;
+    renderer.setRenderTarget(this.reactiveHistoryScratch);
+    renderer.clear(true, false, false);
+    this.reactiveDecayQuad.render(renderer);
+    [this.reactiveHistoryTarget, this.reactiveHistoryScratch] = [this.reactiveHistoryScratch, this.reactiveHistoryTarget];
+    this.resolveMaterial.uniforms.tReactiveHistory.value = this.reactiveHistoryTarget.texture;
     this.displayMaterial.uniforms.source.value = this.resolvedTarget.texture;
     this.displayMaterial.uniforms.toneMappingExposure.value = renderer.toneMappingExposure;
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
@@ -252,12 +328,18 @@ export class TemporalReconstructionPass extends Pass {
     this.historyTarget.dispose();
     this.resolvedTarget.dispose();
     this.velocityTarget.dispose();
+    this.reactiveTarget.dispose();
+    this.reactiveHistoryTarget.dispose();
+    this.reactiveHistoryScratch.dispose();
     this.resolveMaterial.dispose();
     this.velocityMaterial.dispose();
+    this.reactiveMaterial.dispose();
+    this.reactiveDecayMaterial.dispose();
     this.copyMaterial.dispose();
     this.displayMaterial.dispose();
     this.resolveQuad.dispose();
     this.copyQuad.dispose();
     this.displayQuad.dispose();
+    this.reactiveDecayQuad.dispose();
   }
 }

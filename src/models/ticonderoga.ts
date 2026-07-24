@@ -646,6 +646,7 @@ export function buildTiconderoga() {
   );
   searchBeam.rotation.x = -Math.PI / 2;
   searchBeam.position.set(longitudinal(4), 18, 0);
+  searchBeam.userData.temporalReactive = true;
   radar.add(searchBeam);
   radar.userData.searchBeam = searchBeam;
   ship.add(radar);

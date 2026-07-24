@@ -49,6 +49,7 @@ import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/su
 import { initializeWebGpuUltra, type FroxelLightInput, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
 import { TemporalReconstructionPass } from "./visual/temporal-reconstruction-pass";
 import { collectVolumetricLightSamples } from "./visual/volumetric-light-samples";
+import { HiZScreenSpacePass } from "./visual/hiz-screen-space-pass";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
   getEnemyPlatformDefinition,
@@ -191,6 +192,7 @@ const composer = new EffectComposer(renderer),
     0.78,
   ),
   cinematicAtmospherePass = createCinematicAtmospherePass(),
+  hizScreenSpacePass = new HiZScreenSpacePass(scene, gtaoPass.depthTexture, camera),
   temporalReconstructionPass = new TemporalReconstructionPass(scene, camera, gtaoPass.depthTexture),
   outputPass = new OutputPass();
 ssaoPass.kernelRadius = 8;
@@ -207,10 +209,21 @@ composer.addPass(ssaoPass);
 composer.addPass(gtaoPass);
 composer.addPass(bloomPass);
 composer.addPass(cinematicAtmospherePass);
+composer.addPass(hizScreenSpacePass);
 composer.addPass(temporalReconstructionPass);
 composer.addPass(outputPass);
 const displayPixelRatio = Math.min(devicePixelRatio, 2);
-const ultraInternalScale = 0.7;
+const visualValidationParams = new URLSearchParams(location.search);
+const ultraAtmosphereMode = visualValidationParams.get("ultraAtmosphere") ?? "both";
+const hizVisualComparison = visualValidationParams.has("hizEffects");
+hizScreenSpacePass.setEffectsEnabled(visualValidationParams.get("hizEffects") !== "off");
+const hizDebugMode = visualValidationParams.get("hizDebug");
+hizScreenSpacePass.setDebugOutput(hizDebugMode === "reflection" ? "reflection" : hizDebugMode === "occlusion" ? "occlusion" : "off");
+const hizConsumerMode = visualValidationParams.get("hizConsumers");
+hizScreenSpacePass.setConsumerMix(hizConsumerMode !== "contact", hizConsumerMode !== "ao");
+// SSR remains opt-in until moving-camera validation is free of hull-shaped ghosts.
+hizScreenSpacePass.setSsrEnabled(hizConsumerMode === "ssr");
+const ultraInternalScale = 0.85;
 temporalReconstructionPass.setOutputSize(Math.round(innerWidth * displayPixelRatio), Math.round(innerHeight * displayPixelRatio));
 canvas.dataset.renderPipeline = "webgl2-pbr-ssao-bloom-aces";
 canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
@@ -2439,7 +2452,7 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
-  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "TAAU_FULL_SCENE_0.7X" : "OFF";
+  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "TAAU_FULL_SCENE_0.85X" : "OFF";
   canvas.dataset.webGpuUltraInternalScale = webGpuUltraStatus === "active" ? ultraInternalScale.toFixed(2) : "1.00";
   canvas.dataset.webGpuUltraVelocity = webGpuUltraStatus === "active" ? "OBJECT_PREVIOUS_MVP_RG16F" : "OFF";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
@@ -2451,6 +2464,7 @@ async function configureWebGpuUltra(requested: boolean) {
     highQualityEnvironment.setUltraDetail(null);
     ocean.setUltraCloudVolume(null);
     temporalReconstructionPass.setRequested(false);
+    hizScreenSpacePass.setRequested(false);
     outputPass.enabled = true;
     composer.setPixelRatio(displayPixelRatio);
     composer.setSize(innerWidth, innerHeight);
@@ -2481,12 +2495,13 @@ async function configureWebGpuUltra(requested: boolean) {
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
     temporalReconstructionPass.setRequested(webGpuUltraResult.status === "active");
+    hizScreenSpacePass.setRequested(webGpuUltraResult.status === "active");
     outputPass.enabled = webGpuUltraResult.status !== "active";
     composer.setPixelRatio(displayPixelRatio * (webGpuUltraResult.status === "active" ? ultraInternalScale : 1));
     composer.setSize(innerWidth, innerHeight);
     temporalReconstructionPass.setOutputSize(Math.round(innerWidth * displayPixelRatio), Math.round(innerHeight * displayPixelRatio));
-    setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
-    setCinematicFroxel(cinematicAtmospherePass, webGpuUltraResult.froxelTexture);
+    setCinematicUltraScatter(cinematicAtmospherePass, ultraAtmosphereMode === "none" || ultraAtmosphereMode === "froxel" ? null : webGpuUltraResult.scatterTexture);
+    setCinematicFroxel(cinematicAtmospherePass, ultraAtmosphereMode === "none" || ultraAtmosphereMode === "scatter" ? null : webGpuUltraResult.froxelTexture);
     updateWebGpuUltraStatus();
     webGpuUltraInitialization = null;
   })();
@@ -4562,6 +4577,7 @@ function updateShipLights() {
     material = beam.material as THREE.MeshBasicMaterial,
     health = subsystemHealth("primaryRadar");
   beam.visible =
+    !hizVisualComparison &&
     radarEnabled &&
     health > 0.05 &&
     camera.position.distanceTo(defender.position) < 340;
@@ -7738,7 +7754,7 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
-  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "TAAU_FULL_SCENE_0.7X" : "OFF";
+  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "TAAU_FULL_SCENE_0.85X" : "OFF";
   canvas.dataset.webGpuUltraInternalScale = webGpuUltraStatus === "active" ? ultraInternalScale.toFixed(2) : "1.00";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
   canvas.dataset.webGpuUltraFroxel = webGpuUltraStatus === "active" ? "FROXEL_80X45X32_DYNAMIC_8" : "OFF";
@@ -7746,6 +7762,10 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraFroxelLights = String(froxelLightCount);
   canvas.dataset.webGpuUltraFroxelDominant = froxelDominantLight;
   const temporalDiagnostics = temporalReconstructionPass.diagnostics;
+  const hizDiagnostics = hizScreenSpacePass.diagnostics;
+  canvas.dataset.webGpuUltraHiZ = webGpuUltraStatus === "active" ? "MIN_DEPTH_6_LEVEL" : "OFF";
+  canvas.dataset.webGpuUltraHiZLevels = String(hizDiagnostics.levels);
+  canvas.dataset.webGpuUltraHiZConsumers = String(hizDiagnostics.consumers);
   canvas.dataset.webGpuUltraReprojection = webGpuUltraStatus === "active" ? "TAA_VELOCITY_DEPTH_CLAMP" : "OFF";
   canvas.dataset.webGpuUltraVelocity = webGpuUltraStatus === "active" ? "OBJECT_PREVIOUS_MVP_RG16F" : "OFF";
   canvas.dataset.webGpuUltraTemporalObjects = String(temporalDiagnostics.trackedObjects);
@@ -8117,6 +8137,7 @@ function tick(now: number) {
   });
   updateTargetMarker();
   temporalReconstructionPass.beginFrame();
+  hizScreenSpacePass.setCamera(camera);
   composer.render();
   temporalReconstructionPass.endFrame();
   requestAnimationFrame(tick);

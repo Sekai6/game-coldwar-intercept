@@ -397,6 +397,7 @@ export function buildLongBeach(color = 0x687574, scale = 1) {
     }),
   );
   searchBeam.position.y = 0.15;
+  searchBeam.userData.temporalReactive = true;
   radar.add(searchBeam);
   radar.userData.searchBeam = searchBeam;
   g.add(radar);

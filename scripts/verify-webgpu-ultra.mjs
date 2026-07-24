@@ -38,7 +38,7 @@ try {
   }));
   result.errors = errors;
   console.log(JSON.stringify(result, null, 2));
-  const validActive = result.status === "active" && result.backend === "WEBGL2_WEBGPU_COMPUTE" && result.detail === "COMPUTE_FBM_128" && result.scatter === "COMPUTE_SCATTER_ATLAS_128" && result.depth === "GTAO_DEPTH_RECONSTRUCTED" && result.volume === "COMPUTE_VOLUME_64X32X64" && result.temporal === "TAAU_FULL_SCENE_0.7X" && result.cloudShadows === "VOLUME_PROJECTED_3_LAYER" && result.froxel === "FROXEL_80X45X32_DYNAMIC_8" && result.reprojection === "TAA_VELOCITY_DEPTH_CLAMP" && result.velocity === "OBJECT_PREVIOUS_MVP_RG16F";
+  const validActive = result.status === "active" && result.backend === "WEBGL2_WEBGPU_COMPUTE" && result.detail === "COMPUTE_FBM_128" && result.scatter === "COMPUTE_SCATTER_ATLAS_128" && result.depth === "GTAO_DEPTH_RECONSTRUCTED" && result.volume === "COMPUTE_VOLUME_64X32X64" && result.temporal === "TAAU_FULL_SCENE_0.85X" && result.cloudShadows === "VOLUME_PROJECTED_3_LAYER" && result.froxel === "FROXEL_80X45X32_DYNAMIC_8" && result.reprojection === "TAA_VELOCITY_DEPTH_CLAMP" && result.velocity === "OBJECT_PREVIOUS_MVP_RG16F";
   const validFallback = ["unsupported", "failed"].includes(result.status) && result.backend === "WEBGL2" && result.detail === "OFF" && result.scatter === "OFF" && result.depth === "OFF" && result.volume === "OFF" && result.temporal === "OFF" && result.cloudShadows === "OFF" && result.froxel === "OFF" && result.reprojection === "OFF" && result.velocity === "OFF" && Boolean(result.error);
   if (errors.length || result.requested !== "true" || result.highQuality !== "true" || (!validActive && !validFallback)) process.exitCode = 1;
 } finally {

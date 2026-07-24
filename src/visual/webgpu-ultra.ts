@@ -133,18 +133,18 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
           let viewY=mix(-0.55,0.85,screen.y);
           let distance=z*z*900.0;
           let worldHeight=max(0.0,viewY*distance+18.0);
-          let baseDensity=exp(-worldHeight/95.0)*mix(0.016,0.004,z);
+          let baseDensity=exp(-worldHeight/95.0)*mix(0.0042,0.0008,z);
           let horizon=exp(-abs(viewY)*2.8);
           let noise=0.82+hash21(vec2<f32>(id.xy)+vec2<f32>(f32(id.z)*7.0,13.0))*0.18;
-          let extinction=clamp(baseDensity*noise*22.0,0.0,1.0);
+          let extinction=clamp(baseDensity*noise*8.0,0.0,0.18);
           let sunMu=clamp(screen.x*0.44+screen.y*0.56,0.0,1.0);
           let forwardPhase=0.32+pow(sunMu,5.0)*0.68;
-          var scatter=vec3<f32>(0.43,0.56,0.68)*extinction*(0.7+horizon*0.3)+vec3<f32>(1.0,0.68,0.36)*extinction*forwardPhase*0.42;
+          var scatter=vec3<f32>(0.43,0.56,0.68)*extinction*(0.32+horizon*0.16)+vec3<f32>(1.0,0.68,0.36)*extinction*forwardPhase*0.14;
           for(var lightIndex=0u;lightIndex<8u;lightIndex++){
             let shape=lights[lightIndex*2u];let emission=lights[lightIndex*2u+1u];
             let delta=vec3<f32>((screen-shape.xy)/max(shape.w,0.001),(z-shape.z)*2.4/max(shape.w,0.001));
             let influence=exp(-dot(delta,delta)*2.1)*emission.w;
-            scatter+=emission.rgb*influence*(1.15+extinction*2.4);
+            scatter+=emission.rgb*influence*(0.92+extinction*4.0);
           }
           let tile=vec2<u32>(id.z%${FROXEL_COLUMNS}u,id.z/${FROXEL_COLUMNS}u);
           let atlas=vec2<i32>(tile*vec2<u32>(${FROXEL_WIDTH}u,${FROXEL_HEIGHT}u)+id.xy);
