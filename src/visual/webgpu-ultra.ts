@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { createTessendorfOceanSpectrum } from "./ocean-spectrum";
 import { createWebGpuOceanSpectrum } from "./webgpu-ocean-spectrum";
+import { createWebGpuParticleRuntime, type WebGpuParticleRuntime } from "./webgpu-particles";
 
 export type WebGpuUltraStatus = "idle" | "initializing" | "active" | "unsupported" | "failed";
 
@@ -15,6 +16,7 @@ export interface WebGpuUltraResult {
   oceanSpectrumFrames: number;
   oceanSpectrumBackend: "COMPUTE_RADIX2" | "CPU_RADIX2_FALLBACK" | "OFF";
   oceanSpectrumError: string;
+  particles: WebGpuParticleRuntime | null;
   updateFroxel: ((lights: readonly FroxelLightInput[]) => Promise<boolean>) | null;
   disposeCompute: (() => void) | null;
   adapterName: string;
@@ -33,7 +35,7 @@ export interface FroxelLightInput {
 const TEXTURE_SIZE = 128;
 
 function unavailable(status: "unsupported" | "failed", error: string): WebGpuUltraResult {
-  return { status, backend: "WEBGL2", detailTexture: null, scatterTexture: null, volumeTexture: null, froxelTexture: null, oceanSpectrumTexture: null, oceanSpectrumFrames: 0, oceanSpectrumBackend: "OFF", oceanSpectrumError: "", updateFroxel: null, disposeCompute: null, adapterName: "", error };
+  return { status, backend: "WEBGL2", detailTexture: null, scatterTexture: null, volumeTexture: null, froxelTexture: null, oceanSpectrumTexture: null, oceanSpectrumFrames: 0, oceanSpectrumBackend: "OFF", oceanSpectrumError: "", particles: null, updateFroxel: null, disposeCompute: null, adapterName: "", error };
 }
 
 const VOLUME_WIDTH = 64;
@@ -295,10 +297,12 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
     };
     const disposeCompute = () => {
       computeDisposed = true;
+      particles.dispose();
       froxelLightBuffer.destroy();
       froxelTextureGpu.destroy();
     };
     const info = typeof adapter.info === "object" ? adapter.info : {};
+    const particles = await createWebGpuParticleRuntime(device);
     return {
       status: "active",
       backend: "WEBGL2_WEBGPU_COMPUTE",
@@ -310,6 +314,7 @@ export async function initializeWebGpuUltra(): Promise<WebGpuUltraResult> {
       oceanSpectrumFrames: oceanSpectrum.frames,
       oceanSpectrumBackend,
       oceanSpectrumError,
+      particles,
       updateFroxel,
       disposeCompute,
       adapterName: info.description || info.device || info.vendor || "WebGPU adapter",

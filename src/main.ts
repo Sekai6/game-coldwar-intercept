@@ -218,7 +218,10 @@ const ultraAtmosphereMode = visualValidationParams.get("ultraAtmosphere") ?? "bo
 const ultraOceanFftEnabled = visualValidationParams.get("oceanFFT") !== "off";
 const ultraOceanWakeEnabled = visualValidationParams.get("oceanWake") !== "off";
 const oceanValidationMode = visualValidationParams.get("oceanValidation") ?? "";
+const particleValidationMode = visualValidationParams.get("particleValidation") ?? "";
+const gpuParticlesEnabled = visualValidationParams.get("gpuParticles") !== "off";
 let oceanValidationSplashTriggered = false;
+let particleValidationTriggered = false;
 const oceanValidationSplashPosition = new THREE.Vector3();
 const hizVisualComparison = visualValidationParams.has("hizEffects");
 hizScreenSpacePass.setEffectsEnabled(visualValidationParams.get("hizEffects") !== "off");
@@ -282,7 +285,26 @@ let froxelLightCount = 0;
 let froxelDominantLight = "none";
 let retainedFroxelLights: Array<{ sample: FroxelLightInput; expiresAt: number }> = [];
 const airCombat = new AirCombatSystem(scene);
-airCombat.onOceanSplash = (position, energy) => ocean.addSplash(position, energy);
+function addOceanSplash(position: THREE.Vector3, energy: number) {
+  ocean.addSplash(position, energy);
+  if (gpuParticlesEnabled) webGpuUltraResult?.particles?.emit({
+    kind: "spray",
+    position: position.clone().setY(Math.max(0.15, position.y)),
+    count: Math.round(180 * THREE.MathUtils.clamp(energy, 0.5, 3)),
+    energy: 3.4 * energy,
+    seed: elapsed * 17.31 + position.x * 0.13 + position.z * 0.07,
+  });
+}
+airCombat.onOceanSplash = addOceanSplash;
+airCombat.onCountermeasureVisual = (type, position, velocity) => {
+  if (!gpuParticlesEnabled) return;
+  webGpuUltraResult?.particles?.emit({
+    kind: type, position, velocity,
+    count: type === "chaff" ? 360 : 90,
+    energy: type === "chaff" ? 0.48 : 1.15,
+    seed: elapsed * 29.3 + position.x * 0.17,
+  });
+};
 let airShipHits = 0,
   airShipDamage = 0;
 canvas.dataset.oceanBackend = ocean.backend;
@@ -1556,6 +1578,10 @@ function deployChaff(source: Missile) {
     serial: ++chaffSerial,
   });
   source.mesh.userData.chaffDeployed = true;
+  webGpuUltraResult?.particles?.emit({
+    kind: "chaff", position: group.position.clone(), velocity,
+    count: 420, energy: 0.55, seed: chaffSerial * 19.7,
+  });
   log(
     `${source.threatType} CHAFF DEPLOY / RCS 2.8 / ${chaffClouds.length} CLOUDS`,
   );
@@ -1617,6 +1643,10 @@ function deployPlatformDecoy(missile: SurfaceStrikeMissile) {
     serial: ++chaffSerial,
   });
   platform.decoyRounds--;
+  webGpuUltraResult?.particles?.emit({
+    kind: "chaff", position: group.position.clone(), velocity: platform.velocity,
+    count: 520, energy: 0.62, seed: chaffSerial * 23.1,
+  });
   missile.mesh.userData.platformDecoyDeployed = true;
   platform.nextDecoy =
     elapsed + softKill.decoyCooldown / Math.max(0.3, countermeasureHealth);
@@ -1827,6 +1857,10 @@ function createExplosion(position: THREE.Vector3) {
   light.position.copy(position);
   scene.add(core, ring, light);
   explosions.push({ core, ring, light, age: 0 });
+  webGpuUltraResult?.particles?.emit({
+    kind: "debris", position, count: 680, energy: 4.8,
+    seed: elapsed * 31.7 + position.x * 0.11,
+  });
 }
 function createShipDamage(
   worldPosition: THREE.Vector3,
@@ -2451,6 +2485,7 @@ async function configureWebGpuUltra(requested: boolean) {
     outputPass.enabled = true;
     composer.setPixelRatio(displayPixelRatio);
     composer.setSize(innerWidth, innerHeight);
+    if (webGpuUltraResult?.particles) scene.remove(webGpuUltraResult.particles.object);
     webGpuUltraResult?.disposeCompute?.();
     webGpuUltraResult?.detailTexture?.dispose();
     webGpuUltraResult?.scatterTexture?.dispose();
@@ -2479,6 +2514,7 @@ async function configureWebGpuUltra(requested: boolean) {
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
     ocean.setUltraSpectrum(ultraOceanFftEnabled ? webGpuUltraResult.oceanSpectrumTexture : null, webGpuUltraResult.oceanSpectrumFrames);
+    if (gpuParticlesEnabled && webGpuUltraResult.particles) scene.add(webGpuUltraResult.particles.object);
     canvas.dataset.webGpuUltraOcean = ultraOceanFftEnabled && webGpuUltraResult.oceanSpectrumTexture ? `FFT_${webGpuUltraResult.oceanSpectrumFrames}X64` : "GERSTNER";
     canvas.dataset.webGpuUltraOceanCompute = webGpuUltraResult.oceanSpectrumBackend;
     canvas.dataset.webGpuUltraOceanError = webGpuUltraResult.oceanSpectrumError;
@@ -7994,10 +8030,34 @@ function tick(now: number) {
     : "infinity";
   if (oceanValidationMode === "splash" && !oceanValidationSplashTriggered && elapsed >= 4) {
     oceanValidationSplashPosition.copy(defender.position).add(new THREE.Vector3(-38, 0, 18));
-    ocean.addSplash(oceanValidationSplashPosition, 1.8);
+    addOceanSplash(oceanValidationSplashPosition, 1.8);
     oceanValidationSplashTriggered = true;
     canvas.dataset.oceanValidationSplash = "triggered";
   }
+  if (particleValidationMode && !particleValidationTriggered && elapsed >= 4) {
+    const position = defender.position.clone().add(new THREE.Vector3(-12, 0.2, 12));
+    if (particleValidationMode === "spray") addOceanSplash(position, 2.2);
+    else if (particleValidationMode === "debris") webGpuUltraResult?.particles?.emit({
+      kind: "debris", position: position.clone().setY(8),
+      velocity: new THREE.Vector3(0.4, 0, -0.2), count: 680, energy: 5.8, seed: 41,
+    });
+    else if (particleValidationMode === "chaff") webGpuUltraResult?.particles?.emit({
+      kind: "chaff", position: position.clone().setY(18),
+      velocity: new THREE.Vector3(0.7, 0.1, -0.25), count: 1600, energy: 0.8, seed: 57,
+    });
+    particleValidationTriggered = true;
+    canvas.dataset.particleValidation = particleValidationMode;
+  }
+  const gpuParticleRuntime = webGpuUltraResult?.particles;
+  if (webGpuUltraStatus === "active" && gpuParticlesEnabled && gpuParticleRuntime) {
+    void gpuParticleRuntime.update(realDt, elapsed);
+    const particleDiagnostics = gpuParticleRuntime.diagnostics();
+    canvas.dataset.webGpuParticles = `COMPUTE_STORAGE_${gpuParticleRuntime.capacity}`;
+    canvas.dataset.webGpuParticleActive = String(particleDiagnostics.active);
+    canvas.dataset.webGpuParticleEmitted = String(particleDiagnostics.emitted);
+    canvas.dataset.webGpuParticleUpdates = String(particleDiagnostics.updates);
+    canvas.dataset.webGpuParticleBridgeHz = String(particleDiagnostics.bridgeHz);
+  } else canvas.dataset.webGpuParticles = "OFF";
   ocean.update(elapsed, camera.position);
   highQualityEnvironment.update(elapsed, camera.position);
   const ewPulse = defender.userData.ewPulse as THREE.Group | undefined,

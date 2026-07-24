@@ -228,6 +228,7 @@ function missileModel(guidance: AirMissileInstance["definition"]["guidance"]) {
 
 export class AirCombatSystem {
   onOceanSplash: ((position: THREE.Vector3, energy: number) => void) | null = null;
+  onCountermeasureVisual: ((type: "chaff" | "flare", position: THREE.Vector3, velocity: THREE.Vector3) => void) | null = null;
   readonly group = new THREE.Group();
   readonly aircraft: AirPlatformInstance[] = [];
   readonly missiles: AirMissileInstance[] = [];
@@ -874,6 +875,7 @@ export class AirCombatSystem {
     };
     this.decoys.push(d);
     this.group.add(mesh);
+    this.onCountermeasureVisual?.(type, d.position.clone(), d.velocity.clone());
   }
   private missionTrackFor(
     a: AirPlatformInstance,

@@ -16,6 +16,9 @@ The first implementation uses a hybrid backend:
 - Ultra ocean uses a deterministic 64 x 64 Tessendorf/Phillips directional spectrum. WebGPU storage buffers evolve three complex fields and execute six horizontal plus six vertical radix-2 butterfly stages for each of 16 looped frames. A compute packing pass derives the full displacement Jacobian and writes the atlas; WebGL then interpolates adjacent frames without per-frame GPU-to-CPU readback. The CPU implementation remains an explicit initialization fallback and unit-test baseline.
 - The ocean shader consumes horizontal displacement, height and Jacobian compression separately, with a reduced Gerstner residual for sub-spectrum detail. Vessel wakes use a speed-scaled Kelvin wedge and turbulent centerline rooted at the actual stern rather than transparent scene lines.
 - Ocean impacts enter a shared eight-event ring buffer. Air-launched missiles that strike the sea now generate expanding displacement and foam rings through the ocean surface instead of weapon-owned flat ring meshes.
+- A 131,072-slot WebGPU storage buffer simulates water spray, ballistic debris, drifting chaff and falling flares. Compute owns gravity, drag, turbulence, sea-surface bounce and lifetime integration; the current hybrid renderer reads only the written span at 12 Hz into a compact WebGL point-display bridge, so the CPU never integrates individual particles. This bridge is explicit technical debt until the scene renderer itself moves to WebGPU and can draw the storage buffer directly.
+- Particle emission subscribes to existing combat events: ocean impacts, explosion resolution, ship/platform chaff deployment and aircraft countermeasure ejection. Sensor-visible decoy entities, RCS/IR signatures and weapon guidance remain authoritative in their existing simulation runtimes; visual particles never participate in hit or seeker calculations.
+- `particleValidation=spray`, `debris` or `chaff` creates deterministic low-load visual gates. `gpuParticles=off` provides an A/B control without disabling the underlying combat event.
 - Dedicated `oceanValidation=stern` and `oceanValidation=splash` views provide fixed, low-load visual gates. `verification-ultra-ocean-stern-wake.png` versus `verification-ultra-ocean-stern-no-wake.png` proves stern origin, aft direction and speed response; `verification-ultra-ocean-splash.png` proves a smooth circular surface-impact wave without grid-shaped interpolation artifacts.
 - Missile sea impacts and the one-time `disabled` to `crashed` aircraft transition feed the same ocean event interface. Vertical spray and droplets intentionally remain a GPU-particle-stage responsibility rather than flat billboard substitutes.
 - Camera cuts, fast rotation, large translation, resize and Ultra shutdown invalidate history immediately. High-motion pixels reduce history weight while disocclusions reject history using depth.
@@ -42,6 +45,8 @@ Runtime diagnostics are exposed on `#scene`:
 - `data-web-gpu-ultra-ocean`: `GERSTNER` or `FFT_16X64`
 - `data-web-gpu-ultra-ocean-compute`: `COMPUTE_RADIX2`, `CPU_RADIX2_FALLBACK` or `OFF`
 - `data-web-gpu-ultra-ocean-ranges` exposes displacement, height and Jacobian channel ranges; the active verifier rejects empty or collapsed spectra.
+- `data-web-gpu-particles`: `OFF` or `COMPUTE_STORAGE_131072`
+- `data-web-gpu-particle-active`, `data-web-gpu-particle-emitted`, `data-web-gpu-particle-updates` and `data-web-gpu-particle-bridge-hz` expose particle occupancy and update health.
 - `data-web-gpu-ultra-history-valid`, `data-web-gpu-ultra-history-frames` and `data-web-gpu-ultra-history-resets` expose accumulation and invalidation state.
 - `data-web-gpu-ultra-adapter` and `data-web-gpu-ultra-error`
 
@@ -51,4 +56,6 @@ Run `npm run verify:webgpu-ultra-active` on a WebGPU-capable machine to require 
 
 Run `npm run capture:webgpu-ocean` for a strictly serial FFT/Gerstner and wake/no-wake visual comparison. Query parameters `oceanFFT=off` and `oceanWake=off` are validation-only controls; normal Ultra enables both.
 
-Future migration order is richer multi-vessel wake history and spray, GPU particles, Bruneton atmosphere LUTs and clustered lighting. A full `WebGPURenderer` switch remains separate because the current GLSL post-processing stack is not directly compatible.
+Run `npm run verify:webgpu-particles` to require the real WebGPU storage-buffer path and a non-empty deterministic chaff burst. Run `npm run capture:webgpu-particles` for strictly serial spray, debris and chaff on/off comparisons.
+
+Future migration order is direct storage-buffer particle rendering after a full `WebGPURenderer` switch, Bruneton atmosphere LUTs and clustered lighting. The renderer switch remains separate because the current GLSL post-processing stack is not directly compatible.
