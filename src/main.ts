@@ -44,7 +44,7 @@ import {
 } from "./visual/threat-particles";
 import { createOceanSurface } from "./visual/ocean";
 import { createHighQualityEnvironment } from "./visual/high-quality-environment";
-import { createCinematicAtmospherePass, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
+import { createCinematicAtmospherePass, setCinematicDepth, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
 import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
 import { initializeWebGpuUltra, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
 import {
@@ -197,6 +197,7 @@ ssaoPass.enabled = innerWidth > 720;
 gtaoPass.updateGtaoMaterial({ radius: 0.24, distanceExponent: 1.7, thickness: 1.35, distanceFallOff: 1 });
 gtaoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, radiusExponent: 1.8, rings: 3, samples: 12 });
 gtaoPass.enabled = false;
+setCinematicDepth(cinematicAtmospherePass, gtaoPass.depthTexture, camera);
 composer.setPixelRatio(Math.min(devicePixelRatio, 2));
 composer.addPass(renderPass);
 composer.addPass(ssaoPass);
@@ -2424,6 +2425,7 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraError = webGpuUltraResult?.error ?? "";
   canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
+  canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
 }
 
 async function configureWebGpuUltra(requested: boolean) {
@@ -7696,6 +7698,7 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraError = webGpuUltraResult?.error ?? "";
   canvas.dataset.webGpuUltraCloudDetail = webGpuUltraStatus === "active" ? "COMPUTE_FBM_128" : "OFF";
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
+  canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.highQualityOcean = String(highQualityEnvironmentEnabled);
   canvas.dataset.cameraViewMode = String(viewMode);
   canvas.dataset.cameraAircraftId = selectedAircraftId ?? "";
