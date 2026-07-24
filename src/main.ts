@@ -47,7 +47,7 @@ import { createHighQualityEnvironment } from "./visual/high-quality-environment"
 import { createCinematicAtmospherePass, setCinematicDepth, setCinematicFroxel, setCinematicUltraScatter } from "./visual/cinematic-atmosphere-pass";
 import { AFTERNOON_SUN_ALTITUDE_DEG, AFTERNOON_SUN_DIRECTION } from "./visual/sunlight";
 import { initializeWebGpuUltra, type FroxelLightInput, type WebGpuUltraResult, type WebGpuUltraStatus } from "./visual/webgpu-ultra";
-import { TemporalCloudPass } from "./visual/temporal-cloud-pass";
+import { TemporalReconstructionPass } from "./visual/temporal-reconstruction-pass";
 import { collectVolumetricLightSamples } from "./visual/volumetric-light-samples";
 import {
   ENEMY_PLATFORM_DEFINITIONS,
@@ -191,7 +191,7 @@ const composer = new EffectComposer(renderer),
     0.78,
   ),
   cinematicAtmospherePass = createCinematicAtmospherePass(),
-  temporalCloudPass = new TemporalCloudPass(gtaoPass.depthTexture, camera),
+  temporalReconstructionPass = new TemporalReconstructionPass(scene, camera, gtaoPass.depthTexture),
   outputPass = new OutputPass();
 ssaoPass.kernelRadius = 8;
 ssaoPass.minDistance = 0.001;
@@ -207,8 +207,11 @@ composer.addPass(ssaoPass);
 composer.addPass(gtaoPass);
 composer.addPass(bloomPass);
 composer.addPass(cinematicAtmospherePass);
-composer.addPass(temporalCloudPass);
+composer.addPass(temporalReconstructionPass);
 composer.addPass(outputPass);
+const displayPixelRatio = Math.min(devicePixelRatio, 2);
+const ultraInternalScale = 0.7;
+temporalReconstructionPass.setOutputSize(Math.round(innerWidth * displayPixelRatio), Math.round(innerHeight * displayPixelRatio));
 canvas.dataset.renderPipeline = "webgl2-pbr-ssao-bloom-aces";
 canvas.dataset.ssaoEnabled = String(ssaoPass.enabled);
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -2436,7 +2439,9 @@ function updateWebGpuUltraStatus() {
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
-  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
+  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "TAAU_FULL_SCENE_0.7X" : "OFF";
+  canvas.dataset.webGpuUltraInternalScale = webGpuUltraStatus === "active" ? ultraInternalScale.toFixed(2) : "1.00";
+  canvas.dataset.webGpuUltraVelocity = webGpuUltraStatus === "active" ? "OBJECT_PREVIOUS_MVP_RG16F" : "OFF";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
   canvas.dataset.webGpuUltraFroxel = webGpuUltraStatus === "active" ? "FROXEL_80X45X32_DYNAMIC_8" : "OFF";
 }
@@ -2445,7 +2450,10 @@ async function configureWebGpuUltra(requested: boolean) {
   if (!requested) {
     highQualityEnvironment.setUltraDetail(null);
     ocean.setUltraCloudVolume(null);
-    temporalCloudPass.setRequested(false);
+    temporalReconstructionPass.setRequested(false);
+    outputPass.enabled = true;
+    composer.setPixelRatio(displayPixelRatio);
+    composer.setSize(innerWidth, innerHeight);
     webGpuUltraResult?.disposeCompute?.();
     webGpuUltraResult?.detailTexture?.dispose();
     webGpuUltraResult?.scatterTexture?.dispose();
@@ -2472,7 +2480,11 @@ async function configureWebGpuUltra(requested: boolean) {
     webGpuUltraStatus = webGpuUltraResult.status;
     highQualityEnvironment.setUltraDetail(webGpuUltraResult.detailTexture, webGpuUltraResult.volumeTexture);
     ocean.setUltraCloudVolume(webGpuUltraResult.volumeTexture, webGpuUltraResult.detailTexture);
-    temporalCloudPass.setRequested(webGpuUltraResult.status === "active");
+    temporalReconstructionPass.setRequested(webGpuUltraResult.status === "active");
+    outputPass.enabled = webGpuUltraResult.status !== "active";
+    composer.setPixelRatio(displayPixelRatio * (webGpuUltraResult.status === "active" ? ultraInternalScale : 1));
+    composer.setSize(innerWidth, innerHeight);
+    temporalReconstructionPass.setOutputSize(Math.round(innerWidth * displayPixelRatio), Math.round(innerHeight * displayPixelRatio));
     setCinematicUltraScatter(cinematicAtmospherePass, webGpuUltraResult.scatterTexture);
     setCinematicFroxel(cinematicAtmospherePass, webGpuUltraResult.froxelTexture);
     updateWebGpuUltraStatus();
@@ -7726,14 +7738,18 @@ function tick(now: number) {
   canvas.dataset.webGpuUltraScatter = webGpuUltraStatus === "active" ? "COMPUTE_SCATTER_ATLAS_128" : "OFF";
   canvas.dataset.webGpuUltraDepth = webGpuUltraStatus === "active" ? "GTAO_DEPTH_RECONSTRUCTED" : "OFF";
   canvas.dataset.webGpuUltraCloudVolume = webGpuUltraStatus === "active" ? "COMPUTE_VOLUME_64X32X64" : "OFF";
-  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "STABLE_JITTER_ABSOLUTE_WIND" : "OFF";
+  canvas.dataset.webGpuUltraTemporal = webGpuUltraStatus === "active" ? "TAAU_FULL_SCENE_0.7X" : "OFF";
+  canvas.dataset.webGpuUltraInternalScale = webGpuUltraStatus === "active" ? ultraInternalScale.toFixed(2) : "1.00";
   canvas.dataset.webGpuUltraCloudShadows = webGpuUltraStatus === "active" ? "VOLUME_PROJECTED_3_LAYER" : "OFF";
   canvas.dataset.webGpuUltraFroxel = webGpuUltraStatus === "active" ? "FROXEL_80X45X32_DYNAMIC_8" : "OFF";
   canvas.dataset.webGpuUltraFroxelUpdates = String(froxelUpdateCount);
   canvas.dataset.webGpuUltraFroxelLights = String(froxelLightCount);
   canvas.dataset.webGpuUltraFroxelDominant = froxelDominantLight;
-  const temporalDiagnostics = temporalCloudPass.diagnostics;
-  canvas.dataset.webGpuUltraReprojection = webGpuUltraStatus === "active" ? "HISTORY_MATRIX_SKY_ONLY" : "OFF";
+  const temporalDiagnostics = temporalReconstructionPass.diagnostics;
+  canvas.dataset.webGpuUltraReprojection = webGpuUltraStatus === "active" ? "TAA_VELOCITY_DEPTH_CLAMP" : "OFF";
+  canvas.dataset.webGpuUltraVelocity = webGpuUltraStatus === "active" ? "OBJECT_PREVIOUS_MVP_RG16F" : "OFF";
+  canvas.dataset.webGpuUltraTemporalObjects = String(temporalDiagnostics.trackedObjects);
+  canvas.dataset.webGpuUltraTemporalJitter = String(temporalDiagnostics.jitterIndex);
   canvas.dataset.webGpuUltraHistoryValid = String(temporalDiagnostics.valid);
   canvas.dataset.webGpuUltraHistoryFrames = String(temporalDiagnostics.frames);
   canvas.dataset.webGpuUltraHistoryResets = String(temporalDiagnostics.resets);
@@ -8100,7 +8116,9 @@ function tick(now: number) {
     });
   });
   updateTargetMarker();
+  temporalReconstructionPass.beginFrame();
   composer.render();
+  temporalReconstructionPass.endFrame();
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -8109,7 +8127,8 @@ addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
-  temporalCloudPass.invalidate();
+  temporalReconstructionPass.setOutputSize(Math.round(innerWidth * displayPixelRatio), Math.round(innerHeight * displayPixelRatio));
+  temporalReconstructionPass.invalidate();
   cinematicAtmospherePass.uniforms.resolution.value.set(innerWidth, innerHeight);
   ocean.resize(innerWidth, innerHeight);
   ssaoPass.enabled = innerWidth > 720;
