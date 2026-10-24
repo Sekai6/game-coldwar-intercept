@@ -6,9 +6,11 @@ import { P700 } from "./p700.js";
 import { NEPTUNE } from "./neptune.js";
 import { URAN } from "./uran.js";
 import { ASM1 } from "./asm1.js";
+import { RBS15 } from "./rbs15.js";
+import { EXOCET } from "./exocet.js";
 import type { ThreatDefinition, ThreatProfile } from "./types.js";
 
-export const THREAT_DEFINITIONS = [P15, P500, P700, KH22, HARPOON, NEPTUNE, URAN, ASM1] as const;
+export const THREAT_DEFINITIONS = [P15, P500, P700, KH22, HARPOON, NEPTUNE, URAN, ASM1, RBS15, EXOCET] as const;
 
 export type EnemyType = (typeof THREAT_DEFINITIONS)[number]["id"];
 export const DEFAULT_THREAT_ID: EnemyType = P500.id;

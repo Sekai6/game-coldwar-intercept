@@ -17,6 +17,8 @@ const additions = [
   { id:"R-360 Neptune", preset:"NEPTUNE RAID", damage:18 },
   { id:"3M24 Uran", preset:"URAN RAID", damage:17 },
   { id:"ASM-1", preset:"ASM-1 RAID", damage:18 },
+  { id:"RBS-15 Mk. II", preset:"RBS-15 RAID", damage:24 },
+  { id:"MM38 Exocet", preset:"EXOCET RAID", damage:20 },
 ];
 const scenario = JSON.parse(await readFile(new URL("../src/scenarios/full-spectrum-blackout/scenario.json", import.meta.url), "utf8"));
 
@@ -86,6 +88,8 @@ try {
     }, weapon.id, { timeout:15000 });
     const terminal = await page.locator("#scene").evaluate(canvas => ({ altitude:Number(canvas.dataset.selectedThreatAltitude), range:Number(canvas.dataset.selectedThreatRange) }));
     assert(terminal.altitude > 0 && terminal.altitude < .5 && terminal.range < 130);
+    const terminalEvents = await events();
+    assert(terminalEvents.some(text => text.startsWith(`${weapon.id} ACTIVE SEEKER SEARCH`)), "terminal guidance must be active radar");
     await page.waitForFunction(id => window.threatTestEvents.some(text => text.includes(`${id} IMPACT`)), weapon.id, { timeout:30000 });
     console.log(`${weapon.id}: terminal and impact passed`);
     assert((await events()).some(text => text.startsWith(`${weapon.id} IMPACT / ${weapon.damage}% DAMAGE / `)), "impact damage must match this weapon exactly");

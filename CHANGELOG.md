@@ -7,6 +7,8 @@ v1.21.1; it does not announce a new release or change the package/HUD version.
 
 ### Added
 
+- RBS-15 Mk. II and Exocet MM38 as independent in-flight threats with distinct canard/intake and solid-rocket silhouettes, raid presets, scenario round trips and bilingual sources. Mk. II is explicitly later than the default Cold War scenario; no new launch platforms or later-generation capabilities.
+
 - R-360 Neptune, baseline 3M24 Uran and Type 80 ASM-1 as independent in-flight sandbox/scenario threats, with procedural models, raid presets and bilingual references. No new launcher or aircraft compatibility; no inherited Harpoon HOJ, pop-up or weaving capability.
 - Passive IRST/ESM sensing, passive-track fusion and platform EMCON states (#12).
 - Measurement-level CEC, covariance fusion, network diagnostics and engagement support in the explicit `cec-enabled` era (#16). Link 11/16 remain separate services.

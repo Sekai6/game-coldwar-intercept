@@ -89,7 +89,7 @@ jobs:
   domain-verification:
     name: Domain verification
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       APP_URL: http://127.0.0.1:5173/
 
@@ -135,7 +135,7 @@ jobs:
       - name: Verify setup fields isolate keyboard shortcuts
         run: npm run verify:setup-keyboard-focus
 
-      - name: Verify Neptune, Uran and ASM-1 runtime paths
+      - name: Verify five added anti-ship missile runtime paths
         run: npm run verify:new-antiship-runtime
 
       - name: Stop browser smoke server

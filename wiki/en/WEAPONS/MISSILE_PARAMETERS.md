@@ -40,8 +40,10 @@ All distances, altitudes, and speeds below are simulation world units. They are 
 | [R-360 Neptune](R360_NEPTUNE.md) | Sea-skimming | 0.3 / 0.1 | 5.8 / 6.4 | 130 | 11 | 500 | 0.14 | 22 | 18 | 0.08 |
 | [3M24 Uran](3M24_URAN.md) | Sea-skimming | 0.3 / 0.08 | 5.8 / 6.4 | 130 | 11 | 420 | 0.12 | 22 | 17 | 0.08 |
 | [ASM-1](ASM1_TYPE80.md) | Sea-skimming | 0.4 / 0.14 | 5.8 / 6.4 | 130 | 11 | 360 | 0.13 | 22 | 18 | 0.08 |
+| [RBS-15 Mk. II](RBS15_MK2.md) | Sea-skimming | 0.3 / 0.1 | 5.8 / 6.4 | 130 | 11 | 460 | 0.17 | 22 | 24 | 0.08 |
+| [MM38 Exocet](MM38_EXOCET.md) | Sea-skimming | 0.3 / 0.1 | 5.8 / 6.4 | 130 | 11 | 340 | 0.13 | 22 | 20 | 0.08 |
 
-The three additions support sandbox and scenario JSON `in-flight` waves only, without physical launch platforms or aircraft. HOJ, pop-up and weaving are disabled. Default range means spawn distance, not real-world maximum range. Individual pages separate public references from game assumptions and limits.
+The five additions support sandbox and scenario JSON `in-flight` waves only, without physical launch platforms or aircraft. HOJ, pop-up and weaving are disabled. Default range means spawn distance, not real-world maximum range. Individual pages separate public references from game assumptions and limits; RBS-15 Mk. II postdates the default Cold War scenario.
 
 Harpoon selects from three skim entries and one pop-up entry. Pop-up begins at 48 world units and peaks at altitude 2.4. HOJ becomes eligible at jamming strength 0.42 with residual-error factor 0.18. Kh-22 has an additional CIWS probability cap of 0.14.
 

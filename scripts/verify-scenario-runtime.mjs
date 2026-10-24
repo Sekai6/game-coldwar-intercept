@@ -26,7 +26,7 @@ for (const [index, value] of malformed.entries()) {
 assert.throws(() => importScenarioJson("{"), SyntaxError);
 assert.equal(validateScenarioDocument(document, { shipDefinitions: ["long-beach"] }).valid, false);
 
-for (const threatId of ["R-360 Neptune", "3M24 Uran", "ASM-1"]) {
+for (const threatId of ["R-360 Neptune", "3M24 Uran", "ASM-1", "RBS-15 Mk. II", "MM38 Exocet"]) {
   const wave = { id:"new-wave", threatId, side:"red", source:"in-flight", count:2, firstLaunchAt:0, intervalSeconds:1.5, origin:[0,.3,-420], altitude:.3, spread:80 };
   const candidate = { ...document, threatWaves:[wave] };
   const imported = importScenarioJson(JSON.stringify(candidate));
